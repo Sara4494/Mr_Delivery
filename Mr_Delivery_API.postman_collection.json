@@ -1,0 +1,547 @@
+{
+	"info": {
+		"_postman_id": "mr-delivery-api-collection",
+		"name": "Mr Delivery API",
+		"description": "مجموعة APIs لمشروع Mr Delivery - APIs للمحلات والمعارض",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "تسجيل الدخول",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.success && jsonData.data) {",
+									"        pm.environment.set(\"access_token\", jsonData.data.access);",
+									"        pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
+									"        console.log(\"Token saved successfully\");",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"shop_number\": \"{{shop_number}}\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/login/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"login",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "تحديث Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"refresh\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/token/refresh/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"token",
+								"refresh",
+								""
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Shop Profile",
+			"item": [
+				{
+					"name": "عرض الملف الشخصي",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/profile/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"profile",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "تحديث الملف الشخصي",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"owner_name\": \"سارة أحمد المالكي\",\n    \"shop_name\": \"مصور فوتوغرافي محترف\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/profile/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"profile",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "تحديث صورة البروفيل",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "profile_image",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/profile/image/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"profile",
+								"image",
+								""
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Work Schedule",
+			"item": [
+				{
+					"name": "عرض مواعيد العمل",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/schedule/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"schedule",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "تحديث مواعيد العمل",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"work_days\": \"السبت - الأربعاء\",\n    \"work_hours\": \"10:00 صباحاً - 6:00 مساءً\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/schedule/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"schedule",
+								""
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Gallery",
+			"item": [
+				{
+					"name": "عرض قائمة الصور",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/gallery/?status=published&sort_by=-uploaded_at&page=1&page_size=12",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"gallery",
+								""
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "published",
+									"description": "draft أو published"
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "البحث في وصف الصور",
+									"disabled": true
+								},
+								{
+									"key": "sort_by",
+									"value": "-uploaded_at",
+									"description": "uploaded_at, -uploaded_at, likes_count, -likes_count"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "page_size",
+									"value": "12"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "إضافة صورة جديدة",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "description",
+									"value": "وصف الصورة",
+									"type": "text"
+								},
+								{
+									"key": "status",
+									"value": "draft",
+									"type": "text",
+									"description": "draft أو published"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/gallery/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"gallery",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "عرض صورة محددة",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/gallery/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"gallery",
+								"1",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "تحديث صورة",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"description\": \"وصف جديد للصورة\",\n    \"status\": \"published\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/gallery/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"gallery",
+								"1",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "حذف صورة",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/gallery/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"gallery",
+								"1",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "الإعجاب بصورة",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_identifier\": \"966501234567\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/gallery/1/like/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"gallery",
+								"1",
+								"like",
+								""
+							]
+						}
+					}
+				},
+				{
+					"name": "إلغاء الإعجاب",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_identifier\": \"966501234567\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/gallery/1/like/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"gallery",
+								"1",
+								"like",
+								""
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Statistics",
+			"item": [
+				{
+					"name": "إحصائيات المحل",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/statistics/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"statistics",
+								""
+							]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		}
+	]
+}
