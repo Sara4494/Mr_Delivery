@@ -23,6 +23,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('user.urls')),
     path('api/', include('gallery.urls')),
+    path('api/', include('shop.urls')),
 ]
 
 # إضافة مسار الملفات الوسائط في وضع التطوير
