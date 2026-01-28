@@ -93,16 +93,27 @@ application = get_wsgi_application()
 
 PythonAnywhere يدعم WebSocket ولكن يحتاج إعداد خاص:
 
-### خيار 1: استخدام WebSocket Support (للمستخدمين المدفوعين)
+### ⚠️ مهم جداً: إعداد WebSocket في Dashboard
 
-1. في **Web** tab، ابحث عن **WebSocket** section
-2. أضف WebSocket URL:
-   - **URL:** `/ws/chat/order/<int:order_id>/`
-   - **Handler:** `mr_delivery.asgi.application`
+1. اذهب إلى **Web** tab في PythonAnywhere Dashboard
+2. ابحث عن قسم **WebSocket** (أسفل الصفحة)
+3. أضف WebSocket URLs التالية:
 
-3. أضف WebSocket آخر:
-   - **URL:** `/ws/orders/shop/<int:shop_owner_id>/`
-   - **Handler:** `mr_delivery.asgi.application`
+**WebSocket 1:**
+- **URL:** `/ws/chat/order/<int:order_id>/`
+- **Handler:** `mr_delivery.asgi.application`
+
+**WebSocket 2:**
+- **URL:** `/ws/orders/shop/<int:shop_owner_id>/`
+- **Handler:** `mr_delivery.asgi.application`
+
+4. اضغط على **Reload** لإعادة تحميل التطبيق
+
+### ملاحظات مهمة:
+
+- **الحساب المجاني:** قد لا يدعم WebSocket. يُنصح بالترقية للحساب المدفوع
+- **URL Pattern:** استخدم `<int:order_id>` وليس `{order_id}` في PythonAnywhere
+- **Handler:** يجب أن يشير إلى `mr_delivery.asgi.application` (تأكد من المسار الصحيح)
 
 ### خيار 2: استخدام Daphne (موصى به)
 

@@ -11,39 +11,45 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     async def connect(self):
         """الاتصال بالـ WebSocket"""
-        self.order_id = self.scope['url_route']['kwargs']['order_id']
-        self.room_group_name = f'chat_order_{self.order_id}'
-        
-        # التحقق من المستخدم من scope (تم التحقق في middleware)
-        user = self.scope.get('user')
-        
-        if not user or not isinstance(user, ShopOwner):
-            await self.close()
-            return
-        
-        # التحقق من وجود الطلب وأنه يخص هذا المحل
-        order_exists = await self.check_order_access(user)
-        if not order_exists:
-            await self.close()
-            return
-        
-        self.user = user
-        self.user_type = 'shop'  # افتراضياً من المحل
-        
-        # الانضمام إلى مجموعة الطلب
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
-        
-        await self.accept()
-        
-        # إرسال رسالة ترحيبية
-        await self.send(text_data=json.dumps({
-            'type': 'connection',
-            'message': 'تم الاتصال بنجاح',
-            'order_id': self.order_id
-        }))
+        try:
+            self.order_id = self.scope['url_route']['kwargs']['order_id']
+            self.room_group_name = f'chat_order_{self.order_id}'
+
+            # التحقق من المستخدم من scope (تم التحقق في middleware)
+            qs = self.scope.get('query_string', b'')
+            user = self.scope.get('user')
+            print(f"[ChatConsumer.connect] order_id={self.order_id} query_string={qs!r} user_type={type(user)} user={getattr(user, 'id', None)}")
+            if not user or not isinstance(user, ShopOwner):
+                # 4401: unauthorized (اصطلاحي في WS apps)
+                await self.close(code=4401)
+                return
+
+            # التحقق من وجود الطلب وأنه يخص هذا المحل
+            order_exists = await self.check_order_access(user)
+            print(f"[ChatConsumer.connect] order_access={order_exists} shop_owner_id={user.id}")
+            if not order_exists:
+                # 4403: forbidden
+                await self.close(code=4403)
+                return
+
+            self.user = user
+            self.user_type = 'shop'  # افتراضياً من المحل
+
+            # الانضمام إلى مجموعة الطلب
+            await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+            await self.accept()
+
+            # إرسال رسالة ترحيبية
+            await self.send(text_data=json.dumps({
+                'type': 'connection',
+                'message': 'تم الاتصال بنجاح',
+                'order_id': self.order_id
+            }))
+        except Exception as e:
+            # يطبع السبب في الـ console بدل connection reset الغامض
+            print(f"[ChatConsumer.connect] error: {e}")
+            # 1011: internal error
+            await self.close(code=1011)
     
     async def disconnect(self, close_code):
         """قطع الاتصال"""
