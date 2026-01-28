@@ -28,6 +28,9 @@ DEBUG = False
 ALLOWED_HOSTS = ['mrdelivery.pythonanywhere.com']
 
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://mrdelivery.pythonanywhere.com",
+]
 
 
 # Application definition
