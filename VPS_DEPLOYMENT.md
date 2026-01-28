@@ -47,22 +47,21 @@ redis-cli ping
 
 ```bash
 # إنشاء مجلد للمشروع
-sudo mkdir -p /var/www/mr_delivery
-sudo chown $USER:$USER /var/www/mr_delivery
+mkdir -p /home/Mr_Delivery
+cd /home/Mr_Delivery
 
 # رفع الملفات (من جهازك المحلي)
 # استخدم scp أو git clone
-scp -r /path/to/Mr_Delivery/* user@86.48.3.103:/var/www/mr_delivery/
+scp -r /path/to/Mr_Delivery/* user@86.48.3.103:/home/Mr_Delivery/
 
 # أو باستخدام Git
-cd /var/www/mr_delivery
 git clone <your-repo-url> .
 ```
 
 ### 4. إعداد Python Virtual Environment
 
 ```bash
-cd /var/www/mr_delivery
+cd /home/Mr_Delivery
 
 # إنشاء virtual environment
 python3 -m venv venv
@@ -88,8 +87,8 @@ DEBUG = False
 ALLOWED_HOSTS = ['86.48.3.103', 'yourdomain.com']  # أضف domain إذا كان متوفر
 
 # إعدادات Media و Static
-STATIC_ROOT = '/var/www/mr_delivery/staticfiles'
-MEDIA_ROOT = '/var/www/mr_delivery/media'
+STATIC_ROOT = '/home/Mr_Delivery/staticfiles'
+MEDIA_ROOT = '/home/Mr_Delivery/media'
 
 # إعدادات Channels للـ VPS
 CHANNEL_LAYERS = {
@@ -124,8 +123,8 @@ python manage.py createsuperuser
 
 ```ini
 [program:mr_delivery_daphne]
-command=/var/www/mr_delivery/venv/bin/daphne -b 127.0.0.1 -p 8000 mr_delivery.asgi:application
-directory=/var/www/mr_delivery
+command=/home/Mr_Delivery/venv/bin/daphne -b 127.0.0.1 -p 8000 mr_delivery.asgi:application
+directory=/home/Mr_Delivery
 user=www-data
 autostart=true
 autorestart=true
@@ -165,12 +164,12 @@ server {
 
     # Static files
     location /static/ {
-        alias /var/www/mr_delivery/staticfiles/;
+        alias /home/Mr_Delivery/staticfiles/;
     }
 
     # Media files
     location /media/ {
-        alias /var/www/mr_delivery/media/;
+        alias /home/Mr_Delivery/media/;
     }
 
     # WebSocket
@@ -289,7 +288,7 @@ sudo supervisorctl status
 ### تحديث المشروع
 
 ```bash
-cd /var/www/mr_delivery
+cd /home/Mr_Delivery
 source venv/bin/activate
 
 # سحب التحديثات
@@ -334,15 +333,15 @@ sudo tail -f /var/log/nginx/error.log
 python manage.py collectstatic --noinput
 
 # تحقق من الصلاحيات
-sudo chown -R www-data:www-data /var/www/mr_delivery/staticfiles
+sudo chown -R www-data:www-data /home/Mr_Delivery/staticfiles
 ```
 
 ### مشكلة: Media files لا تظهر
 
 ```bash
 # تحقق من الصلاحيات
-sudo chown -R www-data:www-data /var/www/mr_delivery/media
-sudo chmod -R 755 /var/www/mr_delivery/media
+sudo chown -R www-data:www-data /home/Mr_Delivery/media
+sudo chmod -R 755 /home/Mr_Delivery/media
 ```
 
 ## ملاحظات مهمة

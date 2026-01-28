@@ -8,7 +8,7 @@ set -e
 echo "🚀 بدء عملية الرفع..."
 
 # متغيرات
-PROJECT_DIR="/var/www/mr_delivery"
+PROJECT_DIR="/home/Mr_Delivery"
 VENV_DIR="$PROJECT_DIR/venv"
 USER="www-data"
 
