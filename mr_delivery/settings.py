@@ -44,8 +44,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'channels',
- 
-
     'rest_framework',
     'rest_framework_simplejwt',
     'user',
@@ -85,11 +83,30 @@ WSGI_APPLICATION = 'mr_delivery.wsgi.application'
 ASGI_APPLICATION = 'mr_delivery.asgi.application'
 
 # Channels settings
+# للتطوير المحلي بدون Redis، استخدم InMemoryChannelLayer:
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels.layers.InMemoryChannelLayer',
+#     },
+# }
+
+# للتطوير المحلي مع Redis:
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
+#         'CONFIG': {
+#             "hosts": [('127.0.0.1', 6379)],
+#         },
+#     },
+# }
+
+# لـ PythonAnywhere (استخدم هذا عند الرفع):
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],
+            "hosts": [('redis.pythonanywhere.com', 6379)],
+            # "password": "your-redis-password",  # أضف إذا كان مطلوباً
         },
     },
 }

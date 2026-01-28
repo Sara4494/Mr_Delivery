@@ -11,13 +11,34 @@
 pip install channels channels-redis daphne redis
 ```
 
-2. تشغيل Redis Server:
+2. تشغيل Redis Server (اختر طريقة واحدة):
+
+**الطريقة الأولى: تثبيت Redis مباشرة (موصى به)**
 ```bash
 # Windows (باستخدام Chocolatey)
 choco install redis-64
 
-# أو استخدام Docker
+# أو تحميل من الموقع الرسمي
+# https://github.com/microsoftarchive/redis/releases
+
+# بعد التثبيت، تشغيل Redis:
+redis-server
+```
+
+**الطريقة الثانية: استخدام Docker (اختياري)**
+```bash
 docker run -p 6379:6379 redis:latest
+```
+
+**الطريقة الثالثة: استخدام In-Memory Channel Layer (للتطوير فقط)**
+يمكنك استخدام In-Memory بدلاً من Redis للتطوير المحلي فقط (غير مناسب للإنتاج):
+```python
+# في settings.py
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 ```
 
 3. تشغيل الخادم باستخدام Daphne بدلاً من runserver:
@@ -300,11 +321,20 @@ asyncio.run(chat_client())
 
 ## ملاحظات
 
-1. **Redis مطلوب:** يجب تشغيل Redis Server للـ Channel Layers
+1. **Channel Layers:**
+   - للتطوير المحلي: يمكن استخدام `InMemoryChannelLayer` بدون Redis أو Docker
+   - للإنتاج: يُنصح باستخدام Redis مع `RedisChannelLayer`
+   - لتغيير الإعدادات، عدّل `CHANNEL_LAYERS` في `settings.py`
+
 2. **Daphne:** يجب استخدام Daphne بدلاً من runserver لتشغيل WebSocket
+
 3. **التوكن:** يجب استخدام Access Token وليس Refresh Token
+
 4. **الرسائل:** الرسائل يتم حفظها تلقائياً في قاعدة البيانات
+
 5. **المجموعات:** كل طلب له مجموعة WebSocket منفصلة
+
+6. **Docker:** Docker اختياري - يمكن تثبيت Redis مباشرة أو استخدام In-Memory للتطوير
 
 ## استكشاف الأخطاء
 
