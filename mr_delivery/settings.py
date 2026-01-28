@@ -23,9 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-ks(3+a!y^q!)8ui6apqlqk0@a7i7k_!7k2)l1bdmf%n(6ekv0j'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
-ALLOWED_HOSTS = ['mrdelivery.pythonanywhere.com']
+ALLOWED_HOSTS = ['mrdelivery.pythonanywhere.com', '86.48.3.103', 'localhost', '127.0.0.1']
 
 
 CSRF_TRUSTED_ORIGINS = [
@@ -83,33 +83,46 @@ WSGI_APPLICATION = 'mr_delivery.wsgi.application'
 ASGI_APPLICATION = 'mr_delivery.asgi.application'
 
 # Channels settings
-# للتطوير المحلي بدون Redis، استخدم InMemoryChannelLayer:
-# CHANNEL_LAYERS = {
-#     'default': {
-#         'BACKEND': 'channels.layers.InMemoryChannelLayer',
-#     },
-# }
+# IMPORTANT:
+# - محليًا (بدون Redis): استخدم InMemoryChannelLayer
+# - على السيرفر: استخدم RedisChannelLayer عبر متغيرات البيئة
+#
+# لتشغيل Redis محليًا:
+# set REDIS_URL=redis://127.0.0.1:6379/0
+# أو على Linux/macOS:
+# export REDIS_URL=redis://127.0.0.1:6379/0
+#
+# على PythonAnywhere (مدفوع عادة): استخدم REDIS_URL التي يوفرها لك PythonAnywhere.
 
-# للتطوير المحلي مع Redis:
-# CHANNEL_LAYERS = {
-#     'default': {
-#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
-#         'CONFIG': {
-#             "hosts": [('127.0.0.1', 6379)],
-#         },
-#     },
-# }
+REDIS_URL = os.environ.get("REDIS_URL", "").strip()
 
-# لـ PythonAnywhere (استخدم هذا عند الرفع):
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [('redis.pythonanywhere.com', 6379)],
-            # "password": "your-redis-password",  # أضف إذا كان مطلوباً
+if REDIS_URL:
+    # استخدام Redis من متغير البيئة (للسيرفر)
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_URL],
+            },
         },
-    },
-}
+    }
+elif os.environ.get('DJANGO_ENV') == 'production' or '86.48.3.103' in ALLOWED_HOSTS:
+    # على VPS: استخدام Redis محلي
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                "hosts": [('127.0.0.1', 6379)],
+            },
+        },
+    }
+else:
+    # محليًا: استخدام InMemory
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 
 # Database
