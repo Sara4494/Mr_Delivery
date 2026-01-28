@@ -13,7 +13,6 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
         """
         إنشاء token مع shop_owner_id
         """
-<<<<<<< HEAD
         token = RefreshToken()
         token['shop_owner_id'] = shop_owner.id
         token['shop_number'] = shop_owner.shop_number
@@ -21,13 +20,6 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
         token['shop_category_id'] = shop_owner.shop_category_id
         token['shop_category_name'] = shop_owner.shop_category.name if shop_owner.shop_category else None
         return token
-=======
-        token = RefreshToken()
-        token['shop_owner_id'] = shop_owner.id
-        token['shop_number'] = shop_owner.shop_number
-        token['shop_name'] = shop_owner.shop_name
-        return token
->>>>>>> 4e65025 (feat: Implement gallery management features for shop owners)
     
     def validate(self, attrs):
         """
@@ -53,7 +45,6 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
         return {
             'refresh': str(refresh),
             'access': str(refresh.access_token),
-<<<<<<< HEAD
             'shop_owner': {
                 'id': shop_owner.id,
                 'owner_name': shop_owner.owner_name,
@@ -63,12 +54,3 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
                 'shop_category_name': shop_owner.shop_category.name if shop_owner.shop_category else None,
             }
         }
-=======
-            'shop_owner': {
-                'id': shop_owner.id,
-                'owner_name': shop_owner.owner_name,
-                'shop_name': shop_owner.shop_name,
-                'shop_number': shop_owner.shop_number,
-            }
-        }
->>>>>>> 4e65025 (feat: Implement gallery management features for shop owners)

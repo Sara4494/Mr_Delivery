@@ -4,7 +4,6 @@ from . import views
 app_name = 'user'
 
 urlpatterns = [
-<<<<<<< HEAD
     # Legacy endpoints (للتوافق مع الكود القديم)
     path('shop/login/', views.ShopOwnerTokenObtainPairView.as_view(), name='shop_login'),
     path('shop/token/refresh/', views.ShopOwnerTokenRefreshView.as_view(), name='token_refresh'),
@@ -20,8 +19,3 @@ urlpatterns = [
     # استعادة كلمة المرور
     path('auth/password-reset/', views.reset_password_view, name='reset_password'),
 ]
-=======
-    path('shop/login/', views.ShopOwnerTokenObtainPairView.as_view(), name='shop_login'),
-    path('shop/token/refresh/', views.ShopOwnerTokenRefreshView.as_view(), name='token_refresh'),
-]
->>>>>>> 4e65025 (feat: Implement gallery management features for shop owners)

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -9,16 +8,6 @@ from .token_serializers import ShopOwnerTokenObtainPairSerializer
 from .models import ShopOwner
 from .utils import success_response, error_response, t, localize_message
 from .otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
-=======
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .token_serializers import ShopOwnerTokenObtainPairSerializer
-from .models import ShopOwner
-from .utils import success_response, error_response
->>>>>>> 4e65025 (feat: Implement gallery management features for shop owners)
 
 
 class ShopOwnerTokenObtainPairView(TokenObtainPairView):
@@ -40,22 +29,14 @@ class ShopOwnerTokenObtainPairView(TokenObtainPairView):
         except Exception as e:
             errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
             return error_response(
-<<<<<<< HEAD
                 message=t(request, 'login_failed'),
-=======
-                message='فشل تسجيل الدخول',
->>>>>>> 4e65025 (feat: Implement gallery management features for shop owners)
                 errors=errors,
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
         return success_response(
             data=serializer.validated_data,
-<<<<<<< HEAD
             message=t(request, 'login_successful'),
-=======
-            message='تم تسجيل الدخول بنجاح',
->>>>>>> 4e65025 (feat: Implement gallery management features for shop owners)
             status_code=status.HTTP_200_OK
         )
 
@@ -77,18 +58,13 @@ class ShopOwnerTokenRefreshView(TokenRefreshView):
         except Exception as e:
             errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
             return error_response(
-<<<<<<< HEAD
                 message=t(request, 'token_refresh_failed'),
-=======
-                message='فشل تحديث Token',
->>>>>>> 4e65025 (feat: Implement gallery management features for shop owners)
                 errors=errors,
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
         return success_response(
             data=serializer.validated_data,
-<<<<<<< HEAD
             message=t(request, 'token_refreshed_successfully'),
             status_code=status.HTTP_200_OK
         )
@@ -725,10 +701,3 @@ def reset_password_view(request):
     return success_response(
         message=t(request, 'password_changed_successfully')
     )
-=======
-            message='تم تحديث Token بنجاح',
-            status_code=status.HTTP_200_OK
-        )
-
- 
->>>>>>> 4e65025 (feat: Implement gallery management features for shop owners)
