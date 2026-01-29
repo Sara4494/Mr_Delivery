@@ -4,9 +4,8 @@ from . import views
 app_name = 'gallery'
 
 urlpatterns = [
-    # Profile
+    # Profile (عرض + تحديث البيانات وصورة البروفيل - الأونر فقط)
     path('shop/profile/', views.shop_profile_view, name='shop_profile'),
-    path('shop/profile/image/', views.shop_profile_image_view, name='shop_profile_image'),
     
     # Work Schedule
     path('shop/schedule/', views.work_schedule_view, name='work_schedule'),

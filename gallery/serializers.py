@@ -95,11 +95,12 @@ class ShopProfileSerializer(serializers.ModelSerializer):
 
 
 class ShopProfileUpdateSerializer(serializers.ModelSerializer):
-    """Serializer لتحديث ملف صاحب المحل (بدون صورة البروفيل)"""
-    
+    """Serializer لتحديث ملف صاحب المحل (البيانات + صورة البروفيل في endpoint واحد)"""
+    profile_image = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = ShopOwner
-        fields = ['owner_name', 'shop_name']
+        fields = ['owner_name', 'shop_name', 'profile_image']
 
 
 class ImageLikeSerializer(serializers.Serializer):

@@ -16,6 +16,7 @@ from .serializers import (
 )
 from user.models import ShopOwner
 from user.authentication import ShopOwnerJWTAuthentication
+from user.permissions import IsShopOwner
 from user.utils import success_response, error_response
 
 
@@ -44,16 +45,18 @@ class GalleryPagination(PageNumberPagination):
         return Response(response_data, status=status.HTTP_200_OK)
 
 
-@api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@api_view(['GET', 'PUT', 'PATCH'])
+@permission_classes([IsAuthenticated, IsShopOwner])
 def shop_profile_view(request):
     """
-    عرض وتحديث ملف صاحب المحل
+    عرض وتحديث ملف صاحب المحل (البيانات + صورة البروفيل في endpoint واحد).
+    الأونر فقط يقدر يعدّل عليه.
     GET /api/shop/profile/ - عرض الملف الشخصي
-    PUT /api/shop/profile/ - تحديث الملف الشخصي (بدون صورة البروفيل)
+    PUT/PATCH /api/shop/profile/ - تحديث الملف الشخصي (owner_name, shop_name، و/أو profile_image)
+    Body: application/json { "owner_name", "shop_name" } أو multipart/form-data مع profile_image (اختياري)
     """
     shop_owner = request.user
-    
+
     if request.method == 'GET':
         serializer = ShopProfileSerializer(shop_owner, context={'request': request})
         return success_response(
@@ -61,13 +64,12 @@ def shop_profile_view(request):
             message='تم جلب الملف الشخصي بنجاح',
             status_code=status.HTTP_200_OK
         )
-    
-    elif request.method == 'PUT':
-        # إزالة profile_image من البيانات لأن له endpoint منفصل
+
+    elif request.method in ('PUT', 'PATCH'):
         data = request.data.copy()
-        if 'profile_image' in data:
-            data.pop('profile_image')
-        
+        if request.FILES.get('profile_image'):
+            data['profile_image'] = request.FILES['profile_image']
+
         serializer = ShopProfileUpdateSerializer(shop_owner, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -82,35 +84,6 @@ def shop_profile_view(request):
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
-
-
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
-def shop_profile_image_view(request):
-    """
-    تحديث صورة البروفيل فقط
-    PUT /api/shop/profile/image/
-    Body (multipart/form-data): {
-        "profile_image": [file]
-    }
-    """
-    shop_owner = request.user
-    
-    if 'profile_image' not in request.data:
-        return error_response(
-            message='صورة البروفيل مطلوبة',
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
-    
-    shop_owner.profile_image = request.data['profile_image']
-    shop_owner.save()
-    
-    profile_serializer = ShopProfileSerializer(shop_owner, context={'request': request})
-    return success_response(
-        data=profile_serializer.data,
-        message='تم تحديث صورة البروفيل بنجاح',
-        status_code=status.HTTP_200_OK
-    )
 
 
 @api_view(['GET', 'PUT'])
