@@ -115,40 +115,7 @@
 					}
 				},
 				{
-					"name": "تحديث الملف الشخصي",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}",
-								"type": "text"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"owner_name\": \"سارة أحمد المالكي\",\n    \"shop_name\": \"مصور فوتوغرافي محترف\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/shop/profile/",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"shop",
-								"profile",
-								""
-							]
-						}
-					}
-				},
-				{
-					"name": "تحديث صورة البروفيل",
+					"name": "تحديث الملف الشخصي (بيانات + صورة - الأونر فقط)",
 					"request": {
 						"method": "PUT",
 						"header": [
@@ -162,14 +129,27 @@
 							"mode": "formdata",
 							"formdata": [
 								{
+									"key": "owner_name",
+									"value": "سارة أحمد المالكي",
+									"type": "text",
+									"description": "اسم صاحب المحل"
+								},
+								{
+									"key": "shop_name",
+									"value": "مصور فوتوغرافي محترف",
+									"type": "text",
+									"description": "اسم المحل"
+								},
+								{
 									"key": "profile_image",
 									"type": "file",
-									"src": []
+									"src": [],
+									"description": "صورة البروفيل (اختياري)"
 								}
 							]
 						},
 						"url": {
-							"raw": "{{base_url}}/api/shop/profile/image/",
+							"raw": "{{base_url}}/api/shop/profile/",
 							"host": [
 								"{{base_url}}"
 							],
@@ -177,10 +157,10 @@
 								"api",
 								"shop",
 								"profile",
-								"image",
 								""
 							]
-						}
+						},
+						"description": "تحديث الملف الشخصي في endpoint واحد: owner_name، shop_name، و/أو profile_image. الأونر فقط يقدر يعدّل. يمكن إرسال application/json بدل formdata لتحديث النصوص فقط."
 					}
 				}
 			]
