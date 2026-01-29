@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from .models import ShopStatus, Customer, Driver, Order, ChatMessage, Invoice
+from .models import ShopStatus, Customer, Driver, Order, ChatMessage, Invoice, Employee
 from user.models import ShopOwner
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class ShopStatusSerializer(serializers.ModelSerializer):
@@ -82,7 +83,7 @@ class DriverSerializer(serializers.ModelSerializer):
     class Meta:
         model = Driver
         fields = ['id', 'name', 'phone_number', 'profile_image', 'profile_image_url',
-                  'status', 'status_display', 'current_orders_count', 'created_at', 'updated_at']
+                  'status', 'status_display', 'current_orders_count', 'rating', 'total_rides', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_profile_image_url(self, obj):
@@ -97,15 +98,21 @@ class DriverSerializer(serializers.ModelSerializer):
 
 class DriverCreateSerializer(serializers.ModelSerializer):
     """Serializer لإنشاء سائق جديد"""
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     
     class Meta:
         model = Driver
-        fields = ['name', 'phone_number', 'profile_image', 'status']
+        fields = ['name', 'phone_number', 'password', 'profile_image', 'status']
     
     def create(self, validated_data):
         """إنشاء سائق جديد"""
         shop_owner = self.context['shop_owner']
-        return Driver.objects.create(shop_owner=shop_owner, **validated_data)
+        password = validated_data.pop('password', None)
+        driver = Driver.objects.create(shop_owner=shop_owner, **validated_data)
+        if password:
+            driver.set_password(password)
+            driver.save()
+        return driver
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
@@ -248,3 +255,178 @@ class InvoiceCreateSerializer(serializers.Serializer):
     items = serializers.CharField(required=True)
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=True)
     delivery = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+
+# Employee Serializers
+class EmployeeSerializer(serializers.ModelSerializer):
+    """Serializer للموظف"""
+    profile_image_url = serializers.SerializerMethodField()
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+    total_orders_count = serializers.SerializerMethodField()
+    total_amount = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Employee
+        fields = ['id', 'name', 'phone_number', 'role', 'role_display', 'profile_image', 'profile_image_url',
+                  'total_orders_count', 'total_amount', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'total_orders_count', 'total_amount']
+    
+    def get_profile_image_url(self, obj):
+        """إرجاع رابط صورة الموظف الكامل"""
+        if obj.profile_image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.profile_image.url)
+            return obj.profile_image.url
+        return None
+    
+    def get_total_orders_count(self, obj):
+        """عدد الطلبات التي تعامل معها الموظف"""
+        # يمكن حسابها من Order.employee إذا أضفنا relation لاحقاً
+        return obj.total_orders_count
+    
+    def get_total_amount(self, obj):
+        """إجمالي المبلغ في العهدة"""
+        # يمكن حسابها من Order.employee إذا أضفنا relation لاحقاً
+        return float(obj.total_amount)
+
+
+class EmployeeCreateSerializer(serializers.ModelSerializer):
+    """Serializer لإنشاء موظف جديد"""
+    password = serializers.CharField(write_only=True, required=True)
+    
+    class Meta:
+        model = Employee
+        fields = ['name', 'phone_number', 'password', 'role', 'profile_image']
+    
+    def create(self, validated_data):
+        """إنشاء موظف جديد"""
+        shop_owner = self.context['shop_owner']
+        password = validated_data.pop('password')
+        employee = Employee.objects.create(shop_owner=shop_owner, **validated_data)
+        employee.set_password(password)
+        employee.save()
+        return employee
+
+
+class EmployeeUpdateSerializer(serializers.ModelSerializer):
+    """Serializer لتحديث موظف"""
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    
+    class Meta:
+        model = Employee
+        fields = ['name', 'phone_number', 'password', 'role', 'profile_image', 'is_active']
+    
+    def update(self, instance, validated_data):
+        """تحديث بيانات الموظف"""
+        password = validated_data.pop('password', None)
+        if password:
+            instance.set_password(password)
+        return super().update(instance, validated_data)
+
+
+# Employee Login Serializers
+class EmployeeTokenObtainPairSerializer(serializers.Serializer):
+    """Custom Token Serializer للموظف"""
+    phone_number = serializers.CharField(required=True)
+    password = serializers.CharField(required=True, write_only=True)
+    
+    @classmethod
+    def get_token(cls, employee):
+        """
+        إنشاء token مع employee_id
+        """
+        token = RefreshToken()
+        token['employee_id'] = employee.id
+        token['phone_number'] = employee.phone_number
+        token['role'] = employee.role
+        token['shop_owner_id'] = employee.shop_owner.id
+        token['user_type'] = 'employee'
+        return token
+    
+    def validate(self, attrs):
+        """
+        التحقق من بيانات تسجيل الدخول وإرجاع token
+        """
+        phone_number = attrs.get('phone_number')
+        password = attrs.get('password')
+        
+        try:
+            employee = Employee.objects.get(phone_number=phone_number, is_active=True)
+        except Employee.DoesNotExist:
+            raise serializers.ValidationError({
+                'phone_number': 'رقم الهاتف غير صحيح أو الحساب غير نشط'
+            })
+        
+        if not employee.check_password(password):
+            raise serializers.ValidationError({
+                'password': 'كلمة المرور غير صحيحة'
+            })
+        
+        refresh = self.get_token(employee)
+        
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'employee': {
+                'id': employee.id,
+                'name': employee.name,
+                'phone_number': employee.phone_number,
+                'role': employee.role,
+                'role_display': employee.get_role_display(),
+                'shop_owner_id': employee.shop_owner.id,
+            }
+        }
+
+
+# Driver Login Serializers
+class DriverTokenObtainPairSerializer(serializers.Serializer):
+    """Custom Token Serializer للسائق"""
+    phone_number = serializers.CharField(required=True)
+    password = serializers.CharField(required=True, write_only=True)
+    
+    @classmethod
+    def get_token(cls, driver):
+        """
+        إنشاء token مع driver_id
+        """
+        token = RefreshToken()
+        token['driver_id'] = driver.id
+        token['phone_number'] = driver.phone_number
+        token['shop_owner_id'] = driver.shop_owner.id
+        token['user_type'] = 'driver'
+        return token
+    
+    def validate(self, attrs):
+        """
+        التحقق من بيانات تسجيل الدخول وإرجاع token
+        """
+        phone_number = attrs.get('phone_number')
+        password = attrs.get('password')
+        
+        try:
+            driver = Driver.objects.get(phone_number=phone_number)
+        except Driver.DoesNotExist:
+            raise serializers.ValidationError({
+                'phone_number': 'رقم الهاتف غير صحيح'
+            })
+        
+        if not driver.password or not driver.check_password(password):
+            raise serializers.ValidationError({
+                'password': 'كلمة المرور غير صحيحة أو غير معينة'
+            })
+        
+        refresh = self.get_token(driver)
+        
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'driver': {
+                'id': driver.id,
+                'name': driver.name,
+                'phone_number': driver.phone_number,
+                'status': driver.status,
+                'status_display': driver.get_status_display(),
+                'shop_owner_id': driver.shop_owner.id,
+            }
+        }

@@ -46,6 +46,77 @@ class Customer(models.Model):
         return f"{self.name} - {self.phone_number}"
 
 
+class Employee(models.Model):
+    """نموذج الموظف"""
+    ROLE_CHOICES = [
+        ('cashier', 'كاشير'),
+        ('accountant', 'محاسب'),
+        ('supervisor', 'مشرف عمليات'),
+        ('customer_service', 'خدمة عملاء'),
+        ('sales', 'مندوب مبيعات'),
+        ('hr', 'موارد بشرية'),
+        ('manager', 'مدير فرع'),
+    ]
+    
+    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='employees', verbose_name="صاحب المحل")
+    name = models.CharField(max_length=100, verbose_name="اسم الموظف")
+    phone_number = models.CharField(max_length=20, verbose_name="رقم الهاتف")
+    password = models.CharField(max_length=128, verbose_name="كلمة المرور")
+    role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='cashier', verbose_name="الدور")
+    profile_image = models.ImageField(upload_to='employee_profiles/', blank=True, null=True, verbose_name="صورة الموظف")
+    is_active = models.BooleanField(default=True, verbose_name="نشط")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "موظف"
+        verbose_name_plural = "الموظفين"
+        unique_together = ['shop_owner', 'phone_number']  # نفس الرقم لا يمكن أن يكون لموظفين مختلفين لنفس المحل
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['shop_owner', 'role']),
+            models.Index(fields=['shop_owner', 'is_active']),
+        ]
+
+    def set_password(self, raw_password):
+        """تشفير كلمة المرور"""
+        from django.contrib.auth.hashers import make_password
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        """التحقق من كلمة المرور"""
+        from django.contrib.auth.hashers import check_password
+        return check_password(raw_password, self.password)
+
+    def save(self, *args, **kwargs):
+        """تشفير كلمة المرور تلقائياً عند الحفظ"""
+        from django.contrib.auth.hashers import make_password
+        if not self.pk or 'password' in kwargs.get('update_fields', []):
+            if not self.password.startswith('pbkdf2_'):
+                self.password = make_password(self.password)
+        super().save(*args, **kwargs)
+    
+    @property
+    def is_authenticated(self):
+        """للتوافق مع Django authentication"""
+        return True
+    
+    @property
+    def total_orders_count(self):
+        """عدد الطلبات التي تعامل معها الموظف (يمكن حسابها من Orders)"""
+        # يمكن إضافة relation لاحقاً أو حسابها من Order.employee
+        return 0
+    
+    @property
+    def total_amount(self):
+        """إجمالي المبلغ في العهدة (يمكن حسابها من Orders)"""
+        # يمكن إضافة relation لاحقاً أو حسابها من Order.employee
+        return 0
+
+    def __str__(self):
+        return f"{self.name} - {self.get_role_display()} ({self.phone_number})"
+
+
 class Driver(models.Model):
     """نموذج السائق"""
     STATUS_CHOICES = [
@@ -57,19 +128,48 @@ class Driver(models.Model):
     shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='drivers', verbose_name="صاحب المحل")
     name = models.CharField(max_length=100, verbose_name="اسم السائق")
     phone_number = models.CharField(max_length=20, verbose_name="رقم الهاتف")
+    password = models.CharField(max_length=128, verbose_name="كلمة المرور", blank=True, null=True)  # إضافة password للسائق
     profile_image = models.ImageField(upload_to='driver_profiles/', blank=True, null=True, verbose_name="صورة السائق")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='offline', verbose_name="الحالة")
     current_orders_count = models.IntegerField(default=0, verbose_name="عدد الطلبات الحالية")
+    rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0, verbose_name="التقييم")  # إضافة rating
+    total_rides = models.IntegerField(default=0, verbose_name="إجمالي الرحلات")  # إضافة total_rides
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
 
     class Meta:
         verbose_name = "سائق"
         verbose_name_plural = "السائقين"
+        unique_together = ['shop_owner', 'phone_number']  # إضافة unique constraint
         ordering = ['-updated_at']
         indexes = [
             models.Index(fields=['shop_owner', 'status']),
         ]
+
+    def set_password(self, raw_password):
+        """تشفير كلمة المرور"""
+        from django.contrib.auth.hashers import make_password
+        if raw_password:
+            self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        """التحقق من كلمة المرور"""
+        from django.contrib.auth.hashers import check_password
+        if not self.password:
+            return False
+        return check_password(raw_password, self.password)
+
+    def save(self, *args, **kwargs):
+        """تشفير كلمة المرور تلقائياً عند الحفظ"""
+        from django.contrib.auth.hashers import make_password
+        if self.password and not self.password.startswith('pbkdf2_'):
+            self.password = make_password(self.password)
+        super().save(*args, **kwargs)
+    
+    @property
+    def is_authenticated(self):
+        """للتوافق مع Django authentication"""
+        return True
 
     def __str__(self):
         return f"{self.name} - {self.get_status_display()}"

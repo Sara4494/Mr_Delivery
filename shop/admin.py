@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ShopStatus, Customer, Driver, Order, ChatMessage, Invoice
+from .models import ShopStatus, Customer, Driver, Order, ChatMessage, Invoice, Employee
 
 
 @admin.register(ShopStatus)
@@ -65,3 +65,29 @@ class InvoiceAdmin(admin.ModelAdmin):
     list_filter = ('is_sent', 'created_at')
     search_fields = ('invoice_number', 'customer__name', 'phone_number')
     readonly_fields = ('invoice_number', 'sent_at', 'created_at')
+
+
+@admin.register(Employee)
+class EmployeeAdmin(admin.ModelAdmin):
+    """إدارة الموظفين"""
+    list_display = ('name', 'phone_number', 'shop_owner', 'role', 'is_active', 'created_at')
+    list_filter = ('role', 'is_active', 'created_at')
+    search_fields = ('name', 'phone_number', 'shop_owner__shop_name')
+    readonly_fields = ('created_at', 'updated_at')
+    fieldsets = (
+        ('معلومات أساسية', {
+            'fields': ('shop_owner', 'name', 'phone_number', 'role', 'profile_image')
+        }),
+        ('الأمان', {
+            'fields': ('password', 'is_active')
+        }),
+        ('معلومات إضافية', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+    def save_model(self, request, obj, form, change):
+        """تشفير كلمة المرور عند الحفظ من الـ Admin"""
+        if 'password' in form.changed_data:
+            obj.set_password(obj.password)
+        super().save_model(request, obj, form, change)

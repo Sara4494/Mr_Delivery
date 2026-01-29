@@ -1,12 +1,12 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q, Count, Sum, F
 from django.utils import timezone
 from datetime import timedelta
-from .models import ShopStatus, Customer, Driver, Order, ChatMessage, Invoice
+from .models import ShopStatus, Customer, Driver, Order, ChatMessage, Invoice, Employee
 from .serializers import (
     ShopStatusSerializer,
     CustomerSerializer,
@@ -17,7 +17,12 @@ from .serializers import (
     OrderCreateSerializer,
     ChatMessageSerializer,
     InvoiceSerializer,
-    InvoiceCreateSerializer
+    InvoiceCreateSerializer,
+    EmployeeSerializer,
+    EmployeeCreateSerializer,
+    EmployeeUpdateSerializer,
+    EmployeeTokenObtainPairSerializer,
+    DriverTokenObtainPairSerializer
 )
 from user.models import ShopOwner
 from user.utils import success_response, error_response
@@ -712,5 +717,194 @@ def shop_dashboard_statistics_view(request):
     return success_response(
         data=statistics,
         message='تم جلب الإحصائيات بنجاح',
+        status_code=status.HTTP_200_OK
+    )
+
+
+# Employee APIs
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def employee_list_view(request):
+    """
+    عرض قائمة الموظفين وإضافة موظف جديد
+    GET /api/shop/employees/ - عرض قائمة الموظفين
+    POST /api/shop/employees/ - إضافة موظف جديد
+    """
+    shop_owner = request.user
+    
+    if request.method == 'GET':
+        role_filter = request.query_params.get('role')
+        queryset = Employee.objects.filter(shop_owner=shop_owner)
+        
+        if role_filter:
+            queryset = queryset.filter(role=role_filter)
+        
+        serializer = EmployeeSerializer(queryset, many=True, context={'request': request})
+        return success_response(
+            data=serializer.data,
+            message='تم جلب الموظفين بنجاح',
+            status_code=status.HTTP_200_OK
+        )
+    
+    elif request.method == 'POST':
+        serializer = EmployeeCreateSerializer(
+            data=request.data,
+            context={'shop_owner': shop_owner, 'request': request}
+        )
+        if serializer.is_valid():
+            employee = serializer.save()
+            response_serializer = EmployeeSerializer(employee, context={'request': request})
+            return success_response(
+                data=response_serializer.data,
+                message='تم إضافة الموظف بنجاح',
+                status_code=status.HTTP_201_CREATED
+            )
+        return error_response(
+            message='بيانات غير صحيحة',
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def employee_detail_view(request, employee_id):
+    """
+    عرض، تحديث، أو حذف موظف
+    GET /api/shop/employees/{id}/ - عرض موظف
+    PUT /api/shop/employees/{id}/ - تحديث موظف
+    DELETE /api/shop/employees/{id}/ - حذف موظف
+    """
+    shop_owner = request.user
+    
+    try:
+        employee = Employee.objects.get(id=employee_id, shop_owner=shop_owner)
+    except Employee.DoesNotExist:
+        return error_response(
+            message='الموظف غير موجود',
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+    
+    if request.method == 'GET':
+        serializer = EmployeeSerializer(employee, context={'request': request})
+        return success_response(
+            data=serializer.data,
+            message='تم جلب بيانات الموظف بنجاح',
+            status_code=status.HTTP_200_OK
+        )
+    
+    elif request.method == 'PUT':
+        serializer = EmployeeUpdateSerializer(employee, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            response_serializer = EmployeeSerializer(employee, context={'request': request})
+            return success_response(
+                data=response_serializer.data,
+                message='تم تحديث بيانات الموظف بنجاح',
+                status_code=status.HTTP_200_OK
+            )
+        return error_response(
+            message='بيانات غير صحيحة',
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    elif request.method == 'DELETE':
+        employee.delete()
+        return success_response(
+            message='تم حذف الموظف بنجاح',
+            status_code=status.HTTP_200_OK
+        )
+
+
+# Employee Statistics API
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def employee_statistics_view(request):
+    """
+    إحصائيات الموظفين
+    GET /api/shop/employees/statistics/
+    """
+    shop_owner = request.user
+    
+    total_employees = Employee.objects.filter(shop_owner=shop_owner).count()
+    active_employees = Employee.objects.filter(shop_owner=shop_owner, is_active=True).count()
+    
+    # الموظفين حسب الدور
+    employees_by_role = Employee.objects.filter(shop_owner=shop_owner).values('role').annotate(
+        count=Count('id')
+    )
+    
+    statistics = {
+        'total_employees': total_employees,
+        'active_employees': active_employees,
+        'employees_by_role': {item['role']: item['count'] for item in employees_by_role}
+    }
+    
+    return success_response(
+        data=statistics,
+        message='تم جلب إحصائيات الموظفين بنجاح',
+        status_code=status.HTTP_200_OK
+    )
+
+
+# Employee Login View
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def employee_login_view(request):
+    """
+    تسجيل دخول الموظف وإرجاع JWT Token
+    POST /api/employee/login/
+    Body: {
+        "phone_number": "رقم الهاتف",
+        "password": "كلمة المرور"
+    }
+    """
+    serializer = EmployeeTokenObtainPairSerializer(data=request.data)
+    
+    try:
+        serializer.is_valid(raise_exception=True)
+    except Exception as e:
+        errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
+        return error_response(
+            message='فشل تسجيل الدخول',
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    return success_response(
+        data=serializer.validated_data,
+        message='تم تسجيل الدخول بنجاح',
+        status_code=status.HTTP_200_OK
+    )
+
+
+# Driver Login View
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def driver_login_view(request):
+    """
+    تسجيل دخول السائق وإرجاع JWT Token
+    POST /api/driver/login/
+    Body: {
+        "phone_number": "رقم الهاتف",
+        "password": "كلمة المرور"
+    }
+    """
+    serializer = DriverTokenObtainPairSerializer(data=request.data)
+    
+    try:
+        serializer.is_valid(raise_exception=True)
+    except Exception as e:
+        errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
+        return error_response(
+            message='فشل تسجيل الدخول',
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    return success_response(
+        data=serializer.validated_data,
+        message='تم تسجيل الدخول بنجاح',
         status_code=status.HTTP_200_OK
     )

@@ -15,6 +15,11 @@ urlpatterns = [
     path('shop/drivers/', views.driver_list_view, name='driver_list'),
     path('shop/drivers/<int:driver_id>/', views.driver_detail_view, name='driver_detail'),
     
+    # Employees
+    path('shop/employees/', views.employee_list_view, name='employee_list'),
+    path('shop/employees/<int:employee_id>/', views.employee_detail_view, name='employee_detail'),
+    path('shop/employees/statistics/', views.employee_statistics_view, name='employee_statistics'),
+    
     # Orders
     path('shop/orders/', views.order_list_view, name='order_list'),
     path('shop/orders/<int:order_id>/', views.order_detail_view, name='order_detail'),
@@ -27,4 +32,8 @@ urlpatterns = [
     
     # Dashboard Statistics
     path('shop/dashboard/statistics/', views.shop_dashboard_statistics_view, name='dashboard_statistics'),
+    
+    # Login APIs
+    path('employee/login/', views.employee_login_view, name='employee_login'),
+    path('driver/login/', views.driver_login_view, name='driver_login'),
 ]

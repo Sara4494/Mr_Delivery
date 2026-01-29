@@ -535,6 +535,420 @@
 					}
 				}
 			]
+		},
+		{
+			"name": "تسجيل دخول الموظف والسائق",
+			"item": [
+				{
+					"name": "تسجيل دخول الموظف",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/employee/login/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"employee",
+								"login",
+								""
+							]
+						},
+						"description": "تسجيل دخول الموظف - يرجع access و refresh token"
+					}
+				},
+				{
+					"name": "تسجيل دخول السائق",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/driver/login/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"driver",
+								"login",
+								""
+							]
+						},
+						"description": "تسجيل دخول السائق - يرجع access و refresh token"
+					}
+				}
+			]
+		},
+		{
+			"name": "الموظفين (صاحب المحل)",
+			"item": [
+				{
+					"name": "عرض قائمة الموظفين",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/employees/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"employees",
+								""
+							],
+							"query": [
+								{
+									"key": "role",
+									"value": "cashier",
+									"description": "اختياري: cashier, accountant, manager",
+									"disabled": true
+								}
+							]
+						},
+						"description": "عرض جميع الموظفين - يتطلب توكين صاحب المحل"
+					}
+				},
+				{
+					"name": "إنشاء موظف",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"موظف تجريبي\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\",\n    \"role\": \"cashier\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/employees/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"employees",
+								""
+							]
+						},
+						"description": "إنشاء موظف جديد - role: cashier, accountant, manager"
+					}
+				},
+				{
+					"name": "عرض تفاصيل موظف",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/employees/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"employees",
+								"1",
+								""
+							]
+						},
+						"description": "عرض تفاصيل موظف - غيّري 1 إلى id الموظف"
+					}
+				},
+				{
+					"name": "تحديث موظف",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"موظف محدث\",\n    \"phone_number\": \"01000000000\",\n    \"role\": \"accountant\",\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/employees/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"employees",
+								"1",
+								""
+							]
+						},
+						"description": "تحديث بيانات موظف - غيّري 1 إلى id الموظف"
+					}
+				},
+				{
+					"name": "حذف موظف",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/employees/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"employees",
+								"1",
+								""
+							]
+						},
+						"description": "حذف موظف - غيّري 1 إلى id الموظف"
+					}
+				},
+				{
+					"name": "إحصائيات الموظفين",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/employees/statistics/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"employees",
+								"statistics",
+								""
+							]
+						},
+						"description": "إحصائيات الموظفين (العدد، النشطين، حسب الدور)"
+					}
+				}
+			]
+		},
+		{
+			"name": "السائقين (صاحب المحل)",
+			"item": [
+				{
+					"name": "عرض قائمة السائقين",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/drivers/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"drivers",
+								""
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "available",
+									"description": "اختياري: available, busy, offline",
+									"disabled": true
+								}
+							]
+						},
+						"description": "عرض جميع السائقين - يتطلب توكين صاحب المحل"
+					}
+				},
+				{
+					"name": "إنشاء سائق",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"سائق تجريبي\",\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\",\n    \"status\": \"available\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/drivers/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"drivers",
+								""
+							]
+						},
+						"description": "إنشاء سائق جديد - status: available, busy, offline"
+					}
+				},
+				{
+					"name": "عرض تفاصيل سائق",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/drivers/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"drivers",
+								"1",
+								""
+							]
+						},
+						"description": "عرض تفاصيل سائق - غيّري 1 إلى id السائق"
+					}
+				},
+				{
+					"name": "تحديث سائق",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"سائق محدث\",\n    \"phone_number\": \"01000000001\",\n    \"status\": \"busy\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/shop/drivers/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"drivers",
+								"1",
+								""
+							]
+						},
+						"description": "تحديث بيانات سائق - غيّري 1 إلى id السائق"
+					}
+				},
+				{
+					"name": "حذف سائق",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/shop/drivers/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shop",
+								"drivers",
+								"1",
+								""
+							]
+						},
+						"description": "حذف سائق - غيّري 1 إلى id السائق"
+					}
+				}
+			]
 		}
 	],
 	"variable": [
