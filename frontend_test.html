@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             border-radius: 15px;
@@ -30,36 +30,76 @@
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 30px;
+            padding: 25px;
             text-align: center;
         }
 
         .header h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
+            font-size: 26px;
+            margin-bottom: 8px;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f0f0f0;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            background: #e8e8e8;
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 20px;
+        }
+
+        .tab-content.active {
+            display: block;
         }
 
         .content {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 350px 1fr;
             gap: 20px;
-            padding: 20px;
         }
 
         .panel {
             background: #f8f9fa;
             border-radius: 10px;
-            padding: 20px;
+            padding: 15px;
         }
 
         .panel h2 {
             color: #667eea;
             margin-bottom: 15px;
-            font-size: 20px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
 
         label {
@@ -67,6 +107,7 @@
             margin-bottom: 5px;
             color: #333;
             font-weight: 500;
+            font-size: 13px;
         }
 
         input, textarea, select {
@@ -74,7 +115,7 @@
             padding: 10px;
             border: 2px solid #e0e0e0;
             border-radius: 5px;
-            font-size: 14px;
+            font-size: 13px;
             transition: border-color 0.3s;
         }
 
@@ -85,20 +126,21 @@
 
         textarea {
             resize: vertical;
-            min-height: 80px;
+            min-height: 60px;
         }
 
         button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 12px 25px;
+            padding: 10px 20px;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 500;
             transition: transform 0.2s, box-shadow 0.2s;
             width: 100%;
+            margin-top: 5px;
         }
 
         button:hover {
@@ -112,11 +154,34 @@
             transform: none;
         }
 
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+            color: #333;
+        }
+
+        .btn-info {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+        }
+
         .status {
             padding: 10px;
             border-radius: 5px;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
             font-weight: 500;
+            text-align: center;
+            font-size: 13px;
         }
 
         .status.connected {
@@ -140,32 +205,25 @@
         .messages {
             background: white;
             border: 2px solid #e0e0e0;
-            border-radius: 5px;
+            border-radius: 8px;
             padding: 15px;
-            max-height: 400px;
+            height: 450px;
             overflow-y: auto;
-            min-height: 300px;
         }
 
         .message {
-            margin-bottom: 15px;
-            padding: 12px;
+            margin-bottom: 12px;
+            padding: 10px 12px;
             border-radius: 8px;
             animation: slideIn 0.3s ease;
         }
 
         @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        .message.shop {
+        .message.shop_owner, .message.employee {
             background: #e3f2fd;
             border-right: 4px solid #2196f3;
         }
@@ -173,6 +231,11 @@
         .message.customer {
             background: #f3e5f5;
             border-right: 4px solid #9c27b0;
+        }
+
+        .message.driver {
+            background: #e8f5e9;
+            border-right: 4px solid #4caf50;
         }
 
         .message.system {
@@ -185,49 +248,107 @@
             border-right: 4px solid #f44336;
         }
 
+        .message.location {
+            background: #e0f7fa;
+            border-right: 4px solid #00bcd4;
+        }
+
         .message-header {
             display: flex;
             justify-content: space-between;
             margin-bottom: 5px;
             font-weight: 600;
+            font-size: 12px;
+        }
+
+        .message-sender {
             color: #333;
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: #999;
         }
 
         .message-content {
             color: #555;
-            line-height: 1.6;
-        }
-
-        .message-time {
-            font-size: 12px;
-            color: #999;
+            line-height: 1.5;
+            font-size: 13px;
         }
 
         .typing-indicator {
             color: #999;
             font-style: italic;
-            padding: 10px;
+            padding: 8px;
+            font-size: 12px;
         }
 
         .actions {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            gap: 8px;
             margin-top: 10px;
         }
 
-        .btn-secondary {
-            background: #6c757d;
+        .chat-input-area {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #e0e0e0;
         }
 
-        .btn-danger {
-            background: #dc3545;
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
         }
 
-        @media (max-width: 768px) {
+        .quick-actions button {
+            width: auto;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .location-btn {
+            background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .badge-customer { background: #f3e5f5; color: #9c27b0; }
+        .badge-shop { background: #e3f2fd; color: #2196f3; }
+        .badge-driver { background: #e8f5e9; color: #4caf50; }
+
+        @media (max-width: 900px) {
             .content {
                 grid-template-columns: 1fr;
             }
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 12px;
+            color: #0066cc;
+        }
+
+        .connection-url {
+            background: #f5f5f5;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            word-break: break-all;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -235,309 +356,723 @@
     <div class="container">
         <div class="header">
             <h1>🚀 اختبار WebSocket - Mr Delivery</h1>
-            <p>اتصال مباشر مع الخادم</p>
+            <p>اختبار الاتصال المباشر للشات وتحديثات الطلبات</p>
         </div>
 
-        <div class="content">
-            <!-- لوحة الاتصال -->
-            <div class="panel">
-                <h2>⚙️ إعدادات الاتصال</h2>
-                
-                <div id="connectionStatus" class="status disconnected">
-                    ❌ غير متصل
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('chat')">💬 شات الطلب</button>
+            <button class="tab" onclick="showTab('shop')">🏪 طلبات المحل</button>
+            <button class="tab" onclick="showTab('customer')">👤 طلبات العميل</button>
+            <button class="tab" onclick="showTab('driver')">🚗 السائق</button>
+        </div>
+
+        <!-- Chat Tab -->
+        <div id="chatTab" class="tab-content active">
+            <div class="content">
+                <div class="panel">
+                    <h2>⚙️ إعدادات الشات</h2>
+                    
+                    <div id="chatStatus" class="status disconnected">❌ غير متصل</div>
+
+                    <div class="form-group">
+                        <label>الخادم:</label>
+                        <select id="chatServer">
+                            <option value="ws://localhost:8000">محلي (localhost:8000)</option>
+                            <option value="ws://86.48.3.103:8000">VPS (86.48.3.103)</option>
+                            <option value="wss://mrdelivery.pythonanywhere.com">PythonAnywhere (wss)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>نوع المستخدم:</label>
+                        <select id="chatUserType">
+                            <option value="shop_owner">👔 صاحب المحل</option>
+                            <option value="employee">👨‍💼 موظف</option>
+                            <option value="customer">👤 عميل</option>
+                            <option value="driver">🚗 سائق</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>نوع المحادثة:</label>
+                        <select id="chatType">
+                            <option value="shop_customer">🏪 محل ↔ عميل</option>
+                            <option value="driver_customer">🚗 سائق ↔ عميل</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>معرف الطلب:</label>
+                        <input type="number" id="chatOrderId" value="1" placeholder="Order ID">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Access Token:</label>
+                        <input type="text" id="chatToken" placeholder="JWT Token">
+                    </div>
+
+                    <button onclick="connectChat()" id="chatConnectBtn">🔌 اتصال</button>
+                    <button onclick="disconnectChat()" id="chatDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
+
+                    <div class="connection-url" id="chatUrl"></div>
                 </div>
 
-                <div class="form-group">
-                    <label for="serverUrl">رابط الخادم:</label>
-                    <select id="serverUrl">
-                        <option value="ws://localhost:8000">التطوير المحلي (ws://localhost:8000)</option>
-                        <option value="ws://86.48.3.103">PythonAnywhere (ws://86.48.3.103)</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label for="orderId">معرف الطلب (Order ID):</label>
-                    <input type="number" id="orderId" value="1" placeholder="أدخل معرف الطلب">
-                </div>
-
-                <div class="form-group">
-                    <label for="accessToken">Access Token:</label>
-                    <input type="text" id="accessToken" placeholder="أدخل Access Token من تسجيل الدخول">
-                </div>
-
-                <button id="connectBtn" onclick="connect()">🔌 الاتصال</button>
-                <button id="disconnectBtn" onclick="disconnect()" disabled class="btn-danger">❌ قطع الاتصال</button>
-            </div>
-
-            <!-- لوحة الرسائل -->
-            <div class="panel">
-                <h2>💬 الرسائل</h2>
-                
-                <div id="messages" class="messages">
-                    <div class="message system">
-                        <div class="message-header">
-                            <span>النظام</span>
+                <div class="panel">
+                    <h2>💬 المحادثة</h2>
+                    
+                    <div id="chatMessages" class="messages">
+                        <div class="message system">
+                            <div class="message-content">جاهز للاتصال...</div>
                         </div>
-                        <div class="message-content">
-                            جاهز للاتصال. أدخل البيانات واضغط على "الاتصال"
+                    </div>
+
+                    <div id="chatTyping" class="typing-indicator" style="display: none;"></div>
+
+                    <div class="chat-input-area">
+                        <div class="quick-actions">
+                            <button onclick="sendLocation()" class="location-btn" id="locationBtn" disabled>📍 إرسال موقع</button>
+                            <button onclick="markChatRead()" class="btn-secondary" id="markReadBtn" disabled>✓ مقروء</button>
+                        </div>
+
+                        <div class="form-group">
+                            <label>نوع الرسالة:</label>
+                            <select id="chatMsgType">
+                                <option value="text">📝 نص</option>
+                                <option value="location">📍 موقع</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <textarea id="chatContent" placeholder="اكتب رسالتك..." rows="2"></textarea>
+                        </div>
+
+                        <button onclick="sendChatMessage()" id="chatSendBtn" disabled>📤 إرسال</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Shop Orders Tab -->
+        <div id="shopTab" class="tab-content">
+            <div class="content">
+                <div class="panel">
+                    <h2>🏪 اتصال المحل</h2>
+                    
+                    <div id="shopStatus" class="status disconnected">❌ غير متصل</div>
+
+                    <div class="info-box">
+                        يستقبل: طلبات جديدة، تحديثات الطلبات، رسائل جديدة
+                    </div>
+
+                    <div class="form-group">
+                        <label>الخادم:</label>
+                        <select id="shopServer">
+                            <option value="ws://localhost:8000">محلي (localhost:8000)</option>
+                            <option value="ws://86.48.3.103:8000">VPS</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>معرف صاحب المحل:</label>
+                        <input type="number" id="shopOwnerId" value="1" placeholder="Shop Owner ID">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Access Token:</label>
+                        <input type="text" id="shopToken" placeholder="JWT Token">
+                    </div>
+
+                    <button onclick="connectShop()" id="shopConnectBtn">🔌 اتصال</button>
+                    <button onclick="disconnectShop()" id="shopDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
+                </div>
+
+                <div class="panel">
+                    <h2>📋 الأحداث</h2>
+                    <div id="shopMessages" class="messages">
+                        <div class="message system">
+                            <div class="message-content">جاهز لاستقبال أحداث المحل...</div>
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <div id="typingIndicator" class="typing-indicator" style="display: none;">
-                    المستخدم يكتب...
+        <!-- Customer Orders Tab -->
+        <div id="customerTab" class="tab-content">
+            <div class="content">
+                <div class="panel">
+                    <h2>👤 اتصال العميل</h2>
+                    
+                    <div id="customerStatus" class="status disconnected">❌ غير متصل</div>
+
+                    <div class="info-box">
+                        يستقبل: تحديثات الطلب، موقع السائق، رسائل جديدة
+                    </div>
+
+                    <div class="form-group">
+                        <label>الخادم:</label>
+                        <select id="customerServer">
+                            <option value="ws://localhost:8000">محلي (localhost:8000)</option>
+                            <option value="ws://86.48.3.103:8000">VPS</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>معرف العميل:</label>
+                        <input type="number" id="customerId" value="1" placeholder="Customer ID">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Access Token:</label>
+                        <input type="text" id="customerToken" placeholder="JWT Token">
+                    </div>
+
+                    <button onclick="connectCustomer()" id="customerConnectBtn">🔌 اتصال</button>
+                    <button onclick="disconnectCustomer()" id="customerDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
                 </div>
 
-                <div class="form-group">
-                    <label for="messageContent">الرسالة:</label>
-                    <textarea id="messageContent" placeholder="اكتب رسالتك هنا..." rows="3"></textarea>
+                <div class="panel">
+                    <h2>📋 الأحداث</h2>
+                    <div id="customerMessages" class="messages">
+                        <div class="message system">
+                            <div class="message-content">جاهز لاستقبال تحديثات الطلبات...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Driver Tab -->
+        <div id="driverTab" class="tab-content">
+            <div class="content">
+                <div class="panel">
+                    <h2>🚗 اتصال السائق</h2>
+                    
+                    <div id="driverStatus" class="status disconnected">❌ غير متصل</div>
+
+                    <div class="info-box">
+                        يستقبل: طلبات توصيل، تحديثات، رسائل<br>
+                        يرسل: تحديث الموقع
+                    </div>
+
+                    <div class="form-group">
+                        <label>الخادم:</label>
+                        <select id="driverServer">
+                            <option value="ws://localhost:8000">محلي (localhost:8000)</option>
+                            <option value="ws://86.48.3.103:8000">VPS</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>معرف السائق:</label>
+                        <input type="number" id="driverId" value="1" placeholder="Driver ID">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Access Token:</label>
+                        <input type="text" id="driverToken" placeholder="JWT Token">
+                    </div>
+
+                    <button onclick="connectDriver()" id="driverConnectBtn">🔌 اتصال</button>
+                    <button onclick="disconnectDriver()" id="driverDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
+
+                    <hr style="margin: 15px 0; border: 1px solid #e0e0e0;">
+
+                    <h3 style="margin-bottom: 10px; font-size: 14px;">📍 تحديث الموقع</h3>
+                    
+                    <div class="form-group">
+                        <label>خط العرض:</label>
+                        <input type="text" id="driverLat" value="24.7136" placeholder="Latitude">
+                    </div>
+
+                    <div class="form-group">
+                        <label>خط الطول:</label>
+                        <input type="text" id="driverLng" value="46.6753" placeholder="Longitude">
+                    </div>
+
+                    <button onclick="updateDriverLocation()" id="driverLocationBtn" disabled class="btn-info">📍 تحديث الموقع</button>
+                    <button onclick="getMyLocation()" class="btn-warning">🎯 موقعي الحالي</button>
                 </div>
 
-                <div class="form-group">
-                    <label for="messageType">نوع الرسالة:</label>
-                    <select id="messageType">
-                        <option value="text">نص</option>
-                        <option value="audio">صوت</option>
-                        <option value="image">صورة</option>
-                    </select>
-                </div>
-
-                <div class="actions">
-                    <button onclick="sendMessage()" id="sendBtn" disabled>📤 إرسال</button>
-                    <button onclick="markAsRead()" id="readBtn" disabled class="btn-secondary">✓ تعليم كمقروء</button>
+                <div class="panel">
+                    <h2>📋 الأحداث</h2>
+                    <div id="driverMessages" class="messages">
+                        <div class="message system">
+                            <div class="message-content">جاهز لاستقبال طلبات التوصيل...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        let ws = null;
-        let isConnected = false;
+        // WebSocket connections
+        let chatWs = null;
+        let shopWs = null;
+        let customerWs = null;
+        let driverWs = null;
 
-        // عناصر DOM
-        const connectionStatus = document.getElementById('connectionStatus');
-        const messagesDiv = document.getElementById('messages');
-        const connectBtn = document.getElementById('connectBtn');
-        const disconnectBtn = document.getElementById('disconnectBtn');
-        const sendBtn = document.getElementById('sendBtn');
-        const readBtn = document.getElementById('readBtn');
-        const typingIndicator = document.getElementById('typingIndicator');
-
-        function updateStatus(status, message) {
-            connectionStatus.className = `status ${status}`;
-            connectionStatus.textContent = message;
+        // ==================== Tab Switching ====================
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName + 'Tab').classList.add('active');
         }
 
-        function addMessage(type, sender, content, time = null) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
+        // ==================== Utility Functions ====================
+        function updateStatus(elementId, status, message) {
+            const el = document.getElementById(elementId);
+            el.className = `status ${status}`;
+            el.textContent = message;
+        }
+
+        function addMessage(containerId, type, sender, content, time = null) {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
             
             const timeStr = time || new Date().toLocaleTimeString('ar-SA');
             
-            messageDiv.innerHTML = `
+            div.innerHTML = `
                 <div class="message-header">
-                    <span>${sender}</span>
+                    <span class="message-sender">${sender}</span>
                     <span class="message-time">${timeStr}</span>
                 </div>
                 <div class="message-content">${content}</div>
             `;
             
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
         }
 
-        function connect() {
-            const serverUrl = document.getElementById('serverUrl').value;
-            const orderId = document.getElementById('orderId').value;
-            const token = document.getElementById('accessToken').value;
+        function getSenderName(senderType) {
+            const names = {
+                'shop_owner': '👔 صاحب المحل',
+                'employee': '👨‍💼 موظف',
+                'customer': '👤 عميل',
+                'driver': '🚗 سائق'
+            };
+            return names[senderType] || senderType;
+        }
+
+        // ==================== Chat WebSocket ====================
+        function connectChat() {
+            const server = document.getElementById('chatServer').value;
+            const orderId = document.getElementById('chatOrderId').value;
+            const token = document.getElementById('chatToken').value;
+            const chatType = document.getElementById('chatType').value;
 
             if (!orderId || !token) {
-                alert('الرجاء إدخال معرف الطلب و Access Token');
+                alert('أدخل معرف الطلب و Token');
                 return;
             }
 
-            // بناء URL
-            const wsUrl = `${serverUrl}/ws/chat/order/${orderId}/?token=${token}`;
-            
-            updateStatus('connecting', '🔄 جاري الاتصال...');
-            connectBtn.disabled = true;
+            const url = `${server}/ws/chat/order/${orderId}/?token=${token}&chat_type=${chatType}`;
+            document.getElementById('chatUrl').textContent = url;
+
+            updateStatus('chatStatus', 'connecting', '🔄 جاري الاتصال...');
+            document.getElementById('chatConnectBtn').disabled = true;
 
             try {
-                ws = new WebSocket(wsUrl);
+                chatWs = new WebSocket(url);
 
-                ws.onopen = function(event) {
-                    isConnected = true;
-                    updateStatus('connected', '✅ متصل بنجاح');
-                    connectBtn.disabled = true;
-                    disconnectBtn.disabled = false;
-                    sendBtn.disabled = false;
-                    readBtn.disabled = false;
-                    addMessage('system', 'النظام', 'تم الاتصال بنجاح! يمكنك الآن إرسال الرسائل.');
+                chatWs.onopen = () => {
+                    updateStatus('chatStatus', 'connected', '✅ متصل');
+                    document.getElementById('chatConnectBtn').disabled = true;
+                    document.getElementById('chatDisconnectBtn').disabled = false;
+                    document.getElementById('chatSendBtn').disabled = false;
+                    document.getElementById('locationBtn').disabled = false;
+                    document.getElementById('markReadBtn').disabled = false;
+                    addMessage('chatMessages', 'system', 'النظام', 'تم الاتصال بنجاح!');
                 };
 
-                ws.onmessage = function(event) {
-                    try {
-                        const data = JSON.parse(event.data);
-                        handleMessage(data);
-                    } catch (e) {
-                        console.error('خطأ في تحليل الرسالة:', e);
-                        addMessage('error', 'خطأ', 'فشل تحليل الرسالة: ' + event.data);
-                    }
+                chatWs.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleChatMessage(data);
                 };
 
-                ws.onerror = function(error) {
-                    console.error('خطأ في WebSocket:', error);
-                    addMessage('error', 'خطأ', 'حدث خطأ في الاتصال');
-                    updateStatus('disconnected', '❌ خطأ في الاتصال');
+                chatWs.onerror = (error) => {
+                    addMessage('chatMessages', 'error', 'خطأ', 'حدث خطأ في الاتصال');
+                    updateStatus('chatStatus', 'disconnected', '❌ خطأ');
                 };
 
-                ws.onclose = function(event) {
-                    isConnected = false;
-                    updateStatus('disconnected', '❌ تم قطع الاتصال');
-                    connectBtn.disabled = false;
-                    disconnectBtn.disabled = true;
-                    sendBtn.disabled = true;
-                    readBtn.disabled = true;
+                chatWs.onclose = (event) => {
+                    updateStatus('chatStatus', 'disconnected', '❌ غير متصل');
+                    document.getElementById('chatConnectBtn').disabled = false;
+                    document.getElementById('chatDisconnectBtn').disabled = true;
+                    document.getElementById('chatSendBtn').disabled = true;
+                    document.getElementById('locationBtn').disabled = true;
+                    document.getElementById('markReadBtn').disabled = true;
                     
-                    if (event.code !== 1000) {
-                        addMessage('system', 'النظام', `تم إغلاق الاتصال. الكود: ${event.code}, السبب: ${event.reason || 'غير معروف'}`);
-                    }
+                    let reason = '';
+                    if (event.code === 4401) reason = 'غير مصرح';
+                    else if (event.code === 4403) reason = 'ممنوع الوصول';
+                    else reason = event.reason || 'غير معروف';
+                    
+                    addMessage('chatMessages', 'system', 'النظام', `تم الإغلاق: ${event.code} - ${reason}`);
                 };
 
-            } catch (error) {
-                console.error('خطأ في إنشاء الاتصال:', error);
-                updateStatus('disconnected', '❌ فشل الاتصال');
-                connectBtn.disabled = false;
-                addMessage('error', 'خطأ', 'فشل إنشاء الاتصال: ' + error.message);
+            } catch (e) {
+                updateStatus('chatStatus', 'disconnected', '❌ فشل');
+                document.getElementById('chatConnectBtn').disabled = false;
+                addMessage('chatMessages', 'error', 'خطأ', e.message);
             }
         }
 
-        function handleMessage(data) {
+        function handleChatMessage(data) {
             switch(data.type) {
                 case 'connection':
-                    addMessage('system', 'النظام', data.message);
+                    addMessage('chatMessages', 'system', 'النظام', 
+                        `${data.message} | نوع الشات: ${data.chat_type} | المستخدم: ${data.user_type}`);
                     break;
-                
+
+                case 'previous_messages':
+                    addMessage('chatMessages', 'system', 'النظام', `📜 ${data.messages.length} رسالة سابقة`);
+                    data.messages.forEach(msg => {
+                        let content = msg.content || '';
+                        if (msg.message_type === 'location' && msg.latitude) {
+                            content = `📍 موقع: ${msg.latitude}, ${msg.longitude}`;
+                        }
+                        addMessage('chatMessages', msg.sender_type, 
+                            `${getSenderName(msg.sender_type)} (${msg.sender_name || ''})`, 
+                            content, 
+                            new Date(msg.created_at).toLocaleTimeString('ar-SA'));
+                    });
+                    break;
+
                 case 'chat_message':
-                    if (data.data) {
-                        const sender = data.data.sender_type === 'shop' ? 'المحل' : 'العميل';
-                        const type = data.data.sender_type;
-                        let content = data.data.content;
-                        
-                        if (data.data.image_file_url) {
-                            content += `<br><img src="${data.data.image_file_url}" style="max-width: 200px; margin-top: 10px; border-radius: 5px;">`;
-                        }
-                        
-                        if (data.data.audio_file_url) {
-                            content += `<br><audio controls style="margin-top: 10px;"><source src="${data.data.audio_file_url}"></audio>`;
-                        }
-                        
-                        addMessage(type, sender, content, new Date(data.data.created_at).toLocaleTimeString('ar-SA'));
+                    const msg = data.data;
+                    let content = msg.content || '';
+                    if (msg.message_type === 'location' && msg.latitude) {
+                        content = `📍 موقع: <a href="https://maps.google.com/?q=${msg.latitude},${msg.longitude}" target="_blank">${msg.latitude}, ${msg.longitude}</a>`;
                     }
+                    if (msg.image_file_url) {
+                        content += `<br><img src="${msg.image_file_url}" style="max-width: 150px; margin-top: 5px; border-radius: 5px;">`;
+                    }
+                    addMessage('chatMessages', msg.sender_type, 
+                        `${getSenderName(msg.sender_type)} (${msg.sender_name || ''})`, 
+                        content);
                     break;
-                
-                case 'messages_read':
-                    addMessage('system', 'النظام', `تم تعليم رسائل الطلب #${data.order_id} كمقروءة`);
-                    break;
-                
+
                 case 'typing':
+                    const typingEl = document.getElementById('chatTyping');
                     if (data.is_typing) {
-                        typingIndicator.style.display = 'block';
-                        typingIndicator.textContent = `${data.user_type === 'shop' ? 'المحل' : 'العميل'} يكتب...`;
+                        typingEl.style.display = 'block';
+                        typingEl.textContent = `${data.user_name || getSenderName(data.user_type)} يكتب...`;
                     } else {
-                        typingIndicator.style.display = 'none';
+                        typingEl.style.display = 'none';
                     }
                     break;
-                
-                case 'error':
-                    addMessage('error', 'خطأ', data.message);
+
+                case 'messages_read':
+                    addMessage('chatMessages', 'system', 'النظام', `✓ تم قراءة الرسائل بواسطة ${getSenderName(data.reader_type)}`);
                     break;
-                
+
+                case 'error':
+                    addMessage('chatMessages', 'error', 'خطأ', data.message);
+                    break;
+
                 default:
-                    console.log('رسالة غير معروفة:', data);
+                    console.log('Unknown message:', data);
             }
         }
 
-        function sendMessage() {
-            if (!isConnected || !ws || ws.readyState !== WebSocket.OPEN) {
-                alert('غير متصل بالخادم');
+        function sendChatMessage() {
+            if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+
+            const content = document.getElementById('chatContent').value.trim();
+            const msgType = document.getElementById('chatMsgType').value;
+
+            if (!content && msgType === 'text') {
+                alert('أدخل محتوى الرسالة');
                 return;
             }
 
-            const content = document.getElementById('messageContent').value.trim();
-            const messageType = document.getElementById('messageType').value;
-
-            if (!content && messageType === 'text') {
-                alert('الرجاء إدخال محتوى الرسالة');
-                return;
-            }
-
-            const message = {
+            chatWs.send(JSON.stringify({
                 type: 'chat_message',
-                content: content,
-                message_type: messageType
-            };
-
-            ws.send(JSON.stringify(message));
-            
-            // إضافة الرسالة محلياً
-            addMessage('shop', 'أنت', content);
-            
-            // مسح الحقل
-            document.getElementById('messageContent').value = '';
-        }
-
-        function markAsRead() {
-            if (!isConnected || !ws || ws.readyState !== WebSocket.OPEN) {
-                alert('غير متصل بالخادم');
-                return;
-            }
-
-            ws.send(JSON.stringify({
-                type: 'mark_read'
+                message_type: msgType,
+                content: content
             }));
 
-            addMessage('system', 'النظام', 'تم إرسال طلب تعليم الرسائل كمقروءة');
+            document.getElementById('chatContent').value = '';
         }
 
-        function disconnect() {
-            if (ws) {
-                ws.close(1000, 'تم الإغلاق من قبل المستخدم');
-                ws = null;
+        function sendLocation() {
+            if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    chatWs.send(JSON.stringify({
+                        type: 'location',
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude,
+                        content: 'موقعي الحالي'
+                    }));
+                    addMessage('chatMessages', 'system', 'النظام', 'تم إرسال الموقع');
+                }, (err) => {
+                    alert('فشل الحصول على الموقع: ' + err.message);
+                });
+            } else {
+                alert('المتصفح لا يدعم الموقع');
             }
         }
 
-        // إرسال عند الضغط على Enter
-        document.getElementById('messageContent').addEventListener('keypress', function(e) {
+        function markChatRead() {
+            if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+            chatWs.send(JSON.stringify({ type: 'mark_read' }));
+        }
+
+        function disconnectChat() {
+            if (chatWs) {
+                chatWs.close(1000, 'إغلاق يدوي');
+                chatWs = null;
+            }
+        }
+
+        // ==================== Shop WebSocket ====================
+        function connectShop() {
+            const server = document.getElementById('shopServer').value;
+            const shopOwnerId = document.getElementById('shopOwnerId').value;
+            const token = document.getElementById('shopToken').value;
+
+            if (!shopOwnerId || !token) {
+                alert('أدخل البيانات المطلوبة');
+                return;
+            }
+
+            const url = `${server}/ws/orders/shop/${shopOwnerId}/?token=${token}`;
+            updateStatus('shopStatus', 'connecting', '🔄 جاري الاتصال...');
+            document.getElementById('shopConnectBtn').disabled = true;
+
+            try {
+                shopWs = new WebSocket(url);
+
+                shopWs.onopen = () => {
+                    updateStatus('shopStatus', 'connected', '✅ متصل');
+                    document.getElementById('shopConnectBtn').disabled = true;
+                    document.getElementById('shopDisconnectBtn').disabled = false;
+                    addMessage('shopMessages', 'system', 'النظام', 'تم الاتصال - جاهز لاستقبال الطلبات');
+                };
+
+                shopWs.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleShopMessage(data);
+                };
+
+                shopWs.onclose = (event) => {
+                    updateStatus('shopStatus', 'disconnected', '❌ غير متصل');
+                    document.getElementById('shopConnectBtn').disabled = false;
+                    document.getElementById('shopDisconnectBtn').disabled = true;
+                };
+
+            } catch (e) {
+                updateStatus('shopStatus', 'disconnected', '❌ فشل');
+                document.getElementById('shopConnectBtn').disabled = false;
+            }
+        }
+
+        function handleShopMessage(data) {
+            switch(data.type) {
+                case 'connection':
+                    addMessage('shopMessages', 'system', 'النظام', data.message);
+                    break;
+                case 'new_order':
+                    addMessage('shopMessages', 'system', '🆕 طلب جديد', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'order_update':
+                    addMessage('shopMessages', 'system', '📝 تحديث طلب', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'new_message':
+                    addMessage('shopMessages', 'customer', '💬 رسالة جديدة', JSON.stringify(data.data, null, 2));
+                    break;
+            }
+        }
+
+        function disconnectShop() {
+            if (shopWs) { shopWs.close(); shopWs = null; }
+        }
+
+        // ==================== Customer WebSocket ====================
+        function connectCustomer() {
+            const server = document.getElementById('customerServer').value;
+            const customerId = document.getElementById('customerId').value;
+            const token = document.getElementById('customerToken').value;
+
+            if (!customerId || !token) {
+                alert('أدخل البيانات المطلوبة');
+                return;
+            }
+
+            const url = `${server}/ws/orders/customer/${customerId}/?token=${token}`;
+            updateStatus('customerStatus', 'connecting', '🔄 جاري الاتصال...');
+            document.getElementById('customerConnectBtn').disabled = true;
+
+            try {
+                customerWs = new WebSocket(url);
+
+                customerWs.onopen = () => {
+                    updateStatus('customerStatus', 'connected', '✅ متصل');
+                    document.getElementById('customerConnectBtn').disabled = true;
+                    document.getElementById('customerDisconnectBtn').disabled = false;
+                    addMessage('customerMessages', 'system', 'النظام', 'تم الاتصال - جاهز لاستقبال التحديثات');
+                };
+
+                customerWs.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleCustomerMessage(data);
+                };
+
+                customerWs.onclose = (event) => {
+                    updateStatus('customerStatus', 'disconnected', '❌ غير متصل');
+                    document.getElementById('customerConnectBtn').disabled = false;
+                    document.getElementById('customerDisconnectBtn').disabled = true;
+                };
+
+            } catch (e) {
+                updateStatus('customerStatus', 'disconnected', '❌ فشل');
+                document.getElementById('customerConnectBtn').disabled = false;
+            }
+        }
+
+        function handleCustomerMessage(data) {
+            switch(data.type) {
+                case 'connection':
+                    addMessage('customerMessages', 'system', 'النظام', data.message);
+                    break;
+                case 'order_update':
+                    addMessage('customerMessages', 'system', '📝 تحديث طلب', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'driver_location':
+                    const loc = data.data;
+                    addMessage('customerMessages', 'driver', '📍 موقع السائق', 
+                        `<a href="https://maps.google.com/?q=${loc.latitude},${loc.longitude}" target="_blank">${loc.latitude}, ${loc.longitude}</a>`);
+                    break;
+                case 'new_message':
+                    addMessage('customerMessages', 'shop_owner', '💬 رسالة جديدة', JSON.stringify(data.data, null, 2));
+                    break;
+            }
+        }
+
+        function disconnectCustomer() {
+            if (customerWs) { customerWs.close(); customerWs = null; }
+        }
+
+        // ==================== Driver WebSocket ====================
+        function connectDriver() {
+            const server = document.getElementById('driverServer').value;
+            const driverId = document.getElementById('driverId').value;
+            const token = document.getElementById('driverToken').value;
+
+            if (!driverId || !token) {
+                alert('أدخل البيانات المطلوبة');
+                return;
+            }
+
+            const url = `${server}/ws/driver/${driverId}/?token=${token}`;
+            updateStatus('driverStatus', 'connecting', '🔄 جاري الاتصال...');
+            document.getElementById('driverConnectBtn').disabled = true;
+
+            try {
+                driverWs = new WebSocket(url);
+
+                driverWs.onopen = () => {
+                    updateStatus('driverStatus', 'connected', '✅ متصل');
+                    document.getElementById('driverConnectBtn').disabled = true;
+                    document.getElementById('driverDisconnectBtn').disabled = false;
+                    document.getElementById('driverLocationBtn').disabled = false;
+                    addMessage('driverMessages', 'system', 'النظام', 'تم الاتصال - جاهز لاستقبال طلبات التوصيل');
+                };
+
+                driverWs.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleDriverMessage(data);
+                };
+
+                driverWs.onclose = (event) => {
+                    updateStatus('driverStatus', 'disconnected', '❌ غير متصل');
+                    document.getElementById('driverConnectBtn').disabled = false;
+                    document.getElementById('driverDisconnectBtn').disabled = true;
+                    document.getElementById('driverLocationBtn').disabled = true;
+                };
+
+            } catch (e) {
+                updateStatus('driverStatus', 'disconnected', '❌ فشل');
+                document.getElementById('driverConnectBtn').disabled = false;
+            }
+        }
+
+        function handleDriverMessage(data) {
+            switch(data.type) {
+                case 'connection':
+                    addMessage('driverMessages', 'system', 'النظام', data.message);
+                    break;
+                case 'new_order':
+                    addMessage('driverMessages', 'system', '🆕 طلب توصيل جديد', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'order_update':
+                    addMessage('driverMessages', 'system', '📝 تحديث طلب', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'new_message':
+                    addMessage('driverMessages', 'customer', '💬 رسالة من عميل', JSON.stringify(data.data, null, 2));
+                    break;
+            }
+        }
+
+        function updateDriverLocation() {
+            if (!driverWs || driverWs.readyState !== WebSocket.OPEN) return;
+
+            const lat = document.getElementById('driverLat').value;
+            const lng = document.getElementById('driverLng').value;
+
+            driverWs.send(JSON.stringify({
+                type: 'location_update',
+                latitude: lat,
+                longitude: lng
+            }));
+
+            addMessage('driverMessages', 'system', 'النظام', `تم إرسال الموقع: ${lat}, ${lng}`);
+        }
+
+        function getMyLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    document.getElementById('driverLat').value = pos.coords.latitude;
+                    document.getElementById('driverLng').value = pos.coords.longitude;
+                }, (err) => {
+                    alert('فشل الحصول على الموقع: ' + err.message);
+                });
+            }
+        }
+
+        function disconnectDriver() {
+            if (driverWs) { driverWs.close(); driverWs = null; }
+        }
+
+        // ==================== Event Listeners ====================
+        document.getElementById('chatContent').addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendMessage();
+                sendChatMessage();
             }
         });
 
-        // إرسال مؤشر الكتابة
+        // Typing indicator
         let typingTimeout;
-        document.getElementById('messageContent').addEventListener('input', function() {
-            if (!isConnected || !ws || ws.readyState !== WebSocket.OPEN) {
-                return;
-            }
+        document.getElementById('chatContent').addEventListener('input', () => {
+            if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
 
-            // إرسال مؤشر الكتابة
-            ws.send(JSON.stringify({
-                type: 'typing',
-                is_typing: true
-            }));
+            chatWs.send(JSON.stringify({ type: 'typing', is_typing: true }));
 
-            // إيقاف مؤشر الكتابة بعد 3 ثوان
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(() => {
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        type: 'typing',
-                        is_typing: false
-                    }));
+                if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+                    chatWs.send(JSON.stringify({ type: 'typing', is_typing: false }));
                 }
-            }, 3000);
+            }, 2000);
         });
     </script>
 </body>

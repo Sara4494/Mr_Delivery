@@ -13,7 +13,7 @@ env/
 *.log
 db.sqlite3
 media/
-
+migrations/
 # Static files
 staticfiles/
 

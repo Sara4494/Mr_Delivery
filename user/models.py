@@ -9,6 +9,7 @@ class ShopOwner(models.Model):
     shop_number = models.CharField(max_length=50, unique=True, verbose_name="رقم المحل")
     password = models.CharField(max_length=128, verbose_name="كلمة المرور")
     profile_image = models.ImageField(upload_to='shop_profiles/', blank=True, null=True, verbose_name="صورة البروفيل")
+    description = models.TextField(blank=True, null=True, verbose_name="وصف المحل")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
     is_active = models.BooleanField(default=True, verbose_name="نشط")
