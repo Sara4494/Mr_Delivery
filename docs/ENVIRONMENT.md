@@ -60,6 +60,13 @@ REDIS_URL=redis://localhost:6379/0
 | `JWT_ACCESS_TOKEN_LIFETIME` | No | `1440` | Access token lifetime (minutes) |
 | `JWT_REFRESH_TOKEN_LIFETIME` | No | `10080` | Refresh token lifetime (minutes) |
 
+### UltraMsg (WhatsApp OTP)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ULTRAMSG_INSTANCE` | No | `instance160549` | UltraMsg instance ID |
+| `ULTRAMSG_TOKEN` | No | - | UltraMsg API token |
+
 ---
 
 ## 📝 Example Configurations

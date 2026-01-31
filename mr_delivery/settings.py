@@ -199,6 +199,27 @@ REST_FRAMEWORK = {
     ],
 }
 
+# UltraMsg (WhatsApp OTP)
+ULTRAMSG_INSTANCE = os.environ.get("ULTRAMSG_INSTANCE", "instance160549")
+ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN", "9l9mdphqnkcnuhf0")
+
+# Cache (for OTP storage - uses Redis if available, else local memory)
+_CACHE_REDIS = os.environ.get("REDIS_URL", "").strip()
+if _CACHE_REDIS:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _CACHE_REDIS,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "otp-cache",
+        }
+    }
+
 # JWT Settings
 from datetime import timedelta
 SIMPLE_JWT = {

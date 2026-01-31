@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
 from .models import ShopOwner
 from .utils import success_response, error_response
+from .otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 
 
 class ShopOwnerTokenObtainPairView(TokenObtainPairView):
@@ -295,21 +296,33 @@ def unified_login_view(request):
         )
 
 
+def _find_customer_by_phone(phone_number):
+    """البحث عن العميل برقم الهاتف (يدعم صيغ متعددة)"""
+    from shop.models import Customer
+    from django.db.models import Q
+    normalized = normalize_phone(phone_number)
+    alternate = normalized[3:] if normalized.startswith("+20") else "0" + normalized.lstrip("+")
+    return Customer.objects.filter(
+        Q(phone_number=normalized) | Q(phone_number=alternate)
+    ).first()
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def unified_register_view(request):
     """
-    تسجيل مستخدم جديد (حالياً للعملاء فقط)
+    تسجيل مستخدم جديد (حالياً للعملاء فقط) مع التحقق من OTP
     POST /api/auth/register/
     Body: {
         "role": "customer",
         "name": "الاسم",
         "phone_number": "رقم الهاتف",
+        "otp": "رمز التحقق (مطلوب - يُرسل عبر واتساب)",
         "email": "البريد الإلكتروني (اختياري)",
         "password": "كلمة المرور"
     }
     
-    ملاحظة: الموظفين والسائقين يتم إنشاؤهم بواسطة صاحب المحل
+    الخطوات: 1) إرسال OTP عبر /api/auth/otp/send/  2) إكمال التسجيل هنا مع الرمز
     """
     role = request.data.get('role')
     
@@ -323,6 +336,7 @@ def unified_register_view(request):
     if role == 'customer':
         name = request.data.get('name')
         phone_number = request.data.get('phone_number')
+        otp_code = request.data.get('otp')
         email = request.data.get('email', '')
         password = request.data.get('password')
         
@@ -331,24 +345,38 @@ def unified_register_view(request):
             return error_response(message='الاسم مطلوب', status_code=status.HTTP_400_BAD_REQUEST)
         if not phone_number:
             return error_response(message='رقم الهاتف مطلوب', status_code=status.HTTP_400_BAD_REQUEST)
+        if not otp_code:
+            return error_response(
+                message='رمز التحقق مطلوب. استخدم /api/auth/otp/send/ أولاً',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
         if not password:
             return error_response(message='كلمة المرور مطلوبة', status_code=status.HTTP_400_BAD_REQUEST)
         if len(password) < 6:
             return error_response(message='كلمة المرور يجب أن تكون 6 أحرف على الأقل', status_code=status.HTTP_400_BAD_REQUEST)
         
+        # التحقق من OTP أولاً
+        if not otp_verify(phone_number, otp_code):
+            return error_response(
+                message='رمز التحقق غير صحيح أو منتهي الصلاحية',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
         # التحقق من عدم وجود الرقم مسبقاً
         from shop.models import Customer
-        if Customer.objects.filter(phone_number=phone_number).exists():
+        customer = _find_customer_by_phone(phone_number)
+        if customer:
             return error_response(
                 message='رقم الهاتف مسجل مسبقاً',
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
-        # إنشاء العميل
+        normalized = normalize_phone(phone_number)
         customer = Customer.objects.create(
             name=name,
-            phone_number=phone_number,
-            email=email
+            phone_number=normalized,
+            email=email,
+            is_verified=True  # تم التحقق عبر OTP
         )
         customer.set_password(password)
         customer.save()
@@ -396,3 +424,173 @@ def unified_register_view(request):
             message='نوع المستخدم غير صحيح. القيم المتاحة: customer',
             status_code=status.HTTP_400_BAD_REQUEST
         )
+
+
+# ==================== OTP APIs (UltraMsg WhatsApp) ====================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def send_otp_view(request):
+    """
+    إرسال رمز OTP إلى رقم الهاتف عبر WhatsApp (UltraMsg)
+    POST /api/auth/otp/send/
+    Body: {
+        "phone_number": "+201012345678" أو "01012345678",
+        "purpose": "login" | "register" | "reset_password" (اختياري)
+    }
+    - register: الرقم يجب ألا يكون مسجلاً مسبقاً
+    - reset_password: الرقم يجب أن يكون مسجلاً
+    """
+    phone_number = request.data.get('phone_number')
+    purpose = request.data.get('purpose', 'login')
+    if not phone_number:
+        return error_response(
+            message='رقم الهاتف مطلوب',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    if purpose == 'register':
+        if _find_customer_by_phone(phone_number):
+            return error_response(
+                message='رقم الهاتف مسجل مسبقاً. استخدم تسجيل الدخول',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+    elif purpose == 'reset_password':
+        if not _find_customer_by_phone(phone_number):
+            return error_response(
+                message='رقم الهاتف غير مسجل',
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+    success, msg = otp_send(phone_number)
+    if success:
+        return success_response(
+            message='تم إرسال رمز التحقق إلى واتساب الخاص بك'
+        )
+    return error_response(
+        message=msg,
+        status_code=status.HTTP_400_BAD_REQUEST
+    )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_otp_login_view(request):
+    """
+    تسجيل دخول العملاء باستخدام OTP (بدون كلمة مرور)
+    POST /api/auth/otp/verify/
+    Body: {
+        "phone_number": "+201012345678" أو "01012345678",
+        "otp": "123456"
+    }
+    """
+    phone_number = request.data.get('phone_number')
+    otp_code = request.data.get('otp')
+
+    if not phone_number:
+        return error_response(
+            message='رقم الهاتف مطلوب',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    if not otp_code:
+        return error_response(
+            message='رمز التحقق مطلوب',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not otp_verify(phone_number, otp_code):
+        return error_response(
+            message='رمز التحقق غير صحيح أو منتهي الصلاحية',
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+
+    customer = _find_customer_by_phone(phone_number)
+    if not customer:
+        return error_response(
+            message='رقم الهاتف غير مسجل. يرجى التسجيل أولاً',
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    refresh = RefreshToken()
+    refresh['customer_id'] = customer.id
+    refresh['phone_number'] = customer.phone_number
+    refresh['user_type'] = 'customer'
+
+    return success_response(
+        data={
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': {
+                'id': customer.id,
+                'name': customer.name,
+                'phone_number': customer.phone_number,
+                'email': customer.email,
+                'is_verified': customer.is_verified,
+            },
+            'role': 'customer'
+        },
+        message='تم تسجيل الدخول بنجاح'
+    )
+
+
+# ==================== Reset Password (OTP) ====================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_view(request):
+    """
+    استعادة كلمة المرور باستخدام OTP
+    الخطوة 1: إرسال OTP عبر POST /api/auth/otp/send/ مع purpose=reset_password
+    الخطوة 2: استدعاء هذا الـ endpoint
+    
+    POST /api/auth/password-reset/
+    Body: {
+        "phone_number": "+201012345678",
+        "otp": "123456",
+        "new_password": "كلمة المرور الجديدة"
+    }
+    """
+    phone_number = request.data.get('phone_number')
+    otp_code = request.data.get('otp')
+    new_password = request.data.get('new_password')
+
+    if not phone_number:
+        return error_response(
+            message='رقم الهاتف مطلوب',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    if not otp_code:
+        return error_response(
+            message='رمز التحقق مطلوب',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    if not new_password:
+        return error_response(
+            message='كلمة المرور الجديدة مطلوبة',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    if len(new_password) < 6:
+        return error_response(
+            message='كلمة المرور يجب أن تكون 6 أحرف على الأقل',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not otp_verify(phone_number, otp_code):
+        return error_response(
+            message='رمز التحقق غير صحيح أو منتهي الصلاحية',
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+
+    customer = _find_customer_by_phone(phone_number)
+    if not customer:
+        return error_response(
+            message='رقم الهاتف غير مسجل',
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    customer.set_password(new_password)
+    customer.save()
+
+    return success_response(
+        message='تم تغيير كلمة المرور بنجاح'
+    )

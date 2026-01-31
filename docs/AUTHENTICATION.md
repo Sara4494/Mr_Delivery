@@ -84,7 +84,11 @@ Mr Delivery uses **JWT (JSON Web Tokens)** for authentication across all user ty
 
 ---
 
-## 2. Register (Customers Only)
+## 2. Register (Customers Only) — مع التحقق من OTP
+
+**الخطوات:**
+1. إرسال OTP: `POST /api/auth/otp/send/` مع `"purpose": "register"`
+2. إكمال التسجيل: `POST /api/auth/register/` مع الرمز
 
 **Endpoint**: `POST /api/auth/register/`
 
@@ -94,6 +98,7 @@ Mr Delivery uses **JWT (JSON Web Tokens)** for authentication across all user ty
     "role": "customer",
     "name": "Ahmed Mohamed",
     "phone_number": "01012345678",
+    "otp": "123456",
     "email": "ahmed@example.com",
     "password": "password123"
 }
@@ -123,7 +128,113 @@ Mr Delivery uses **JWT (JSON Web Tokens)** for authentication across all user ty
 
 ---
 
-## 3. Token Refresh
+## 3. OTP Login (WhatsApp via UltraMsg)
+
+تسجيل دخول العملاء برمز OTP يُرسل عبر واتساب (بدون كلمة مرور).
+
+### 3.1 إرسال رمز OTP
+
+**Endpoint**: `POST /api/auth/otp/send/`
+
+**Request Body**
+```json
+{
+    "phone_number": "+201012345678",
+    "purpose": "login"
+}
+```
+- `purpose` اختياري: `"login"` | `"register"` | `"reset_password"`
+- للتسجيل: الرقم يجب ألا يكون مسجلاً
+- لاستعادة كلمة المرور: الرقم يجب أن يكون مسجلاً
+
+**Success Response (200)**
+```json
+{
+    "status": 200,
+    "message": "تم إرسال رمز التحقق إلى واتساب الخاص بك",
+    "data": {}
+}
+```
+
+**Error Response (400)**
+```json
+{
+    "status": 400,
+    "message": "يرجى الانتظار دقيقة قبل إعادة إرسال الرمز"
+}
+```
+
+### 3.2 التحقق من OTP وتسجيل الدخول
+
+**Endpoint**: `POST /api/auth/otp/verify/`
+
+**Request Body**
+```json
+{
+    "phone_number": "+201012345678",
+    "otp": "123456"
+}
+```
+
+**Success Response (200)** — نفس شكل استجابة Login
+```json
+{
+    "status": 200,
+    "message": "تم تسجيل الدخول بنجاح",
+    "data": {
+        "refresh": "eyJ...",
+        "access": "eyJ...",
+        "user": { "id": 1, "name": "...", "phone_number": "..." },
+        "role": "customer"
+    }
+}
+```
+
+**Error Response (404)** — رقم غير مسجل
+```json
+{
+    "status": 404,
+    "message": "رقم الهاتف غير مسجل. يرجى التسجيل أولاً"
+}
+```
+
+### متغيرات البيئة (UltraMsg)
+```
+ULTRAMSG_INSTANCE=instance160549
+ULTRAMSG_TOKEN=your_token
+```
+
+---
+
+## 4. استعادة كلمة المرور (Reset Password)
+
+**الخطوات:**
+1. إرسال OTP: `POST /api/auth/otp/send/` مع `"purpose": "reset_password"`
+2. تغيير كلمة المرور: `POST /api/auth/password-reset/`
+
+**Endpoint**: `POST /api/auth/password-reset/`
+
+**Request Body**
+```json
+{
+    "phone_number": "+201012345678",
+    "otp": "123456",
+    "new_password": "newpassword123"
+}
+```
+
+**Success Response (200)**
+```json
+{
+    "status": 200,
+    "message": "تم تغيير كلمة المرور بنجاح",
+    "data": {}
+}
+```
+
+---
+
+## 5. Token Refresh
 
 **Endpoint**: `POST /api/shop/token/refresh/`
 
@@ -226,6 +337,7 @@ ws://server/ws/chat/order/1/?token=<access_token>&chat_type=shop_customer
 ## 📁 Related Files
 
 - `user/authentication.py` - Custom JWT Authentication
-- `user/views.py` - Auth Views (unified_login_view, unified_register_view)
+- `user/views.py` - Auth Views (unified_login_view, unified_register_view, OTP views)
+- `user/otp_service.py` - OTP service (UltraMsg WhatsApp)
 - `user/token_serializers.py` - Token Serializers
 - `shop/middleware.py` - WebSocket JWT Middleware

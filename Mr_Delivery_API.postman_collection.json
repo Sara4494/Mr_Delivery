@@ -124,15 +124,54 @@
 					}
 				},
 				{
-					"name": "تسجيل عميل جديد",
+					"name": "إرسال OTP - تسجيل دخول",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"login\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/otp/send/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "send", ""]},
+						"description": "إرسال رمز OTP عبر واتساب. purpose: login | register | reset_password"
+					}
+				},
+				{
+					"name": "إرسال OTP - للتسجيل",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01098765432\",\n    \"purpose\": \"register\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/otp/send/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "send", ""]},
+						"description": "الخطوة 1 للتسجيل: الرقم يجب ألا يكون مسجلاً"
+					}
+				},
+				{
+					"name": "إرسال OTP - لاستعادة كلمة المرور",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/otp/send/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "send", ""]},
+						"description": "الخطوة 1 لاستعادة كلمة المرور: الرقم يجب أن يكون مسجلاً"
+					}
+				},
+				{
+					"name": "تسجيل دخول بـ OTP",
 					"event": [
 						{
 							"listen": "test",
 							"script": {
 								"exec": [
-									"if (pm.response.code === 201) {",
+									"if (pm.response.code === 200) {",
 									"    var jsonData = pm.response.json();",
-									"    if (jsonData.success && jsonData.data) {",
+									"    if (jsonData.data) {",
 									"        pm.environment.set(\"customer_token\", jsonData.data.access);",
 									"    }",
 									"}"
@@ -146,9 +185,52 @@
 						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"role\": \"customer\",\n    \"name\": \"أحمد محمد\",\n    \"phone_number\": \"01012345678\",\n    \"email\": \"ahmed@example.com\",\n    \"password\": \"password123\"\n}"
+							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\"\n}"
 						},
-						"url": {"raw": "{{base_url}}/api/auth/register/", "host": ["{{base_url}}"], "path": ["api", "auth", "register", ""]}
+						"url": {"raw": "{{base_url}}/api/auth/otp/verify/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "verify", ""]},
+						"description": "الخطوة 2: التحقق من OTP وتسجيل الدخول (بدون كلمة مرور)"
+					}
+				},
+				{
+					"name": "تسجيل عميل جديد (مع OTP)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data) {",
+									"        pm.environment.set(\"customer_token\", jsonData.data.access);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"role\": \"customer\",\n    \"name\": \"أحمد محمد\",\n    \"phone_number\": \"01098765432\",\n    \"otp\": \"123456\",\n    \"email\": \"ahmed@example.com\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/register/", "host": ["{{base_url}}"], "path": ["api", "auth", "register", ""]},
+						"description": "الخطوة 2 للتسجيل: بعد إرسال OTP عبر purpose=register"
+					}
+				},
+				{
+					"name": "استعادة كلمة المرور",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/password-reset/", "host": ["{{base_url}}"], "path": ["api", "auth", "password-reset", ""]},
+						"description": "الخطوة 2: بعد إرسال OTP عبر purpose=reset_password"
 					}
 				},
 				{
