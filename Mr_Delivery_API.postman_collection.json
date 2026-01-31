@@ -150,16 +150,42 @@
 					}
 				},
 				{
-					"name": "إرسال OTP - لاستعادة كلمة المرور",
+					"name": "إرسال OTP - استعادة كلمة المرور (عميل)",
 					"request": {
 						"method": "POST",
 						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\"\n}"
+							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"customer\"\n}"
 						},
 						"url": {"raw": "{{base_url}}/api/auth/otp/send/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "send", ""]},
-						"description": "الخطوة 1 لاستعادة كلمة المرور: الرقم يجب أن يكون مسجلاً"
+						"description": "العميل - الرقم يجب أن يكون مسجلاً"
+					}
+				},
+				{
+					"name": "إرسال OTP - استعادة كلمة المرور (صاحب محل)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"shop_owner\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/otp/send/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "send", ""]},
+						"description": "صاحب المحل - يجب إضافة رقم الهاتف في الإعدادات أولاً"
+					}
+				},
+				{
+					"name": "إرسال OTP - استعادة كلمة المرور (موظف/سائق)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01000000000\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"employee\",\n    \"shop_number\": \"12345\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/otp/send/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "send", ""]},
+						"description": "الموظف/السائق - مطلوب shop_number"
 					}
 				},
 				{
@@ -221,16 +247,42 @@
 					}
 				},
 				{
-					"name": "استعادة كلمة المرور",
+					"name": "استعادة كلمة المرور (عميل)",
 					"request": {
 						"method": "POST",
 						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+							"raw": "{\n    \"role\": \"customer\",\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
 						},
 						"url": {"raw": "{{base_url}}/api/auth/password-reset/", "host": ["{{base_url}}"], "path": ["api", "auth", "password-reset", ""]},
-						"description": "الخطوة 2: بعد إرسال OTP عبر purpose=reset_password"
+						"description": "الخطوة 2 - العميل"
+					}
+				},
+				{
+					"name": "استعادة كلمة المرور (صاحب محل)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"role\": \"shop_owner\",\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/password-reset/", "host": ["{{base_url}}"], "path": ["api", "auth", "password-reset", ""]},
+						"description": "الخطوة 2 - صاحب المحل"
+					}
+				},
+				{
+					"name": "استعادة كلمة المرور (موظف/سائق)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"shop_number\": \"12345\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/password-reset/", "host": ["{{base_url}}"], "path": ["api", "auth", "password-reset", ""]},
+						"description": "الخطوة 2 - الموظف/السائق (مطلوب shop_number)"
 					}
 				},
 				{
@@ -300,6 +352,12 @@
 									"value": "مصور فوتوغرافي محترف",
 									"type": "text",
 									"description": "اسم المحل"
+								},
+								{
+									"key": "phone_number",
+									"value": "01012345678",
+									"type": "text",
+									"description": "رقم الهاتف (للاستعادة كلمة المرور)"
 								},
 								{
 									"key": "profile_image",
