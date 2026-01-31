@@ -7,10 +7,11 @@
 	},
 	"item": [
 		{
-			"name": "Authentication",
+			"name": "🔐 Auth (تسجيل الدخول والتسجيل)",
+			"description": "تسجيل دخول موحد لجميع المستخدمين",
 			"item": [
 				{
-					"name": "تسجيل الدخول",
+					"name": "تسجيل دخول - صاحب المحل",
 					"event": [
 						{
 							"listen": "test",
@@ -21,7 +22,6 @@
 									"    if (jsonData.success && jsonData.data) {",
 									"        pm.environment.set(\"access_token\", jsonData.data.access);",
 									"        pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
-									"        console.log(\"Token saved successfully\");",
 									"    }",
 									"}"
 								],
@@ -31,57 +31,136 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
+						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"shop_number\": \"{{shop_number}}\",\n    \"password\": \"password123\"\n}"
+							"raw": "{\n    \"role\": \"shop_owner\",\n    \"shop_number\": \"12345\",\n    \"password\": \"password123\"\n}"
 						},
-						"url": {
-							"raw": "{{base_url}}/api/shop/login/",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"shop",
-								"login",
-								""
-							]
+						"url": {"raw": "{{base_url}}/api/auth/login/", "host": ["{{base_url}}"], "path": ["api", "auth", "login", ""]}
+					}
+				},
+				{
+					"name": "تسجيل دخول - عميل",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.success && jsonData.data) {",
+									"        pm.environment.set(\"customer_token\", jsonData.data.access);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
 						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"role\": \"customer\",\n    \"phone_number\": \"01012345678\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/login/", "host": ["{{base_url}}"], "path": ["api", "auth", "login", ""]}
+					}
+				},
+				{
+					"name": "تسجيل دخول - موظف",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.success && jsonData.data) {",
+									"        pm.environment.set(\"employee_token\", jsonData.data.access);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/login/", "host": ["{{base_url}}"], "path": ["api", "auth", "login", ""]}
+					}
+				},
+				{
+					"name": "تسجيل دخول - سائق",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.success && jsonData.data) {",
+									"        pm.environment.set(\"driver_token\", jsonData.data.access);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"role\": \"driver\",\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/login/", "host": ["{{base_url}}"], "path": ["api", "auth", "login", ""]}
+					}
+				},
+				{
+					"name": "تسجيل عميل جديد",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.success && jsonData.data) {",
+									"        pm.environment.set(\"customer_token\", jsonData.data.access);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"role\": \"customer\",\n    \"name\": \"أحمد محمد\",\n    \"phone_number\": \"01012345678\",\n    \"email\": \"ahmed@example.com\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/register/", "host": ["{{base_url}}"], "path": ["api", "auth", "register", ""]}
 					}
 				},
 				{
 					"name": "تحديث Token",
 					"request": {
 						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
+						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
 							"raw": "{\n    \"refresh\": \"{{refresh_token}}\"\n}"
 						},
-						"url": {
-							"raw": "{{base_url}}/api/shop/token/refresh/",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"shop",
-								"token",
-								"refresh",
-								""
-							]
-						}
+						"url": {"raw": "{{base_url}}/api/shop/token/refresh/", "host": ["{{base_url}}"], "path": ["api", "shop", "token", "refresh", ""]}
 					}
 				}
 			]
@@ -517,69 +596,6 @@
 			]
 		},
 		{
-			"name": "تسجيل دخول الموظف والسائق",
-			"item": [
-				{
-					"name": "تسجيل دخول الموظف",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/employee/login/",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"employee",
-								"login",
-								""
-							]
-						},
-						"description": "تسجيل دخول الموظف - يرجع access و refresh token"
-					}
-				},
-				{
-					"name": "تسجيل دخول السائق",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/driver/login/",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"driver",
-								"login",
-								""
-							]
-						},
-						"description": "تسجيل دخول السائق - يرجع access و refresh token"
-					}
-				}
-			]
-		},
-		{
 			"name": "الموظفين (صاحب المحل)",
 			"item": [
 				{
@@ -931,37 +947,25 @@
 			]
 		},
 		{
-			"name": "تسجيل العميل (Customer Auth)",
+			"name": "👤 ملف العميل (Customer Profile)",
 			"item": [
-				{
-					"name": "تسجيل عميل جديد",
-					"request": {
-						"method": "POST",
-						"header": [{"key": "Content-Type", "value": "application/json"}],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"name\": \"أحمد محمد\",\n    \"phone_number\": \"01012345678\",\n    \"email\": \"ahmed@example.com\",\n    \"password\": \"password123\"\n}"
-						},
-						"url": {"raw": "{{base_url}}/api/customer/register/", "host": ["{{base_url}}"], "path": ["api", "customer", "register", ""]}
-					}
-				},
-				{
-					"name": "تسجيل دخول العميل",
-					"request": {
-						"method": "POST",
-						"header": [{"key": "Content-Type", "value": "application/json"}],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"password\": \"password123\"\n}"
-						},
-						"url": {"raw": "{{base_url}}/api/customer/login/", "host": ["{{base_url}}"], "path": ["api", "customer", "login", ""]}
-					}
-				},
 				{
 					"name": "عرض ملف العميل",
 					"request": {
 						"method": "GET",
 						"header": [{"key": "Authorization", "value": "Bearer {{customer_token}}", "type": "text"}],
+						"url": {"raw": "{{base_url}}/api/customer/profile/", "host": ["{{base_url}}"], "path": ["api", "customer", "profile", ""]}
+					}
+				},
+				{
+					"name": "تحديث ملف العميل",
+					"request": {
+						"method": "PUT",
+						"header": [{"key": "Authorization", "value": "Bearer {{customer_token}}", "type": "text"}, {"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"أحمد محمد الجديد\",\n    \"email\": \"ahmed.new@example.com\"\n}"
+						},
 						"url": {"raw": "{{base_url}}/api/customer/profile/", "host": ["{{base_url}}"], "path": ["api", "customer", "profile", ""]}
 					}
 				}
