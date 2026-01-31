@@ -326,7 +326,8 @@ def _find_user_for_reset(role, phone_number, shop_number=None):
     if role == "shop_owner":
         from django.db.models import Q
         user = ShopOwner.objects.filter(
-            Q(phone_number=normalized) | Q(phone_number=alternate)
+            Q(phone_number=normalized) | Q(phone_number=alternate) |
+            Q(shop_number=normalized) | Q(shop_number=alternate)
         ).first()
         if not user:
             return None, "رقم الهاتف غير مسجل أو صاحب المحل لم يضف رقم الهاتف بعد"
