@@ -1057,13 +1057,19 @@ def customer_profile_view(request):
     عرض وتحديث ملف العميل
     GET/PUT /api/customer/profile/
     """
-    # نفترض أن الـ authentication يرجع العميل من الـ JWT
-    customer = getattr(request.user, '_customer', None) or getattr(request, '_customer', None)
-    if not customer and hasattr(request.user, 'id'):
+    # التحقق من أن المستخدم هو عميل
+    user = request.user
+    
+    # إذا كان المستخدم Customer مباشرة من الـ authentication
+    if isinstance(user, Customer):
+        customer = user
+    else:
+        # محاولة جلب العميل بالـ ID
         try:
-            customer = Customer.objects.get(id=request.user.id)
-        except:
-            pass
+            customer = Customer.objects.get(id=user.id)
+        except Customer.DoesNotExist:
+            return error_response(message='العميل غير موجود', status_code=status.HTTP_404_NOT_FOUND)
+    
     if not customer:
         return error_response(message='العميل غير موجود', status_code=status.HTTP_404_NOT_FOUND)
     
