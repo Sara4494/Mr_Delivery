@@ -332,6 +332,17 @@ def _phone_variants(phone_number):
     return list(set(v for v in variants if v))
 
 
+def _phone_variants(phone_number):
+    """إرجاع كل الصيغ المحتملة للرقم (للبحث في DB)"""
+    if not phone_number:
+        return []
+    normalized = normalize_phone(phone_number)
+    variants = [normalized, str(phone_number).strip()]
+    if normalized.startswith("+20"):
+        variants.extend([normalized[3:], "0" + normalized[3:]])  # 1027... و 01027...
+    return list(set(v for v in variants if v))
+
+
 def _find_user_for_reset(role, phone_number, shop_number=None):
     """
     البحث عن المستخدم لاستعادة كلمة المرور
