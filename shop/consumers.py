@@ -241,16 +241,25 @@ class ChatConsumer(AsyncWebsocketConsumer):
             order = Order.objects.get(id=self.order_id)
             
             if user_type == 'shop_owner':
-                return order.shop_owner_id == user.id
+                has_access = order.shop_owner_id == user.id
+                print(f"[check_order_access] shop_owner: order.shop_owner_id={order.shop_owner_id}, user.id={user.id}, access={has_access}")
+                return has_access
             elif user_type == 'employee':
-                return order.shop_owner_id == user.shop_owner_id
+                has_access = order.shop_owner_id == user.shop_owner_id
+                print(f"[check_order_access] employee: order.shop_owner_id={order.shop_owner_id}, user.shop_owner_id={user.shop_owner_id}, access={has_access}")
+                return has_access
             elif user_type == 'driver':
-                return order.driver_id == user.id
+                has_access = order.driver_id == user.id
+                print(f"[check_order_access] driver: order.driver_id={order.driver_id}, user.id={user.id}, access={has_access}")
+                return has_access
             elif user_type == 'customer':
-                return order.customer_id == user.id
+                has_access = order.customer_id == user.id
+                print(f"[check_order_access] customer: order.customer_id={order.customer_id}, user.id={user.id}, access={has_access}")
+                return has_access
             
             return False
         except Order.DoesNotExist:
+            print(f"[check_order_access] Order {self.order_id} does not exist!")
             return False
     
     @database_sync_to_async
