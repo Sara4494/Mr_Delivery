@@ -43,6 +43,7 @@ from .serializers import (
     AddToCartSerializer,
     UpdateCartItemSerializer,
 )
+from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
 from user.models import ShopOwner
 from user.utils import success_response, error_response
 from .websocket_utils import notify_order_update, notify_driver_assigned
@@ -100,7 +101,7 @@ class CustomerPagination(PageNumberPagination):
 
 # Shop Status APIs
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def shop_status_view(request):
     """
     عرض وتحديث حالة المتجر
@@ -137,7 +138,7 @@ def shop_status_view(request):
 
 # Customer APIs
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def customer_list_view(request):
     """
     عرض قائمة العملاء وإضافة عميل جديد
@@ -192,7 +193,7 @@ def customer_list_view(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def customer_detail_view(request, customer_id):
     """
     عرض، تحديث، أو حذف عميل
@@ -244,7 +245,7 @@ def customer_detail_view(request, customer_id):
 
 # Driver APIs
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def driver_list_view(request):
     """
     عرض قائمة السائقين وإضافة سائق جديد
@@ -288,7 +289,7 @@ def driver_list_view(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def driver_detail_view(request, driver_id):
     """
     عرض، تحديث، أو حذف سائق
@@ -342,7 +343,7 @@ def driver_detail_view(request, driver_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def driver_approve_view(request, driver_id):
     """
     الموافقة على طلب انضمام سائق (تغيير الحالة من pending إلى available)
@@ -373,7 +374,7 @@ def driver_approve_view(request, driver_id):
 
 # Product APIs (قائمة المنتجات - بروفايل المحل)
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def product_list_view(request):
     """
     عرض قائمة المنتجات وإضافة منتج
@@ -410,7 +411,7 @@ def product_list_view(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def product_detail_view(request, product_id):
     """
     عرض، تحديث، أو حذف منتج
@@ -458,7 +459,7 @@ def product_detail_view(request, product_id):
 
 # Order APIs
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def order_list_view(request):
     """
     عرض قائمة الطلبات وإنشاء طلب جديد
@@ -524,7 +525,7 @@ def order_list_view(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def order_detail_view(request, order_id):
     """
     عرض، تحديث، أو حذف طلب
@@ -645,7 +646,7 @@ def order_detail_view(request, order_id):
 
 # Invoice APIs
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def invoice_list_view(request):
     """
     عرض قائمة الفواتير وإنشاء فاتورة سريعة
@@ -709,7 +710,7 @@ def invoice_list_view(request):
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def invoice_detail_view(request, invoice_id):
     """
     عرض فاتورة أو تحديث حالة الإرسال
@@ -751,7 +752,7 @@ def invoice_detail_view(request, invoice_id):
 
 # Statistics API
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def shop_dashboard_statistics_view(request):
     """
     إحصائيات لوحة التحكم للمحل
@@ -802,7 +803,7 @@ def shop_dashboard_statistics_view(request):
 
 # Employee APIs
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def employee_list_view(request):
     """
     عرض قائمة الموظفين وإضافة موظف جديد
@@ -846,7 +847,7 @@ def employee_list_view(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def employee_detail_view(request, employee_id):
     """
     عرض، تحديث، أو حذف موظف
@@ -898,7 +899,7 @@ def employee_detail_view(request, employee_id):
 
 # Employee Statistics API
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def employee_statistics_view(request):
     """
     إحصائيات الموظفين
@@ -1051,7 +1052,7 @@ def customer_login_view(request):
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def customer_profile_view(request):
     """
     عرض وتحديث ملف العميل
@@ -1092,7 +1093,7 @@ def customer_profile_view(request):
 # ==================== Customer Address APIs ====================
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def customer_address_list_view(request):
     """
     قائمة عناوين العميل وإضافة عنوان جديد
@@ -1119,7 +1120,7 @@ def customer_address_list_view(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def customer_address_detail_view(request, address_id):
     """
     عرض، تحديث، حذف عنوان
@@ -1150,7 +1151,7 @@ def customer_address_detail_view(request, address_id):
 # ==================== Category APIs ====================
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def category_list_view(request):
     """
     قائمة التصنيفات
@@ -1173,7 +1174,7 @@ def category_list_view(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def category_detail_view(request, category_id):
     """
     عرض، تحديث، حذف تصنيف
@@ -1204,7 +1205,7 @@ def category_detail_view(request, category_id):
 # ==================== Order Rating APIs ====================
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def order_rating_create_view(request):
     """
     تقييم طلب
@@ -1253,7 +1254,7 @@ def order_rating_create_view(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwner])
 def order_rating_view(request, order_id):
     """
     عرض تقييم طلب
@@ -1271,7 +1272,7 @@ def order_rating_view(request, order_id):
 # ==================== Payment Method APIs ====================
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def payment_method_list_view(request):
     """
     قائمة طرق الدفع وإضافة طريقة جديدة
@@ -1308,7 +1309,7 @@ def payment_method_list_view(request):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def payment_method_delete_view(request, method_id):
     """
     حذف طريقة دفع
@@ -1395,7 +1396,7 @@ def notification_mark_all_read_view(request):
 # ==================== Cart APIs ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def cart_view(request, shop_id):
     """
     عرض سلة التسوق لمحل معين
@@ -1413,7 +1414,7 @@ def cart_view(request, shop_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def cart_add_item_view(request, shop_id):
     """
     إضافة منتج للسلة
@@ -1455,7 +1456,7 @@ def cart_add_item_view(request, shop_id):
 
 
 @api_view(['PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def cart_item_view(request, shop_id, item_id):
     """
     تحديث أو حذف عنصر من السلة
@@ -1492,7 +1493,7 @@ def cart_item_view(request, shop_id, item_id):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsCustomer])
 def cart_clear_view(request, shop_id):
     """
     تفريغ السلة
@@ -1510,7 +1511,7 @@ def cart_clear_view(request, shop_id):
 # ==================== Driver Location APIs ====================
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsDriver])
 def driver_location_update_view(request):
     """
     تحديث موقع السائق
