@@ -7,6 +7,7 @@ class ShopOwner(models.Model):
     owner_name = models.CharField(max_length=100, verbose_name="اسم صاحب المحل")
     shop_name = models.CharField(max_length=100, verbose_name="اسم المحل")
     shop_number = models.CharField(max_length=50, unique=True, verbose_name="رقم المحل")
+    phone_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="رقم الهاتف")
     password = models.CharField(max_length=128, verbose_name="كلمة المرور")
     profile_image = models.ImageField(upload_to='shop_profiles/', blank=True, null=True, verbose_name="صورة البروفيل")
     description = models.TextField(blank=True, null=True, verbose_name="وصف المحل")

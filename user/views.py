@@ -307,6 +307,51 @@ def _find_customer_by_phone(phone_number):
     ).first()
 
 
+def _find_user_for_reset(role, phone_number, shop_number=None):
+    """
+    البحث عن المستخدم لاستعادة كلمة المرور
+    Returns: (user_object, error_message) - error_message is None if found
+    """
+    from shop.models import Customer, Employee, Driver
+    normalized = normalize_phone(phone_number)
+    alternate = normalized[3:] if normalized.startswith("+20") else "0" + normalized.lstrip("+")
+
+    def _phone_match(qs, field="phone_number"):
+        from django.db.models import Q
+        return qs.filter(Q(**{field: normalized}) | Q(**{field: alternate})).first()
+
+    if role == "customer":
+        user = _phone_match(Customer.objects.all())
+        return (user, None) if user else (None, "رقم الهاتف غير مسجل")
+    if role == "shop_owner":
+        from django.db.models import Q
+        user = ShopOwner.objects.filter(
+            Q(phone_number=normalized) | Q(phone_number=alternate)
+        ).first()
+        if not user:
+            return None, "رقم الهاتف غير مسجل أو صاحب المحل لم يضف رقم الهاتف بعد"
+        return (user, None)
+    if role == "employee":
+        if not shop_number:
+            return None, "رقم المحل مطلوب للموظفين"
+        try:
+            shop = ShopOwner.objects.get(shop_number=shop_number)
+            user = _phone_match(Employee.objects.filter(shop_owner=shop))
+            return (user, None) if user else (None, "رقم الهاتف غير مسجل في هذا المحل")
+        except ShopOwner.DoesNotExist:
+            return None, "رقم المحل غير صحيح"
+    if role == "driver":
+        if not shop_number:
+            return None, "رقم المحل مطلوب للسائقين"
+        try:
+            shop = ShopOwner.objects.get(shop_number=shop_number)
+            user = _phone_match(Driver.objects.filter(shop_owner=shop))
+            return (user, None) if user else (None, "رقم الهاتف غير مسجل في هذا المحل")
+        except ShopOwner.DoesNotExist:
+            return None, "رقم المحل غير صحيح"
+    return None, "نوع المستخدم غير صحيح"
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def unified_register_view(request):
@@ -435,14 +480,16 @@ def send_otp_view(request):
     إرسال رمز OTP إلى رقم الهاتف عبر WhatsApp (UltraMsg)
     POST /api/auth/otp/send/
     Body: {
-        "phone_number": "+201012345678" أو "01012345678",
-        "purpose": "login" | "register" | "reset_password" (اختياري)
+        "phone_number": "+201012345678",
+        "purpose": "login" | "register" | "reset_password",
+        "role": "customer" | "shop_owner" | "employee" | "driver",  // لـ reset_password
+        "shop_number": "12345"  // مطلوب لـ employee و driver عند reset_password
     }
-    - register: الرقم يجب ألا يكون مسجلاً مسبقاً
-    - reset_password: الرقم يجب أن يكون مسجلاً
     """
     phone_number = request.data.get('phone_number')
     purpose = request.data.get('purpose', 'login')
+    role = request.data.get('role', 'customer')
+    shop_number = request.data.get('shop_number')
     if not phone_number:
         return error_response(
             message='رقم الهاتف مطلوب',
@@ -456,9 +503,10 @@ def send_otp_view(request):
                 status_code=status.HTTP_400_BAD_REQUEST
             )
     elif purpose == 'reset_password':
-        if not _find_customer_by_phone(phone_number):
+        user, err = _find_user_for_reset(role, phone_number, shop_number)
+        if err:
             return error_response(
-                message='رقم الهاتف غير مسجل',
+                message=err,
                 status_code=status.HTTP_404_NOT_FOUND
             )
 
@@ -539,18 +587,22 @@ def verify_otp_login_view(request):
 @permission_classes([AllowAny])
 def reset_password_view(request):
     """
-    استعادة كلمة المرور باستخدام OTP
-    الخطوة 1: إرسال OTP عبر POST /api/auth/otp/send/ مع purpose=reset_password
+    استعادة كلمة المرور باستخدام OTP - لجميع أنواع المستخدمين
+    الخطوة 1: إرسال OTP عبر POST /api/auth/otp/send/ مع purpose=reset_password و role
     الخطوة 2: استدعاء هذا الـ endpoint
     
     POST /api/auth/password-reset/
     Body: {
+        "role": "customer" | "shop_owner" | "employee" | "driver",
         "phone_number": "+201012345678",
+        "shop_number": "12345",  // مطلوب لـ employee و driver
         "otp": "123456",
         "new_password": "كلمة المرور الجديدة"
     }
     """
+    role = request.data.get('role', 'customer')
     phone_number = request.data.get('phone_number')
+    shop_number = request.data.get('shop_number')
     otp_code = request.data.get('otp')
     new_password = request.data.get('new_password')
 
@@ -581,15 +633,15 @@ def reset_password_view(request):
             status_code=status.HTTP_401_UNAUTHORIZED
         )
 
-    customer = _find_customer_by_phone(phone_number)
-    if not customer:
+    user, err = _find_user_for_reset(role, phone_number, shop_number)
+    if err:
         return error_response(
-            message='رقم الهاتف غير مسجل',
+            message=err,
             status_code=status.HTTP_404_NOT_FOUND
         )
 
-    customer.set_password(new_password)
-    customer.save()
+    user.set_password(new_password)
+    user.save()
 
     return success_response(
         message='تم تغيير كلمة المرور بنجاح'

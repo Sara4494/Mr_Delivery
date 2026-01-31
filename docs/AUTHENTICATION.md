@@ -206,22 +206,38 @@ ULTRAMSG_TOKEN=your_token
 
 ---
 
-## 4. استعادة كلمة المرور (Reset Password)
+## 4. استعادة كلمة المرور (Reset Password) — لجميع المستخدمين
 
 **الخطوات:**
-1. إرسال OTP: `POST /api/auth/otp/send/` مع `"purpose": "reset_password"`
+1. إرسال OTP: `POST /api/auth/otp/send/` مع `purpose=reset_password` و `role`
 2. تغيير كلمة المرور: `POST /api/auth/password-reset/`
 
+### إرسال OTP للاستعادة
+```json
+{
+    "phone_number": "+201012345678",
+    "purpose": "reset_password",
+    "role": "customer"
+}
+```
+- **customer**: `phone_number` فقط
+- **shop_owner**: `phone_number` فقط (يجب إضافته في إعدادات المحل أولاً)
+- **employee**, **driver**: مطلوب `phone_number` + `shop_number`
+
+### تغيير كلمة المرور
 **Endpoint**: `POST /api/auth/password-reset/`
 
 **Request Body**
 ```json
 {
+    "role": "customer",
     "phone_number": "+201012345678",
+    "shop_number": "12345",
     "otp": "123456",
     "new_password": "newpassword123"
 }
 ```
+- `shop_number` مطلوب فقط لـ employee و driver
 
 **Success Response (200)**
 ```json

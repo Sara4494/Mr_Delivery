@@ -67,7 +67,7 @@ class ShopProfileSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = ShopOwner
-        fields = ['id', 'owner_name', 'shop_name', 'shop_number', 'description', 'profile_image', 'profile_image_url',
+        fields = ['id', 'owner_name', 'shop_name', 'shop_number', 'phone_number', 'description', 'profile_image', 'profile_image_url',
                   'work_schedule', 'total_images', 'published_images', 
                   'total_likes', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -100,7 +100,7 @@ class ShopProfileUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ShopOwner
-        fields = ['owner_name', 'shop_name', 'description', 'profile_image']
+        fields = ['owner_name', 'shop_name', 'phone_number', 'description', 'profile_image']
 
 
 class ImageLikeSerializer(serializers.Serializer):
