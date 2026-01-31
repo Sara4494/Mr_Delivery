@@ -307,28 +307,41 @@ def _find_customer_by_phone(phone_number):
     ).first()
 
 
+def _phone_variants(phone_number):
+    """إرجاع كل الصيغ المحتملة للرقم (للبحث في DB)"""
+    if not phone_number:
+        return []
+    normalized = normalize_phone(phone_number)
+    variants = [normalized, str(phone_number).strip()]
+    if normalized.startswith("+20"):
+        variants.extend([normalized[3:], "0" + normalized[3:]])  # 1027... و 01027...
+    return list(set(v for v in variants if v))
+
+
 def _find_user_for_reset(role, phone_number, shop_number=None):
     """
     البحث عن المستخدم لاستعادة كلمة المرور
     Returns: (user_object, error_message) - error_message is None if found
     """
     from shop.models import Customer, Employee, Driver
-    normalized = normalize_phone(phone_number)
-    alternate = normalized[3:] if normalized.startswith("+20") else "0" + normalized.lstrip("+")
+    from django.db.models import Q
+
+    variants = _phone_variants(phone_number)
 
     def _phone_match(qs, field="phone_number"):
-        from django.db.models import Q
-        return qs.filter(Q(**{field: normalized}) | Q(**{field: alternate})).first()
+        q = Q()
+        for v in variants:
+            q |= Q(**{field: v})
+        return qs.filter(q).first()
 
     if role == "customer":
         user = _phone_match(Customer.objects.all())
         return (user, None) if user else (None, "رقم الهاتف غير مسجل")
     if role == "shop_owner":
-        from django.db.models import Q
-        user = ShopOwner.objects.filter(
-            Q(phone_number=normalized) | Q(phone_number=alternate) |
-            Q(shop_number=normalized) | Q(shop_number=alternate)
-        ).first()
+        q = Q()
+        for v in variants:
+            q |= Q(phone_number=v) | Q(shop_number=v)
+        user = ShopOwner.objects.filter(q).first()
         if not user:
             return None, "رقم الهاتف غير مسجل أو صاحب المحل لم يضف رقم الهاتف بعد"
         return (user, None)
