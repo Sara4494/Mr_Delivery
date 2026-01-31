@@ -3,6 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.tokens import RefreshToken
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
 from .models import ShopOwner
 from .utils import success_response, error_response
@@ -67,4 +68,331 @@ class ShopOwnerTokenRefreshView(TokenRefreshView):
             status_code=status.HTTP_200_OK
         )
 
- 
+
+# ==================== Unified Auth APIs ====================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def unified_login_view(request):
+    """
+    تسجيل دخول موحد لجميع المستخدمين
+    POST /api/auth/login/
+    Body: {
+        "role": "shop_owner" | "customer" | "employee" | "driver",
+        "phone_number": "رقم الهاتف",  // للعميل والموظف والسائق
+        "shop_number": "رقم المحل",     // لصاحب المحل فقط
+        "password": "كلمة المرور"
+    }
+    """
+    role = request.data.get('role')
+    phone_number = request.data.get('phone_number')
+    shop_number = request.data.get('shop_number')
+    password = request.data.get('password')
+    
+    if not role:
+        return error_response(
+            message='يجب تحديد نوع المستخدم (role)',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    if not password:
+        return error_response(
+            message='كلمة المرور مطلوبة',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # ===== Shop Owner Login =====
+    if role == 'shop_owner':
+        if not shop_number:
+            return error_response(
+                message='رقم المحل مطلوب',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            shop_owner = ShopOwner.objects.get(shop_number=shop_number)
+            if not shop_owner.check_password(password):
+                return error_response(
+                    message='رقم المحل أو كلمة المرور غير صحيحة',
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            if not shop_owner.is_active:
+                return error_response(
+                    message='الحساب غير نشط',
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # إنشاء التوكن
+            refresh = RefreshToken.for_user(shop_owner)
+            refresh['shop_owner_id'] = shop_owner.id
+            refresh['shop_number'] = shop_owner.shop_number
+            refresh['user_type'] = 'shop_owner'
+            
+            return success_response(
+                data={
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'id': shop_owner.id,
+                        'shop_number': shop_owner.shop_number,
+                        'shop_name': shop_owner.shop_name,
+                        'owner_name': shop_owner.owner_name,
+                    },
+                    'role': 'shop_owner'
+                },
+                message='تم تسجيل الدخول بنجاح'
+            )
+        except ShopOwner.DoesNotExist:
+            return error_response(
+                message='رقم المحل أو كلمة المرور غير صحيحة',
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
+    
+    # ===== Customer Login =====
+    elif role == 'customer':
+        if not phone_number:
+            return error_response(
+                message='رقم الهاتف مطلوب',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
+        from shop.models import Customer
+        try:
+            customer = Customer.objects.get(phone_number=phone_number)
+            if not customer.check_password(password):
+                return error_response(
+                    message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # إنشاء التوكن
+            refresh = RefreshToken()
+            refresh['customer_id'] = customer.id
+            refresh['phone_number'] = customer.phone_number
+            refresh['user_type'] = 'customer'
+            
+            return success_response(
+                data={
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'id': customer.id,
+                        'name': customer.name,
+                        'phone_number': customer.phone_number,
+                        'email': customer.email,
+                        'is_verified': customer.is_verified,
+                    },
+                    'role': 'customer'
+                },
+                message='تم تسجيل الدخول بنجاح'
+            )
+        except Customer.DoesNotExist:
+            return error_response(
+                message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
+    
+    # ===== Employee Login =====
+    elif role == 'employee':
+        if not phone_number:
+            return error_response(
+                message='رقم الهاتف مطلوب',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
+        from shop.models import Employee
+        try:
+            employee = Employee.objects.get(phone_number=phone_number)
+            if not employee.check_password(password):
+                return error_response(
+                    message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            if not employee.is_active:
+                return error_response(
+                    message='الحساب غير نشط',
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # إنشاء التوكن
+            refresh = RefreshToken()
+            refresh['employee_id'] = employee.id
+            refresh['phone_number'] = employee.phone_number
+            refresh['user_type'] = 'employee'
+            refresh['shop_owner_id'] = employee.shop_owner_id
+            refresh['role'] = employee.role
+            
+            return success_response(
+                data={
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'id': employee.id,
+                        'name': employee.name,
+                        'phone_number': employee.phone_number,
+                        'role': employee.role,
+                        'shop_owner_id': employee.shop_owner_id,
+                    },
+                    'role': 'employee'
+                },
+                message='تم تسجيل الدخول بنجاح'
+            )
+        except Employee.DoesNotExist:
+            return error_response(
+                message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
+    
+    # ===== Driver Login =====
+    elif role == 'driver':
+        if not phone_number:
+            return error_response(
+                message='رقم الهاتف مطلوب',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
+        from shop.models import Driver
+        try:
+            driver = Driver.objects.get(phone_number=phone_number)
+            if not driver.check_password(password):
+                return error_response(
+                    message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # إنشاء التوكن
+            refresh = RefreshToken()
+            refresh['driver_id'] = driver.id
+            refresh['phone_number'] = driver.phone_number
+            refresh['user_type'] = 'driver'
+            refresh['shop_owner_id'] = driver.shop_owner_id
+            
+            return success_response(
+                data={
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'id': driver.id,
+                        'name': driver.name,
+                        'phone_number': driver.phone_number,
+                        'status': driver.status,
+                        'shop_owner_id': driver.shop_owner_id,
+                    },
+                    'role': 'driver'
+                },
+                message='تم تسجيل الدخول بنجاح'
+            )
+        except Driver.DoesNotExist:
+            return error_response(
+                message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
+    
+    else:
+        return error_response(
+            message='نوع المستخدم غير صحيح. القيم المتاحة: shop_owner, customer, employee, driver',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def unified_register_view(request):
+    """
+    تسجيل مستخدم جديد (حالياً للعملاء فقط)
+    POST /api/auth/register/
+    Body: {
+        "role": "customer",
+        "name": "الاسم",
+        "phone_number": "رقم الهاتف",
+        "email": "البريد الإلكتروني (اختياري)",
+        "password": "كلمة المرور"
+    }
+    
+    ملاحظة: الموظفين والسائقين يتم إنشاؤهم بواسطة صاحب المحل
+    """
+    role = request.data.get('role')
+    
+    if not role:
+        return error_response(
+            message='يجب تحديد نوع المستخدم (role)',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # ===== Customer Registration =====
+    if role == 'customer':
+        name = request.data.get('name')
+        phone_number = request.data.get('phone_number')
+        email = request.data.get('email', '')
+        password = request.data.get('password')
+        
+        # التحقق من البيانات المطلوبة
+        if not name:
+            return error_response(message='الاسم مطلوب', status_code=status.HTTP_400_BAD_REQUEST)
+        if not phone_number:
+            return error_response(message='رقم الهاتف مطلوب', status_code=status.HTTP_400_BAD_REQUEST)
+        if not password:
+            return error_response(message='كلمة المرور مطلوبة', status_code=status.HTTP_400_BAD_REQUEST)
+        if len(password) < 6:
+            return error_response(message='كلمة المرور يجب أن تكون 6 أحرف على الأقل', status_code=status.HTTP_400_BAD_REQUEST)
+        
+        # التحقق من عدم وجود الرقم مسبقاً
+        from shop.models import Customer
+        if Customer.objects.filter(phone_number=phone_number).exists():
+            return error_response(
+                message='رقم الهاتف مسجل مسبقاً',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # إنشاء العميل
+        customer = Customer.objects.create(
+            name=name,
+            phone_number=phone_number,
+            email=email
+        )
+        customer.set_password(password)
+        customer.save()
+        
+        # إنشاء التوكن
+        refresh = RefreshToken()
+        refresh['customer_id'] = customer.id
+        refresh['phone_number'] = customer.phone_number
+        refresh['user_type'] = 'customer'
+        
+        return success_response(
+            data={
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'id': customer.id,
+                    'name': customer.name,
+                    'phone_number': customer.phone_number,
+                    'email': customer.email,
+                    'is_verified': customer.is_verified,
+                },
+                'role': 'customer'
+            },
+            message='تم إنشاء الحساب بنجاح',
+            status_code=status.HTTP_201_CREATED
+        )
+    
+    # ===== Shop Owner Registration =====
+    elif role == 'shop_owner':
+        # يمكن إضافة تسجيل صاحب محل جديد هنا إذا مطلوب
+        return error_response(
+            message='تسجيل صاحب محل جديد يتم من خلال الإدارة',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # ===== Employee/Driver Registration =====
+    elif role in ['employee', 'driver']:
+        return error_response(
+            message=f'تسجيل {role} يتم بواسطة صاحب المحل',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    else:
+        return error_response(
+            message='نوع المستخدم غير صحيح. القيم المتاحة: customer',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
