@@ -250,13 +250,19 @@
 					],
 					"request": {
 						"method": "POST",
-						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"header": [],
 						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"role\": \"customer\",\n    \"name\": \"أحمد محمد\",\n    \"phone_number\": \"01098765432\",\n    \"password\": \"password123\"\n}"
+							"mode": "formdata",
+							"formdata": [
+								{"key": "role", "value": "customer", "type": "text"},
+								{"key": "name", "value": "أحمد محمد", "type": "text"},
+								{"key": "phone_number", "value": "01098765432", "type": "text"},
+								{"key": "password", "value": "password123", "type": "text"},
+								{"key": "profile_image", "type": "file", "src": ""}
+							]
 						},
 						"url": {"raw": "{{base_url}}/api/auth/register/", "host": ["{{base_url}}"], "path": ["api", "auth", "register", ""]},
-						"description": "الخطوة 3 للتسجيل: إنشاء الحساب بعد التحقق من OTP"
+						"description": "الخطوة 3 للتسجيل: إنشاء الحساب بعد التحقق من OTP. يمكن رفع profile_image اختيارياً"
 					}
 				},
 				{

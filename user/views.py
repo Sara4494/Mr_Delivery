@@ -397,12 +397,12 @@ def unified_register_view(request):
     """
     تسجيل مستخدم جديد (حالياً للعملاء فقط) بعد التحقق من OTP
     POST /api/auth/register/
-    Body: {
-        "role": "customer",
-        "name": "الاسم",
-        "phone_number": "رقم الهاتف",
-        "password": "كلمة المرور"
-    }
+    Body (JSON أو form-data):
+    - role: customer
+    - name: الاسم
+    - phone_number: رقم الهاتف
+    - password: كلمة المرور
+    - profile_image: ملف صورة (اختياري)
     
     الخطوات:
     1) إرسال OTP عبر /api/auth/otp/send/ مع purpose=register
@@ -421,8 +421,8 @@ def unified_register_view(request):
     if role == 'customer':
         name = request.data.get('name')
         phone_number = request.data.get('phone_number')
-        email = request.data.get('email', '')
         password = request.data.get('password')
+        profile_image = request.FILES.get('profile_image')
         
         # التحقق من البيانات المطلوبة
         if not name:
@@ -453,12 +453,16 @@ def unified_register_view(request):
         customer = Customer.objects.create(
             name=name,
             phone_number=normalized,
-            email=email,
+            profile_image=profile_image,
             is_verified=True  # تم التحقق عبر OTP
         )
         customer.set_password(password)
         customer.save()
         _clear_phone_verified_for_registration(phone_number)
+
+        profile_image_url = None
+        if customer.profile_image:
+            profile_image_url = request.build_absolute_uri(customer.profile_image.url)
         
         # إنشاء التوكن
         refresh = RefreshToken()
@@ -474,7 +478,8 @@ def unified_register_view(request):
                     'id': customer.id,
                     'name': customer.name,
                     'phone_number': customer.phone_number,
-                    'email': customer.email,
+                    'profile_image': customer.profile_image.url if customer.profile_image else None,
+                    'profile_image_url': profile_image_url,
                     'is_verified': customer.is_verified,
                 },
                 'role': 'customer'
