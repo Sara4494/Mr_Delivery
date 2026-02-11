@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.core.cache import cache
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
 from .models import ShopOwner
 from .utils import success_response, error_response
@@ -307,6 +308,30 @@ def _find_customer_by_phone(phone_number):
     ).first()
 
 
+REGISTER_VERIFIED_CACHE_PREFIX = "register_verified:"
+REGISTER_VERIFIED_TTL_SECONDS = 600  # 10 دقائق لإكمال خطوة إنشاء الحساب
+
+
+def _register_verified_cache_key(phone_number):
+    return f"{REGISTER_VERIFIED_CACHE_PREFIX}{normalize_phone(phone_number)}"
+
+
+def _mark_phone_verified_for_registration(phone_number):
+    cache.set(
+        _register_verified_cache_key(phone_number),
+        True,
+        REGISTER_VERIFIED_TTL_SECONDS
+    )
+
+
+def _is_phone_verified_for_registration(phone_number):
+    return bool(cache.get(_register_verified_cache_key(phone_number)))
+
+
+def _clear_phone_verified_for_registration(phone_number):
+    cache.delete(_register_verified_cache_key(phone_number))
+
+
 def _phone_variants(phone_number):
     """إرجاع كل الصيغ المحتملة للرقم (للبحث في DB)"""
     if not phone_number:
@@ -370,18 +395,19 @@ def _find_user_for_reset(role, phone_number, shop_number=None):
 @permission_classes([AllowAny])
 def unified_register_view(request):
     """
-    تسجيل مستخدم جديد (حالياً للعملاء فقط) مع التحقق من OTP
+    تسجيل مستخدم جديد (حالياً للعملاء فقط) بعد التحقق من OTP
     POST /api/auth/register/
     Body: {
         "role": "customer",
         "name": "الاسم",
         "phone_number": "رقم الهاتف",
-        "otp": "رمز التحقق (مطلوب - يُرسل عبر واتساب)",
-        "email": "البريد الإلكتروني (اختياري)",
         "password": "كلمة المرور"
     }
     
-    الخطوات: 1) إرسال OTP عبر /api/auth/otp/send/  2) إكمال التسجيل هنا مع الرمز
+    الخطوات:
+    1) إرسال OTP عبر /api/auth/otp/send/ مع purpose=register
+    2) التحقق عبر /api/auth/otp/verify/ مع purpose=register
+    3) إكمال التسجيل هنا بدون OTP
     """
     role = request.data.get('role')
     
@@ -395,7 +421,6 @@ def unified_register_view(request):
     if role == 'customer':
         name = request.data.get('name')
         phone_number = request.data.get('phone_number')
-        otp_code = request.data.get('otp')
         email = request.data.get('email', '')
         password = request.data.get('password')
         
@@ -404,20 +429,14 @@ def unified_register_view(request):
             return error_response(message='الاسم مطلوب', status_code=status.HTTP_400_BAD_REQUEST)
         if not phone_number:
             return error_response(message='رقم الهاتف مطلوب', status_code=status.HTTP_400_BAD_REQUEST)
-        if not otp_code:
-            return error_response(
-                message='رمز التحقق مطلوب. استخدم /api/auth/otp/send/ أولاً',
-                status_code=status.HTTP_400_BAD_REQUEST
-            )
         if not password:
             return error_response(message='كلمة المرور مطلوبة', status_code=status.HTTP_400_BAD_REQUEST)
         if len(password) < 6:
             return error_response(message='كلمة المرور يجب أن تكون 6 أحرف على الأقل', status_code=status.HTTP_400_BAD_REQUEST)
-        
-        # التحقق من OTP أولاً
-        if not otp_verify(phone_number, otp_code):
+
+        if not _is_phone_verified_for_registration(phone_number):
             return error_response(
-                message='رمز التحقق غير صحيح أو منتهي الصلاحية',
+                message='يجب التحقق من OTP أولاً عبر /api/auth/otp/verify/ مع purpose=register',
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
@@ -439,6 +458,7 @@ def unified_register_view(request):
         )
         customer.set_password(password)
         customer.save()
+        _clear_phone_verified_for_registration(phone_number)
         
         # إنشاء التوكن
         refresh = RefreshToken()
@@ -539,15 +559,17 @@ def send_otp_view(request):
 @permission_classes([AllowAny])
 def verify_otp_login_view(request):
     """
-    تسجيل دخول العملاء باستخدام OTP (بدون كلمة مرور)
+    التحقق من OTP لتسجيل الدخول أو التسجيل
     POST /api/auth/otp/verify/
     Body: {
         "phone_number": "+201012345678" أو "01012345678",
-        "otp": "123456"
+        "otp": "123456",
+        "purpose": "login" | "register"  // افتراضي login
     }
     """
     phone_number = request.data.get('phone_number')
     otp_code = request.data.get('otp')
+    purpose = request.data.get('purpose', 'login')
 
     if not phone_number:
         return error_response(
@@ -559,11 +581,32 @@ def verify_otp_login_view(request):
             message='رمز التحقق مطلوب',
             status_code=status.HTTP_400_BAD_REQUEST
         )
+    if purpose not in ['login', 'register']:
+        return error_response(
+            message='purpose غير صحيح. القيم المتاحة: login, register',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    if purpose == 'register' and _find_customer_by_phone(phone_number):
+        return error_response(
+            message='رقم الهاتف مسجل مسبقاً. استخدم تسجيل الدخول',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
 
     if not otp_verify(phone_number, otp_code):
         return error_response(
             message='رمز التحقق غير صحيح أو منتهي الصلاحية',
             status_code=status.HTTP_401_UNAUTHORIZED
+        )
+
+    if purpose == 'register':
+        _mark_phone_verified_for_registration(phone_number)
+        return success_response(
+            data={
+                'phone_number': normalize_phone(phone_number),
+                'otp_verified': True,
+                'purpose': 'register'
+            },
+            message='تم التحقق من OTP للتسجيل. يمكنك الآن إنشاء الحساب'
         )
 
     customer = _find_customer_by_phone(phone_number)

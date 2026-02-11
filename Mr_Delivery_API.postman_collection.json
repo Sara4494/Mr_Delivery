@@ -211,14 +211,27 @@
 						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\"\n}"
+							"raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"purpose\": \"login\"\n}"
 						},
 						"url": {"raw": "{{base_url}}/api/auth/otp/verify/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "verify", ""]},
 						"description": "الخطوة 2: التحقق من OTP وتسجيل الدخول (بدون كلمة مرور)"
 					}
 				},
 				{
-					"name": "تسجيل عميل جديد (مع OTP)",
+					"name": "التحقق من OTP - للتسجيل",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01098765432\",\n    \"otp\": \"123456\",\n    \"purpose\": \"register\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/otp/verify/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "verify", ""]},
+						"description": "الخطوة 2 للتسجيل: التحقق من OTP فقط (بدون إنشاء حساب)"
+					}
+				},
+				{
+					"name": "تسجيل عميل جديد (بعد تحقق OTP)",
 					"event": [
 						{
 							"listen": "test",
@@ -240,10 +253,10 @@
 						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"role\": \"customer\",\n    \"name\": \"أحمد محمد\",\n    \"phone_number\": \"01098765432\",\n    \"otp\": \"123456\",\n    \"email\": \"ahmed@example.com\",\n    \"password\": \"password123\"\n}"
+							"raw": "{\n    \"role\": \"customer\",\n    \"name\": \"أحمد محمد\",\n    \"phone_number\": \"01098765432\",\n    \"password\": \"password123\"\n}"
 						},
 						"url": {"raw": "{{base_url}}/api/auth/register/", "host": ["{{base_url}}"], "path": ["api", "auth", "register", ""]},
-						"description": "الخطوة 2 للتسجيل: بعد إرسال OTP عبر purpose=register"
+						"description": "الخطوة 3 للتسجيل: إنشاء الحساب بعد التحقق من OTP"
 					}
 				},
 				{

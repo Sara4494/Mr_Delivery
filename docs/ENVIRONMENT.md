@@ -60,6 +60,12 @@ REDIS_URL=redis://localhost:6379/0
 | `JWT_ACCESS_TOKEN_LIFETIME` | No | `1440` | Access token lifetime (minutes) |
 | `JWT_REFRESH_TOKEN_LIFETIME` | No | `10080` | Refresh token lifetime (minutes) |
 
+### OTP
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `FIXED_OTP_CODE` | No | `123456` | رمز ثابت من 6 أرقام يُستخدم حتى الاشتراك في خدمة إرسال OTP. إذا معيّن لا يُرسل أي رمز فعلي. لتفعيل الإرسال الفعلي اتركه فارغاً. |
+
 ### UltraMsg (WhatsApp OTP)
 
 | Variable | Required | Default | Description |

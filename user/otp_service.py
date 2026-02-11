@@ -79,14 +79,25 @@ def get_otp_cooldown_key(phone: str) -> str:
     return f"otp_cooldown:{normalize_phone(phone)}"
 
 
+def _get_fixed_otp_code():
+    """الرمز الثابت إذا كان مفعّلاً (حتى الاشتراك في خدمة OTP)"""
+    return (getattr(settings, "FIXED_OTP_CODE", None) or "").strip() or None
+
+
 def send_otp(phone: str) -> tuple[bool, str]:
     """
-    إنشاء رمز OTP، تخزينه، وإرساله عبر WhatsApp
+    إنشاء رمز OTP وتخزينه. إن وُجد رمز ثابت لا يُرسل عبر WhatsApp.
     Returns: (success: bool, message: str)
     """
     normalized = normalize_phone(phone)
     if not normalized or len(normalized) < 12:
         return False, "رقم الهاتف غير صالح"
+
+    fixed = _get_fixed_otp_code()
+    if fixed:
+        cache.set(get_otp_cache_key(normalized), fixed, OTP_EXPIRY_SECONDS)
+        cache.set(get_otp_cooldown_key(normalized), True, OTP_RESEND_COOLDOWN)
+        return True, "تم إرسال رمز التحقق بنجاح"
 
     if cache.get(get_otp_cooldown_key(normalized)):
         return False, "يرجى الانتظار دقيقة قبل إعادة إرسال الرمز"
@@ -103,17 +114,24 @@ def send_otp(phone: str) -> tuple[bool, str]:
 
 def verify_otp(phone: str, otp: str) -> bool:
     """
-    التحقق من صحة رمز OTP للرقم المعطى
+    التحقق من صحة رمز OTP للرقم المعطى.
+    إن وُجد رمز ثابت يُقبل مباشرة دون الحاجة لطلب إرسال مسبق.
     """
     normalized = normalize_phone(phone)
     if not normalized or not otp:
         return False
 
+    code = str(otp).strip()
+    fixed = _get_fixed_otp_code()
+    if fixed and code == fixed:
+        cache.delete(get_otp_cache_key(normalized))
+        return True
+
     stored = cache.get(get_otp_cache_key(normalized))
     if not stored:
         return False
 
-    if str(stored) != str(otp).strip():
+    if str(stored) != code:
         return False
 
     cache.delete(get_otp_cache_key(normalized))
