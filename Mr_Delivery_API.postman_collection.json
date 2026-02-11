@@ -146,7 +146,7 @@
 							"raw": "{\n    \"phone_number\": \"01098765432\",\n    \"purpose\": \"register\"\n}"
 						},
 						"url": {"raw": "{{base_url}}/api/auth/otp/send/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "send", ""]},
-						"description": "الخطوة 1 للتسجيل: الرقم يجب ألا يكون مسجلاً"
+						"description": "الخطوة 2 للتسجيل: إرسال OTP بعد إنشاء الحساب"
 					}
 				},
 				{
@@ -219,25 +219,12 @@
 				},
 				{
 					"name": "التحقق من OTP - للتسجيل",
-					"request": {
-						"method": "POST",
-						"header": [{"key": "Content-Type", "value": "application/json"}],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"phone_number\": \"01098765432\",\n    \"otp\": \"123456\",\n    \"purpose\": \"register\"\n}"
-						},
-						"url": {"raw": "{{base_url}}/api/auth/otp/verify/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "verify", ""]},
-						"description": "الخطوة 2 للتسجيل: التحقق من OTP فقط (بدون إنشاء حساب)"
-					}
-				},
-				{
-					"name": "تسجيل عميل جديد (بعد تحقق OTP)",
 					"event": [
 						{
 							"listen": "test",
 							"script": {
 								"exec": [
-									"if (pm.response.code === 201) {",
+									"if (pm.response.code === 200) {",
 									"    var jsonData = pm.response.json();",
 									"    if (jsonData.data) {",
 									"        pm.environment.set(\"customer_token\", jsonData.data.access);",
@@ -248,6 +235,19 @@
 							}
 						}
 					],
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone_number\": \"01098765432\",\n    \"otp\": \"123456\",\n    \"purpose\": \"register\"\n}"
+						},
+						"url": {"raw": "{{base_url}}/api/auth/otp/verify/", "host": ["{{base_url}}"], "path": ["api", "auth", "otp", "verify", ""]},
+						"description": "الخطوة 3 للتسجيل: التحقق من OTP وتفعيل الحساب"
+					}
+				},
+				{
+					"name": "تسجيل عميل جديد (الخطوة 1)",
 					"request": {
 						"method": "POST",
 						"header": [],
@@ -262,7 +262,7 @@
 							]
 						},
 						"url": {"raw": "{{base_url}}/api/auth/register/", "host": ["{{base_url}}"], "path": ["api", "auth", "register", ""]},
-						"description": "الخطوة 3 للتسجيل: إنشاء الحساب بعد التحقق من OTP. يمكن رفع profile_image اختيارياً"
+						"description": "الخطوة 1 للتسجيل: إنشاء الحساب أولاً بدون OTP. يمكن رفع profile_image اختيارياً"
 					}
 				},
 				{
