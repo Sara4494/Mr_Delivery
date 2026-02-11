@@ -17,7 +17,7 @@ from .serializers import (
 from user.models import ShopOwner
 from user.authentication import ShopOwnerJWTAuthentication
 from user.permissions import IsShopOwner
-from user.utils import success_response, error_response
+from user.utils import success_response, error_response, build_message_fields, t
 
 
 class GalleryPagination(PageNumberPagination):
@@ -33,7 +33,10 @@ class GalleryPagination(PageNumberPagination):
         
         response_data = {
             "status": status.HTTP_200_OK,
-            "message": "تم جلب الصور بنجاح",
+            **build_message_fields(
+                t(getattr(self, "request", None), "images_retrieved_successfully"),
+                request=getattr(self, "request", None)
+            ),
             "data": {
                 'count': self.page.paginator.count,
                 'next': self.get_next_link(),
@@ -61,7 +64,7 @@ def shop_profile_view(request):
         serializer = ShopProfileSerializer(shop_owner, context={'request': request})
         return success_response(
             data=serializer.data,
-            message='تم جلب الملف الشخصي بنجاح',
+            message=t(request, 'profile_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
 
@@ -76,11 +79,11 @@ def shop_profile_view(request):
             profile_serializer = ShopProfileSerializer(shop_owner, context={'request': request})
             return success_response(
                 data=profile_serializer.data,
-                message='تم تحديث الملف الشخصي بنجاح',
+                message=t(request, 'profile_updated_successfully'),
                 status_code=status.HTTP_200_OK
             )
         return error_response(
-            message='بيانات غير صحيحة',
+            message=t(request, 'invalid_data'),
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
@@ -102,7 +105,7 @@ def work_schedule_view(request):
         serializer = WorkScheduleSerializer(schedule)
         return success_response(
             data=serializer.data,
-            message='تم جلب مواعيد العمل بنجاح',
+            message=t(request, 'work_schedule_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
     
@@ -112,11 +115,11 @@ def work_schedule_view(request):
             serializer.save()
             return success_response(
                 data=serializer.data,
-                message='تم تحديث مواعيد العمل بنجاح',
+                message=t(request, 'work_schedule_updated_successfully'),
                 status_code=status.HTTP_200_OK
             )
         return error_response(
-            message='بيانات غير صحيحة',
+            message=t(request, 'invalid_data'),
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
@@ -161,7 +164,7 @@ def gallery_list_view(request):
         serializer = GalleryImageSerializer(queryset, many=True, context={'request': request})
         return success_response(
             data=serializer.data,
-            message='تم جلب الصور بنجاح',
+            message=t(request, 'images_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
     
@@ -175,11 +178,11 @@ def gallery_list_view(request):
             response_serializer = GalleryImageSerializer(image, context={'request': request})
             return success_response(
                 data=response_serializer.data,
-                message='تم رفع الصورة بنجاح',
+                message=t(request, 'image_uploaded_successfully'),
                 status_code=status.HTTP_201_CREATED
             )
         return error_response(
-            message='بيانات غير صحيحة',
+            message=t(request, 'invalid_data'),
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
@@ -200,7 +203,7 @@ def gallery_detail_view(request, image_id):
         image = GalleryImage.objects.get(id=image_id, shop_owner=shop_owner)
     except GalleryImage.DoesNotExist:
         return error_response(
-            message='الصورة غير موجودة',
+            message=t(request, 'image_not_found'),
             status_code=status.HTTP_404_NOT_FOUND
         )
     
@@ -208,7 +211,7 @@ def gallery_detail_view(request, image_id):
         serializer = GalleryImageSerializer(image, context={'request': request})
         return success_response(
             data=serializer.data,
-            message='تم جلب الصورة بنجاح',
+            message=t(request, 'image_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
     
@@ -219,11 +222,11 @@ def gallery_detail_view(request, image_id):
             response_serializer = GalleryImageSerializer(image, context={'request': request})
             return success_response(
                 data=response_serializer.data,
-                message='تم تحديث الصورة بنجاح',
+                message=t(request, 'image_updated_successfully'),
                 status_code=status.HTTP_200_OK
             )
         return error_response(
-            message='بيانات غير صحيحة',
+            message=t(request, 'invalid_data'),
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
@@ -231,7 +234,7 @@ def gallery_detail_view(request, image_id):
     elif request.method == 'DELETE':
         image.delete()
         return success_response(
-            message='تم حذف الصورة بنجاح',
+            message=t(request, 'image_deleted_successfully'),
             status_code=status.HTTP_200_OK
         )
 
@@ -251,7 +254,7 @@ def image_like_view(request, image_id):
         image = GalleryImage.objects.get(id=image_id, shop_owner=shop_owner, status='published')
     except GalleryImage.DoesNotExist:
         return error_response(
-            message='الصورة غير موجودة',
+            message=t(request, 'image_not_found'),
             status_code=status.HTTP_404_NOT_FOUND
         )
     
@@ -265,12 +268,12 @@ def image_like_view(request, image_id):
             image.save()
             return success_response(
                 data={'liked': True},
-                message='تم الإعجاب بالصورة',
+                message=t(request, 'image_liked_successfully'),
                 status_code=status.HTTP_201_CREATED
             )
         else:
             return error_response(
-                message='تم الإعجاب بهذه الصورة مسبقاً',
+                message=t(request, 'this_image_has_already_been_liked'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
     
@@ -282,12 +285,12 @@ def image_like_view(request, image_id):
             image.save()
             return success_response(
                 data={'liked': False},
-                message='تم إلغاء الإعجاب',
+                message=t(request, 'like_removed_successfully'),
                 status_code=status.HTTP_200_OK
             )
         except ImageLike.DoesNotExist:
             return error_response(
-                message='لم يتم الإعجاب بهذه الصورة',
+                message=t(request, 'this_image_was_not_liked'),
                 status_code=status.HTTP_404_NOT_FOUND
             )
 
@@ -315,6 +318,6 @@ def shop_statistics_view(request):
             'draft_images': draft_images,
             'total_likes': total_likes
         },
-        message='تم جلب الإحصائيات بنجاح',
+        message=t(request, 'statistics_retrieved_successfully'),
         status_code=status.HTTP_200_OK
     )

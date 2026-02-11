@@ -4,6 +4,7 @@ Custom Permissions لأنواع المستخدمين المختلفة
 
 from rest_framework.permissions import BasePermission
 from user.models import ShopOwner
+from user.utils import t
 from .models import Customer, Employee, Driver
 
 
@@ -14,6 +15,7 @@ class IsShopOwner(BasePermission):
     message = 'هذا الإجراء متاح فقط لصاحب المحل'
     
     def has_permission(self, request, view):
+        self.message = t(request, 'permission_only_shop_owner')
         user = request.user
         if not user or not user.is_authenticated:
             return False
@@ -33,6 +35,7 @@ class IsCustomer(BasePermission):
     message = 'هذا الإجراء متاح فقط للعملاء'
     
     def has_permission(self, request, view):
+        self.message = t(request, 'permission_only_customers')
         user = request.user
         if not user or not user.is_authenticated:
             return False
@@ -52,6 +55,7 @@ class IsEmployee(BasePermission):
     message = 'هذا الإجراء متاح فقط للموظفين'
     
     def has_permission(self, request, view):
+        self.message = t(request, 'permission_only_employees')
         user = request.user
         if not user or not user.is_authenticated:
             return False
@@ -71,6 +75,7 @@ class IsDriver(BasePermission):
     message = 'هذا الإجراء متاح فقط للسائقين'
     
     def has_permission(self, request, view):
+        self.message = t(request, 'permission_only_drivers')
         user = request.user
         if not user or not user.is_authenticated:
             return False
@@ -90,6 +95,7 @@ class IsShopOwnerOrEmployee(BasePermission):
     message = 'هذا الإجراء متاح فقط لصاحب المحل أو الموظفين'
     
     def has_permission(self, request, view):
+        self.message = t(request, 'permission_only_shop_owner_or_employees')
         user = request.user
         if not user or not user.is_authenticated:
             return False
@@ -108,6 +114,7 @@ class IsShopStaff(BasePermission):
     message = 'هذا الإجراء متاح فقط لفريق المحل'
     
     def has_permission(self, request, view):
+        self.message = t(request, 'permission_only_shop_staff')
         user = request.user
         if not user or not user.is_authenticated:
             return False

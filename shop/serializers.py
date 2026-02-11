@@ -40,7 +40,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Customer
-        fields = ['id', 'name', 'phone_number', 'email', 'profile_image', 'profile_image_url',
+        fields = ['id', 'name', 'phone_number',  'profile_image', 'profile_image_url',
                   'addresses', 'default_address', 'is_online', 'is_verified',
                   'unread_messages_count', 'last_message', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -84,7 +84,7 @@ class CustomerCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Customer
-        fields = ['name', 'phone_number', 'email', 'password', 'profile_image']
+        fields = ['name', 'phone_number',  'password', 'profile_image']
     
     def create(self, validated_data):
         password = validated_data.pop('password', None)
@@ -594,7 +594,7 @@ class CustomerTokenObtainPairSerializer(serializers.Serializer):
                 'id': customer.id,
                 'name': customer.name,
                 'phone_number': customer.phone_number,
-                'email': customer.email,
+     
                 'is_verified': customer.is_verified,
             }
         }
@@ -604,7 +604,6 @@ class CustomerRegisterSerializer(serializers.Serializer):
     """Serializer لتسجيل عميل جديد"""
     name = serializers.CharField(required=True)
     phone_number = serializers.CharField(required=True)
-    email = serializers.EmailField(required=False, allow_blank=True)
     password = serializers.CharField(required=True, write_only=True, min_length=6)
     
     def validate_phone_number(self, value):

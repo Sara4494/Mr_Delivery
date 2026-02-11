@@ -5,6 +5,14 @@ from django.utils import timezone
 from .models import Order, ChatMessage, Customer, Employee, Driver
 from user.models import ShopOwner
 from .serializers import ChatMessageSerializer
+from user.utils import build_message_fields
+
+
+def _with_localized_message(payload, message):
+    return {
+        **payload,
+        **build_message_fields(message),
+    }
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -65,13 +73,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.accept()
             
             # إرسال رسالة ترحيبية
-            await self.send(text_data=json.dumps({
-                'type': 'connection',
-                'message': 'تم الاتصال بنجاح',
-                'order_id': self.order_id,
-                'chat_type': self.chat_type,
-                'user_type': self.user_type
-            }))
+            await self.send(text_data=json.dumps(_with_localized_message(
+                {
+                    'type': 'connection',
+                    'order_id': self.order_id,
+                    'chat_type': self.chat_type,
+                    'user_type': self.user_type
+                },
+                'تم الاتصال بنجاح'
+            )))
             
             # إرسال الرسائل السابقة
             previous_messages = await self.get_previous_messages()
@@ -106,16 +116,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_location(data)
                 
         except json.JSONDecodeError:
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'تنسيق البيانات غير صحيح'
-            }))
+            await self.send(text_data=json.dumps(_with_localized_message(
+                {'type': 'error'},
+                'تنسيق البيانات غير صحيح'
+            )))
         except Exception as e:
             print(f"[ChatConsumer.receive] error: {e}")
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': f'حدث خطأ: {str(e)}'
-            }))
+            await self.send(text_data=json.dumps(_with_localized_message(
+                {
+                    'type': 'error',
+                    'error_detail': str(e)
+                },
+                'حدث خطأ غير متوقع'
+            )))
     
     async def handle_chat_message(self, data):
         """معالجة رسالة الشات"""
@@ -123,10 +136,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         msg_type = data.get('message_type', 'text')
         
         if msg_type == 'text' and not content:
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'محتوى الرسالة مطلوب'
-            }))
+            await self.send(text_data=json.dumps(_with_localized_message(
+                {'type': 'error'},
+                'محتوى الرسالة مطلوب'
+            )))
             return
         
         # حفظ الرسالة
@@ -156,10 +169,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         content = data.get('content', 'موقعي الحالي')
         
         if not latitude or not longitude:
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'الإحداثيات مطلوبة'
-            }))
+            await self.send(text_data=json.dumps(_with_localized_message(
+                {'type': 'error'},
+                'الإحداثيات مطلوبة'
+            )))
             return
         
         message = await self.save_message(
@@ -438,11 +451,13 @@ class OrderConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         
-        await self.send(text_data=json.dumps({
-            'type': 'connection',
-            'message': 'تم الاتصال بنجاح',
-            'shop_owner_id': self.shop_owner_id
-        }))
+        await self.send(text_data=json.dumps(_with_localized_message(
+            {
+                'type': 'connection',
+                'shop_owner_id': self.shop_owner_id
+            },
+            'تم الاتصال بنجاح'
+        )))
     
     async def disconnect(self, close_code):
         """قطع الاتصال"""
@@ -500,10 +515,10 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         
-        await self.send(text_data=json.dumps({
-            'type': 'connection',
-            'message': 'تم الاتصال بنجاح'
-        }))
+        await self.send(text_data=json.dumps(_with_localized_message(
+            {'type': 'connection'},
+            'تم الاتصال بنجاح'
+        )))
     
     async def disconnect(self, close_code):
         """قطع الاتصال"""
@@ -561,10 +576,10 @@ class DriverConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         
-        await self.send(text_data=json.dumps({
-            'type': 'connection',
-            'message': 'تم الاتصال بنجاح'
-        }))
+        await self.send(text_data=json.dumps(_with_localized_message(
+            {'type': 'connection'},
+            'تم الاتصال بنجاح'
+        )))
     
     async def disconnect(self, close_code):
         """قطع الاتصال"""

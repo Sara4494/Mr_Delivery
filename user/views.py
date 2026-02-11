@@ -4,9 +4,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.core.cache import cache
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
 from .models import ShopOwner
-from .utils import success_response, error_response
+from .utils import success_response, error_response, t, localize_message
 from .otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 
 
@@ -29,14 +30,14 @@ class ShopOwnerTokenObtainPairView(TokenObtainPairView):
         except Exception as e:
             errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
             return error_response(
-                message='فشل تسجيل الدخول',
+                message=t(request, 'login_failed'),
                 errors=errors,
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
         return success_response(
             data=serializer.validated_data,
-            message='تم تسجيل الدخول بنجاح',
+            message=t(request, 'login_successful'),
             status_code=status.HTTP_200_OK
         )
 
@@ -58,14 +59,14 @@ class ShopOwnerTokenRefreshView(TokenRefreshView):
         except Exception as e:
             errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
             return error_response(
-                message='فشل تحديث Token',
+                message=t(request, 'token_refresh_failed'),
                 errors=errors,
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
         return success_response(
             data=serializer.validated_data,
-            message='تم تحديث Token بنجاح',
+            message=t(request, 'token_refreshed_successfully'),
             status_code=status.HTTP_200_OK
         )
 
@@ -92,13 +93,13 @@ def unified_login_view(request):
     
     if not role:
         return error_response(
-            message='يجب تحديد نوع المستخدم (role)',
+            message=t(request, 'user_type_role_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     
     if not password:
         return error_response(
-            message='كلمة المرور مطلوبة',
+            message=t(request, 'password_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     
@@ -106,7 +107,7 @@ def unified_login_view(request):
     if role == 'shop_owner':
         if not shop_number:
             return error_response(
-                message='رقم المحل مطلوب',
+                message=t(request, 'shop_number_is_required'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
@@ -114,12 +115,12 @@ def unified_login_view(request):
             shop_owner = ShopOwner.objects.get(shop_number=shop_number)
             if not shop_owner.check_password(password):
                 return error_response(
-                    message='رقم المحل أو كلمة المرور غير صحيحة',
+                    message=t(request, 'shop_number_or_password_is_incorrect'),
                     status_code=status.HTTP_401_UNAUTHORIZED
                 )
             if not shop_owner.is_active:
                 return error_response(
-                    message='الحساب غير نشط',
+                    message=t(request, 'account_is_inactive'),
                     status_code=status.HTTP_401_UNAUTHORIZED
                 )
             
@@ -141,11 +142,11 @@ def unified_login_view(request):
                     },
                     'role': 'shop_owner'
                 },
-                message='تم تسجيل الدخول بنجاح'
+                message=t(request, 'login_successful')
             )
         except ShopOwner.DoesNotExist:
             return error_response(
-                message='رقم المحل أو كلمة المرور غير صحيحة',
+                message=t(request, 'shop_number_or_password_is_incorrect'),
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
     
@@ -153,54 +154,51 @@ def unified_login_view(request):
     elif role == 'customer':
         if not phone_number:
             return error_response(
-                message='رقم الهاتف مطلوب',
+                message=t(request, 'phone_number_is_required'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
-        customer = _find_customer_by_phone(phone_number)
-        if not customer:
-            return error_response(
-                message='رقم الهاتف أو كلمة المرور غير صحيحة',
-                status_code=status.HTTP_401_UNAUTHORIZED
-            )
-        if not customer.is_verified:
-            return error_response(
-                message='الحساب غير مفعل. أكمل التحقق عبر OTP',
-                status_code=status.HTTP_401_UNAUTHORIZED
-            )
-        if not customer.check_password(password):
-            return error_response(
-                message='رقم الهاتف أو كلمة المرور غير صحيحة',
-                status_code=status.HTTP_401_UNAUTHORIZED
-            )
-
-        # إنشاء التوكن
-        refresh = RefreshToken()
-        refresh['customer_id'] = customer.id
-        refresh['phone_number'] = customer.phone_number
-        refresh['user_type'] = 'customer'
-        
-        return success_response(
-            data={
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-                'user': {
-                    'id': customer.id,
-                    'name': customer.name,
-                    'phone_number': customer.phone_number,
-                    'email': customer.email,
-                    'is_verified': customer.is_verified,
+        from shop.models import Customer
+        try:
+            customer = Customer.objects.get(phone_number=phone_number)
+            if not customer.check_password(password):
+                return error_response(
+                    message=t(request, 'phone_number_or_password_is_incorrect'),
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # إنشاء التوكن
+            refresh = RefreshToken()
+            refresh['customer_id'] = customer.id
+            refresh['phone_number'] = customer.phone_number
+            refresh['user_type'] = 'customer'
+            
+            return success_response(
+                data={
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': {
+                        'id': customer.id,
+                        'name': customer.name,
+                        'phone_number': customer.phone_number,
+                    
+                        'is_verified': customer.is_verified,
+                    },
+                    'role': 'customer'
                 },
-                'role': 'customer'
-            },
-            message='تم تسجيل الدخول بنجاح'
-        )
+                message=t(request, 'login_successful')
+            )
+        except Customer.DoesNotExist:
+            return error_response(
+                message=t(request, 'phone_number_or_password_is_incorrect'),
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
     
     # ===== Employee Login =====
     elif role == 'employee':
         if not phone_number:
             return error_response(
-                message='رقم الهاتف مطلوب',
+                message=t(request, 'phone_number_is_required'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
@@ -209,12 +207,12 @@ def unified_login_view(request):
             employee = Employee.objects.get(phone_number=phone_number)
             if not employee.check_password(password):
                 return error_response(
-                    message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                    message=t(request, 'phone_number_or_password_is_incorrect'),
                     status_code=status.HTTP_401_UNAUTHORIZED
                 )
             if not employee.is_active:
                 return error_response(
-                    message='الحساب غير نشط',
+                    message=t(request, 'account_is_inactive'),
                     status_code=status.HTTP_401_UNAUTHORIZED
                 )
             
@@ -239,11 +237,11 @@ def unified_login_view(request):
                     },
                     'role': 'employee'
                 },
-                message='تم تسجيل الدخول بنجاح'
+                message=t(request, 'login_successful')
             )
         except Employee.DoesNotExist:
             return error_response(
-                message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                message=t(request, 'phone_number_or_password_is_incorrect'),
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
     
@@ -251,7 +249,7 @@ def unified_login_view(request):
     elif role == 'driver':
         if not phone_number:
             return error_response(
-                message='رقم الهاتف مطلوب',
+                message=t(request, 'phone_number_is_required'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
@@ -260,7 +258,7 @@ def unified_login_view(request):
             driver = Driver.objects.get(phone_number=phone_number)
             if not driver.check_password(password):
                 return error_response(
-                    message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                    message=t(request, 'phone_number_or_password_is_incorrect'),
                     status_code=status.HTTP_401_UNAUTHORIZED
                 )
             
@@ -284,17 +282,17 @@ def unified_login_view(request):
                     },
                     'role': 'driver'
                 },
-                message='تم تسجيل الدخول بنجاح'
+                message=t(request, 'login_successful')
             )
         except Driver.DoesNotExist:
             return error_response(
-                message='رقم الهاتف أو كلمة المرور غير صحيحة',
+                message=t(request, 'phone_number_or_password_is_incorrect'),
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
     
     else:
         return error_response(
-            message='نوع المستخدم غير صحيح. القيم المتاحة: shop_owner, customer, employee, driver',
+            message=t(request, 'invalid_user_type_available_values_shop_owner_customer_employee_driver'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
@@ -308,6 +306,30 @@ def _find_customer_by_phone(phone_number):
     return Customer.objects.filter(
         Q(phone_number=normalized) | Q(phone_number=alternate)
     ).first()
+
+
+REGISTER_VERIFIED_CACHE_PREFIX = "register_verified:"
+REGISTER_VERIFIED_TTL_SECONDS = 600  # 10 دقائق لإكمال خطوة إنشاء الحساب
+
+
+def _register_verified_cache_key(phone_number):
+    return f"{REGISTER_VERIFIED_CACHE_PREFIX}{normalize_phone(phone_number)}"
+
+
+def _mark_phone_verified_for_registration(phone_number):
+    cache.set(
+        _register_verified_cache_key(phone_number),
+        True,
+        REGISTER_VERIFIED_TTL_SECONDS
+    )
+
+
+def _is_phone_verified_for_registration(phone_number):
+    return bool(cache.get(_register_verified_cache_key(phone_number)))
+
+
+def _clear_phone_verified_for_registration(phone_number):
+    cache.delete(_register_verified_cache_key(phone_number))
 
 
 def _phone_variants(phone_number):
@@ -373,7 +395,7 @@ def _find_user_for_reset(role, phone_number, shop_number=None):
 @permission_classes([AllowAny])
 def unified_register_view(request):
     """
-    تسجيل مستخدم جديد (حالياً للعملاء فقط)
+    تسجيل مستخدم جديد (حالياً للعملاء فقط) بعد التحقق من OTP
     POST /api/auth/register/
     Body (JSON أو form-data):
     - role: customer
@@ -383,15 +405,15 @@ def unified_register_view(request):
     - profile_image: ملف صورة (اختياري)
     
     الخطوات:
-    1) إنشاء الحساب هنا
-    2) إرسال OTP عبر /api/auth/otp/send/ مع purpose=register
-    3) التحقق عبر /api/auth/otp/verify/ مع purpose=register
+    1) إرسال OTP عبر /api/auth/otp/send/ مع purpose=register
+    2) التحقق عبر /api/auth/otp/verify/ مع purpose=register
+    3) إكمال التسجيل هنا بدون OTP
     """
     role = request.data.get('role')
     
     if not role:
         return error_response(
-            message='يجب تحديد نوع المستخدم (role)',
+            message=t(request, 'user_type_role_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     
@@ -404,25 +426,26 @@ def unified_register_view(request):
         
         # التحقق من البيانات المطلوبة
         if not name:
-            return error_response(message='الاسم مطلوب', status_code=status.HTTP_400_BAD_REQUEST)
+            return error_response(message=t(request, 'name_is_required'), status_code=status.HTTP_400_BAD_REQUEST)
         if not phone_number:
-            return error_response(message='رقم الهاتف مطلوب', status_code=status.HTTP_400_BAD_REQUEST)
+            return error_response(message=t(request, 'phone_number_is_required'), status_code=status.HTTP_400_BAD_REQUEST)
         if not password:
-            return error_response(message='كلمة المرور مطلوبة', status_code=status.HTTP_400_BAD_REQUEST)
+            return error_response(message=t(request, 'password_is_required'), status_code=status.HTTP_400_BAD_REQUEST)
         if len(password) < 6:
-            return error_response(message='كلمة المرور يجب أن تكون 6 أحرف على الأقل', status_code=status.HTTP_400_BAD_REQUEST)
+            return error_response(message=t(request, 'password_must_be_at_least_6_characters'), status_code=status.HTTP_400_BAD_REQUEST)
 
+        if not _is_phone_verified_for_registration(phone_number):
+            return error_response(
+                message=t(request, 'otp_verification_is_required_first_via_api_auth_otp_verify_with_purpose_register'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        
         # التحقق من عدم وجود الرقم مسبقاً
         from shop.models import Customer
         customer = _find_customer_by_phone(phone_number)
         if customer:
-            if customer.is_verified:
-                return error_response(
-                    message='رقم الهاتف مسجل ومفعل بالفعل',
-                    status_code=status.HTTP_400_BAD_REQUEST
-                )
             return error_response(
-                message='الحساب موجود بالفعل وغير مفعل. أرسل OTP ثم تحقق عبر /api/auth/otp/verify/',
+                message=t(request, 'phone_number_is_already_registered'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
@@ -431,17 +454,26 @@ def unified_register_view(request):
             name=name,
             phone_number=normalized,
             profile_image=profile_image,
-            is_verified=False  # سيتفعّل بعد التحقق من OTP
+            is_verified=True  # تم التحقق عبر OTP
         )
         customer.set_password(password)
         customer.save()
+        _clear_phone_verified_for_registration(phone_number)
 
         profile_image_url = None
         if customer.profile_image:
             profile_image_url = request.build_absolute_uri(customer.profile_image.url)
-
+        
+        # إنشاء التوكن
+        refresh = RefreshToken()
+        refresh['customer_id'] = customer.id
+        refresh['phone_number'] = customer.phone_number
+        refresh['user_type'] = 'customer'
+        
         return success_response(
             data={
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
                 'user': {
                     'id': customer.id,
                     'name': customer.name,
@@ -450,11 +482,9 @@ def unified_register_view(request):
                     'profile_image_url': profile_image_url,
                     'is_verified': customer.is_verified,
                 },
-                'otp_required': True,
-                'next_step': 'send_otp_register_then_verify',
                 'role': 'customer'
             },
-            message='تم إنشاء الحساب بنجاح. أكمل التحقق عبر OTP',
+            message=t(request, 'account_created_successfully'),
             status_code=status.HTTP_201_CREATED
         )
     
@@ -462,20 +492,20 @@ def unified_register_view(request):
     elif role == 'shop_owner':
         # يمكن إضافة تسجيل صاحب محل جديد هنا إذا مطلوب
         return error_response(
-            message='تسجيل صاحب محل جديد يتم من خلال الإدارة',
+            message=t(request, 'new_shop_owner_registration_is_managed_by_admin'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     
     # ===== Employee/Driver Registration =====
     elif role in ['employee', 'driver']:
         return error_response(
-            message=f'تسجيل {role} يتم بواسطة صاحب المحل',
+            message=t(request, 'registration_for_role_is_done_by_shop_owner', role=role),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     
     else:
         return error_response(
-            message='نوع المستخدم غير صحيح. القيم المتاحة: customer',
+            message=t(request, 'invalid_user_type_available_values_customer'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
@@ -501,49 +531,31 @@ def send_otp_view(request):
     shop_number = request.data.get('shop_number')
     if not phone_number:
         return error_response(
-            message='رقم الهاتف مطلوب',
+            message=t(request, 'phone_number_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
     if purpose == 'register':
-        customer = _find_customer_by_phone(phone_number)
-        if not customer:
+        if _find_customer_by_phone(phone_number):
             return error_response(
-                message='يجب إنشاء الحساب أولاً عبر /api/auth/register/',
-                status_code=status.HTTP_400_BAD_REQUEST
-            )
-        if customer.is_verified:
-            return error_response(
-                message='الحساب مُفعّل بالفعل. استخدم تسجيل الدخول',
-                status_code=status.HTTP_400_BAD_REQUEST
-            )
-    elif purpose == 'login':
-        customer = _find_customer_by_phone(phone_number)
-        if not customer:
-            return error_response(
-                message='رقم الهاتف غير مسجل. يرجى التسجيل أولاً',
-                status_code=status.HTTP_404_NOT_FOUND
-            )
-        if not customer.is_verified:
-            return error_response(
-                message='الحساب غير مفعل. أكمل التحقق عبر OTP للتسجيل',
+                message=t(request, 'phone_number_is_already_registered_use_login'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
     elif purpose == 'reset_password':
         user, err = _find_user_for_reset(role, phone_number, shop_number)
         if err:
             return error_response(
-                message=err,
+                message=localize_message(request, err),
                 status_code=status.HTTP_404_NOT_FOUND
             )
 
     success, msg = otp_send(phone_number)
     if success:
         return success_response(
-            message='تم إرسال رمز التحقق إلى واتساب الخاص بك'
+            message=t(request, 'verification_code_sent_to_your_whatsapp')
         )
     return error_response(
-        message=msg,
+        message=localize_message(request, msg),
         status_code=status.HTTP_400_BAD_REQUEST
     )
 
@@ -560,56 +572,55 @@ def verify_otp_login_view(request):
         "purpose": "login" | "register"  // افتراضي login
     }
     """
+
     phone_number = request.data.get('phone_number')
     otp_code = request.data.get('otp')
     purpose = request.data.get('purpose', 'login')
 
     if not phone_number:
         return error_response(
-            message='رقم الهاتف مطلوب',
+            message=t(request, 'phone_number_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     if not otp_code:
         return error_response(
-            message='رمز التحقق مطلوب',
+            message=t(request, 'verification_code_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     if purpose not in ['login', 'register']:
         return error_response(
-            message='purpose غير صحيح. القيم المتاحة: login, register',
+            message=t(request, 'invalid_purpose_available_values_login_register'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
-    customer = _find_customer_by_phone(phone_number)
-    if purpose == 'register' and not customer:
+    if purpose == 'register' and _find_customer_by_phone(phone_number):
         return error_response(
-            message='يجب إنشاء الحساب أولاً عبر /api/auth/register/',
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
-    if purpose == 'register' and customer and customer.is_verified:
-        return error_response(
-            message='الحساب مُفعّل بالفعل. استخدم تسجيل الدخول',
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
-    if purpose == 'login' and not customer:
-        return error_response(
-            message='رقم الهاتف غير مسجل. يرجى التسجيل أولاً',
-            status_code=status.HTTP_404_NOT_FOUND
-        )
-    if purpose == 'login' and customer and not customer.is_verified:
-        return error_response(
-            message='الحساب غير مفعل. أكمل التحقق عبر OTP للتسجيل',
+            message=t(request, 'phone_number_is_already_registered_use_login'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
     if not otp_verify(phone_number, otp_code):
         return error_response(
-            message='رمز التحقق غير صحيح أو منتهي الصلاحية',
+            message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED
         )
 
     if purpose == 'register':
-        customer.is_verified = True
-        customer.save()
+        _mark_phone_verified_for_registration(phone_number)
+        return success_response(
+            data={
+                'phone_number': normalize_phone(phone_number),
+                'otp_verified': True,
+                'purpose': 'register'
+            },
+            message=t(request, 'otp_verified_for_registration_you_can_now_create_the_account')
+        )
+
+    customer = _find_customer_by_phone(phone_number)
+    if not customer:
+        return error_response(
+            message=t(request, 'phone_number_is_not_registered_please_register_first'),
+            status_code=status.HTTP_404_NOT_FOUND
+        )
 
     refresh = RefreshToken()
     refresh['customer_id'] = customer.id
@@ -624,13 +635,12 @@ def verify_otp_login_view(request):
                 'id': customer.id,
                 'name': customer.name,
                 'phone_number': customer.phone_number,
-                'email': customer.email,
+        
                 'is_verified': customer.is_verified,
             },
-            'role': 'customer',
-            'purpose': purpose
+            'role': 'customer'
         },
-        message='تم التحقق بنجاح'
+        message=t(request, 'login_successful')
     )
 
 
@@ -661,35 +671,35 @@ def reset_password_view(request):
 
     if not phone_number:
         return error_response(
-            message='رقم الهاتف مطلوب',
+            message=t(request, 'phone_number_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     if not otp_code:
         return error_response(
-            message='رمز التحقق مطلوب',
+            message=t(request, 'verification_code_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     if not new_password:
         return error_response(
-            message='كلمة المرور الجديدة مطلوبة',
+            message=t(request, 'new_password_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     if len(new_password) < 6:
         return error_response(
-            message='كلمة المرور يجب أن تكون 6 أحرف على الأقل',
+            message=t(request, 'password_must_be_at_least_6_characters'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
     if not otp_verify(phone_number, otp_code):
         return error_response(
-            message='رمز التحقق غير صحيح أو منتهي الصلاحية',
+            message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED
         )
 
     user, err = _find_user_for_reset(role, phone_number, shop_number)
     if err:
         return error_response(
-            message=err,
+            message=localize_message(request, err),
             status_code=status.HTTP_404_NOT_FOUND
         )
 
@@ -697,5 +707,5 @@ def reset_password_view(request):
     user.save()
 
     return success_response(
-        message='تم تغيير كلمة المرور بنجاح'
+        message=t(request, 'password_changed_successfully')
     )
