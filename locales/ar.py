@@ -2,7 +2,7 @@
 # Auto-generated locale file
 
 MESSAGES = {
-    'account_already_exists_and_is_not_verified_send_otp_then_verify_via_api_auth_otp_verify': 'الحساب موجود بالفعل وغير مفعل. أرسل OTP ثم تحقق عبر /api/auth/otp/verify/',
+    'account_already_exists_and_is_not_verified_send_otp_then_verify_via_api_auth_otp_verify': 'الحساب موجود بالفعل وغير مفعل. أرسل رمز التحقق ثم أكد الرمز لإتمام التفعيل.',
     'account_created_successfully': 'تم إنشاء الحساب بنجاح',
     'account_created_successfully_complete_otp_verification': 'تم إنشاء الحساب بنجاح. أكمل التحقق عبر OTP',
     'account_is_already_verified_use_login': 'الحساب مُفعّل بالفعل. استخدم تسجيل الدخول',
@@ -90,7 +90,7 @@ MESSAGES = {
     'order_not_found': 'الطلب غير موجود',
     'order_updated_successfully': 'تم تحديث الطلب بنجاح',
     'orders_retrieved_successfully': 'تم جلب الطلبات بنجاح',
-    'otp_verification_is_required_first_via_api_auth_otp_verify_with_purpose_register': 'يجب التحقق من OTP أولاً عبر /api/auth/otp/verify/ مع purpose=register',
+    'otp_verification_is_required_first_via_api_auth_otp_verify_with_purpose_register': 'يجب التحقق من رمز OTP أولاً لإتمام التسجيل.',
     'otp_verified_for_registration_you_can_now_create_the_account': 'تم التحقق من OTP للتسجيل. يمكنك الآن إنشاء الحساب',
     'password_changed_successfully': 'تم تغيير كلمة المرور بنجاح',
     'password_is_required': 'كلمة المرور مطلوبة',
@@ -145,5 +145,5 @@ MESSAGES = {
     'verification_successful': 'تم التحقق بنجاح',
     'work_schedule_retrieved_successfully': 'تم جلب مواعيد العمل بنجاح',
     'work_schedule_updated_successfully': 'تم تحديث مواعيد العمل بنجاح',
-    'you_must_create_the_account_first_via_api_auth_register': 'يجب إنشاء الحساب أولاً عبر /api/auth/register/',
+    'you_must_create_the_account_first_via_api_auth_register': 'يجب إنشاء الحساب أولاً قبل طلب رمز التحقق.',
 }

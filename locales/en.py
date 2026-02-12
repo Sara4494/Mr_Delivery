@@ -2,7 +2,7 @@
 # Auto-generated locale file
 
 MESSAGES = {
-    'account_already_exists_and_is_not_verified_send_otp_then_verify_via_api_auth_otp_verify': 'Account already exists and is not verified. Send OTP then verify via /api/auth/otp/verify/',
+    'account_already_exists_and_is_not_verified_send_otp_then_verify_via_api_auth_otp_verify': 'Account already exists and is not verified. Send the OTP code, then verify it to activate the account.',
     'account_created_successfully': 'Account created successfully',
     'account_created_successfully_complete_otp_verification': 'Account created successfully. Complete OTP verification',
     'account_is_already_verified_use_login': 'Account is already verified. Use login',
@@ -90,7 +90,7 @@ MESSAGES = {
     'order_not_found': 'Order not found',
     'order_updated_successfully': 'Order updated successfully',
     'orders_retrieved_successfully': 'Orders retrieved successfully',
-    'otp_verification_is_required_first_via_api_auth_otp_verify_with_purpose_register': 'OTP verification is required first via /api/auth/otp/verify/ with purpose=register',
+    'otp_verification_is_required_first_via_api_auth_otp_verify_with_purpose_register': 'OTP verification is required first to complete registration.',
     'otp_verified_for_registration_you_can_now_create_the_account': 'OTP verified for registration. You can now create the account',
     'password_changed_successfully': 'Password changed successfully',
     'password_is_required': 'Password is required',
@@ -145,5 +145,5 @@ MESSAGES = {
     'verification_successful': 'Verification successful',
     'work_schedule_retrieved_successfully': 'Work schedule retrieved successfully',
     'work_schedule_updated_successfully': 'Work schedule updated successfully',
-    'you_must_create_the_account_first_via_api_auth_register': 'You must create the account first via /api/auth/register/',
+    'you_must_create_the_account_first_via_api_auth_register': 'You must create the account first before requesting an OTP.',
 }
