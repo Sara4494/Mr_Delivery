@@ -4,7 +4,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.core.cache import cache
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
 from .models import ShopOwner
 from .utils import success_response, error_response, t, localize_message
@@ -166,7 +165,12 @@ def unified_login_view(request):
                     message=t(request, 'phone_number_or_password_is_incorrect'),
                     status_code=status.HTTP_401_UNAUTHORIZED
                 )
-            
+            if not customer.is_verified:
+                return error_response(
+                    message=t(request, 'account_is_not_verified_complete_otp_verification'),
+                    status_code=status.HTTP_401_UNAUTHORIZED
+                )
+             
             # إنشاء التوكن
             refresh = RefreshToken()
             refresh['customer_id'] = customer.id
@@ -308,30 +312,6 @@ def _find_customer_by_phone(phone_number):
     ).first()
 
 
-REGISTER_VERIFIED_CACHE_PREFIX = "register_verified:"
-REGISTER_VERIFIED_TTL_SECONDS = 600  # 10 دقائق لإكمال خطوة إنشاء الحساب
-
-
-def _register_verified_cache_key(phone_number):
-    return f"{REGISTER_VERIFIED_CACHE_PREFIX}{normalize_phone(phone_number)}"
-
-
-def _mark_phone_verified_for_registration(phone_number):
-    cache.set(
-        _register_verified_cache_key(phone_number),
-        True,
-        REGISTER_VERIFIED_TTL_SECONDS
-    )
-
-
-def _is_phone_verified_for_registration(phone_number):
-    return bool(cache.get(_register_verified_cache_key(phone_number)))
-
-
-def _clear_phone_verified_for_registration(phone_number):
-    cache.delete(_register_verified_cache_key(phone_number))
-
-
 def _phone_variants(phone_number):
     """إرجاع كل الصيغ المحتملة للرقم (للبحث في DB)"""
     if not phone_number:
@@ -395,7 +375,7 @@ def _find_user_for_reset(role, phone_number, shop_number=None):
 @permission_classes([AllowAny])
 def unified_register_view(request):
     """
-    تسجيل مستخدم جديد (حالياً للعملاء فقط) بعد التحقق من OTP
+    تسجيل مستخدم جديد (حالياً للعملاء فقط)
     POST /api/auth/register/
     Body (JSON أو form-data):
     - role: customer
@@ -405,9 +385,9 @@ def unified_register_view(request):
     - profile_image: ملف صورة (اختياري)
     
     الخطوات:
-    1) إرسال OTP عبر /api/auth/otp/send/ مع purpose=register
-    2) التحقق عبر /api/auth/otp/verify/ مع purpose=register
-    3) إكمال التسجيل هنا بدون OTP
+    1) إنشاء الحساب عبر هذا الـ endpoint
+    2) إرسال OTP عبر /api/auth/otp/send/ مع purpose=register
+    3) التحقق عبر /api/auth/otp/verify/ مع purpose=register لتفعيل الحساب
     """
     role = request.data.get('role')
     
@@ -434,18 +414,17 @@ def unified_register_view(request):
         if len(password) < 6:
             return error_response(message=t(request, 'password_must_be_at_least_6_characters'), status_code=status.HTTP_400_BAD_REQUEST)
 
-        if not _is_phone_verified_for_registration(phone_number):
+        # التحقق من حالة الرقم مسبقاً
+        from shop.models import Customer
+        existing_customer = _find_customer_by_phone(phone_number)
+        if existing_customer and existing_customer.is_verified:
             return error_response(
-                message=t(request, 'otp_verification_is_required_first_via_api_auth_otp_verify_with_purpose_register'),
+                message=t(request, 'phone_number_is_already_registered_and_verified'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
-        
-        # التحقق من عدم وجود الرقم مسبقاً
-        from shop.models import Customer
-        customer = _find_customer_by_phone(phone_number)
-        if customer:
+        if existing_customer and not existing_customer.is_verified:
             return error_response(
-                message=t(request, 'phone_number_is_already_registered'),
+                message=t(request, 'account_already_exists_and_is_not_verified_send_otp_then_verify_via_api_auth_otp_verify'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
@@ -454,26 +433,17 @@ def unified_register_view(request):
             name=name,
             phone_number=normalized,
             profile_image=profile_image,
-            is_verified=True  # تم التحقق عبر OTP
+            is_verified=False
         )
         customer.set_password(password)
         customer.save()
-        _clear_phone_verified_for_registration(phone_number)
 
         profile_image_url = None
         if customer.profile_image:
             profile_image_url = request.build_absolute_uri(customer.profile_image.url)
-        
-        # إنشاء التوكن
-        refresh = RefreshToken()
-        refresh['customer_id'] = customer.id
-        refresh['phone_number'] = customer.phone_number
-        refresh['user_type'] = 'customer'
-        
+
         return success_response(
             data={
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
                 'user': {
                     'id': customer.id,
                     'name': customer.name,
@@ -484,7 +454,7 @@ def unified_register_view(request):
                 },
                 'role': 'customer'
             },
-            message=t(request, 'account_created_successfully'),
+            message=t(request, 'account_created_successfully_complete_otp_verification'),
             status_code=status.HTTP_201_CREATED
         )
     
@@ -536,9 +506,15 @@ def send_otp_view(request):
         )
 
     if purpose == 'register':
-        if _find_customer_by_phone(phone_number):
+        customer = _find_customer_by_phone(phone_number)
+        if not customer:
             return error_response(
-                message=t(request, 'phone_number_is_already_registered_use_login'),
+                message=t(request, 'you_must_create_the_account_first_via_api_auth_register'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        if customer.is_verified:
+            return error_response(
+                message=t(request, 'account_is_already_verified_use_login'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
     elif purpose == 'reset_password':
@@ -592,11 +568,31 @@ def verify_otp_login_view(request):
             message=t(request, 'invalid_purpose_available_values_login_register'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
-    if purpose == 'register' and _find_customer_by_phone(phone_number):
-        return error_response(
-            message=t(request, 'phone_number_is_already_registered_use_login'),
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
+    
+    customer = _find_customer_by_phone(phone_number)
+
+    if purpose == 'register':
+        if not customer:
+            return error_response(
+                message=t(request, 'you_must_create_the_account_first_via_api_auth_register'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        if customer.is_verified:
+            return error_response(
+                message=t(request, 'account_is_already_verified_use_login'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+    else:
+        if not customer:
+            return error_response(
+                message=t(request, 'phone_number_is_not_registered_please_register_first'),
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        if not customer.is_verified:
+            return error_response(
+                message=t(request, 'account_is_not_verified_complete_otp_verification_for_registration'),
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
 
     if not otp_verify(phone_number, otp_code):
         return error_response(
@@ -605,27 +601,15 @@ def verify_otp_login_view(request):
         )
 
     if purpose == 'register':
-        _mark_phone_verified_for_registration(phone_number)
-        return success_response(
-            data={
-                'phone_number': normalize_phone(phone_number),
-                'otp_verified': True,
-                'purpose': 'register'
-            },
-            message=t(request, 'otp_verified_for_registration_you_can_now_create_the_account')
-        )
-
-    customer = _find_customer_by_phone(phone_number)
-    if not customer:
-        return error_response(
-            message=t(request, 'phone_number_is_not_registered_please_register_first'),
-            status_code=status.HTTP_404_NOT_FOUND
-        )
+        customer.is_verified = True
+        customer.save(update_fields=['is_verified'])
 
     refresh = RefreshToken()
     refresh['customer_id'] = customer.id
     refresh['phone_number'] = customer.phone_number
     refresh['user_type'] = 'customer'
+
+    success_message = t(request, 'verification_successful') if purpose == 'register' else t(request, 'login_successful')
 
     return success_response(
         data={
@@ -640,9 +624,8 @@ def verify_otp_login_view(request):
             },
             'role': 'customer'
         },
-        message=t(request, 'login_successful')
+        message=success_message
     )
-
 
 # ==================== Reset Password (OTP) ====================
 

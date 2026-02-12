@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "35d55c99-fe19-4745-9a2d-042193e503ce",
+    "_postman_id": "8a2b4047-df26-4b36-aa39-a96008469a76",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery - APIs للمحلات والمعارض",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-35d55c99-fe19-4745-9a2d-042193e503ce?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-8a2b4047-df26-4b36-aa39-a96008469a76?source=collection_link"
   },
   "item": [
     {
@@ -157,14 +157,7 @@
                     {
                       "key": "profile_image",
                       "type": "file",
-                      "src": [
-                        "postman-cloud:///1ef9e1cf-31e5-4920-ae33-dc0a1254fd79",
-                        {
-                          "actual": null,
-                          "name": "",
-                          "path": ""
-                        }
-                      ]
+                      "value": null
                     }
                   ]
                 },

@@ -84,11 +84,12 @@ Mr Delivery uses **JWT (JSON Web Tokens)** for authentication across all user ty
 
 ---
 
-## 2. Register (Customers Only) — مع التحقق من OTP
+## 2. Register (Customers Only) — Create Account then OTP
 
 **الخطوات:**
-1. إرسال OTP: `POST /api/auth/otp/send/` مع `"purpose": "register"`
-2. إكمال التسجيل: `POST /api/auth/register/` مع الرمز
+1. إنشاء الحساب: `POST /api/auth/register/`
+2. إرسال OTP: `POST /api/auth/otp/send/` مع `"purpose": "register"`
+3. تفعيل الحساب: `POST /api/auth/otp/verify/` مع `"purpose": "register"`
 
 **Endpoint**: `POST /api/auth/register/`
 
@@ -98,8 +99,6 @@ Mr Delivery uses **JWT (JSON Web Tokens)** for authentication across all user ty
     "role": "customer",
     "name": "Ahmed Mohamed",
     "phone_number": "01012345678",
-    "otp": "123456",
-    "email": "ahmed@example.com",
     "password": "password123"
 }
 ```
@@ -108,15 +107,12 @@ Mr Delivery uses **JWT (JSON Web Tokens)** for authentication across all user ty
 ```json
 {
     "status": 201,
-    "message": "Account created successfully",
+    "message": "Account created successfully. Complete OTP verification",
     "data": {
-        "refresh": "eyJhbGciOiJIUzI1NiIs...",
-        "access": "eyJhbGciOiJIUzI1NiIs...",
         "user": {
             "id": 1,
             "name": "Ahmed Mohamed",
             "phone_number": "01012345678",
-            "email": "ahmed@example.com",
             "is_verified": false
         },
         "role": "customer"
