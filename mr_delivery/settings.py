@@ -33,6 +33,33 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# CORS
+# NOTE: `file://` pages send Origin as `null`; keep this enabled only for local testing.
+_cors_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+CORS_ALLOW_ALL_ORIGINS = _env_bool("CORS_ALLOW_ALL_ORIGINS", default=DEBUG and not CORS_ALLOWED_ORIGINS)
+CORS_ALLOW_NULL_ORIGIN = _env_bool("CORS_ALLOW_NULL_ORIGIN", default=DEBUG)
+CORS_ALLOW_CREDENTIALS = _env_bool("CORS_ALLOW_CREDENTIALS", default=False)
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+CORS_ALLOW_HEADERS = [
+    "Authorization",
+    "Content-Type",
+    "Accept",
+    "Origin",
+    "X-Requested-With",
+    "X-CSRFToken",
+    "Accept-Language",
+]
+CORS_PREFLIGHT_MAX_AGE = int(os.environ.get("CORS_PREFLIGHT_MAX_AGE", "86400"))
+
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -54,6 +81,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'user.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'user.middleware.APILanguageMiddleware',
     'django.middleware.common.CommonMiddleware',
