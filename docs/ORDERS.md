@@ -7,24 +7,26 @@ Complete guide to order management in Mr Delivery.
 ## 📋 Order Status Flow
 
 ```
-┌─────────┐     ┌───────────┐     ┌───────────┐     ┌────────┐     ┌───────────┐
-│   NEW   │ ──► │ CONFIRMED │ ──► │ PREPARING │ ──► │ ON_WAY │ ──► │ DELIVERED │
-└─────────┘     └───────────┘     └───────────┘     └────────┘     └───────────┘
-      │                                                                    
-      │                        ┌───────────┐                              
-      └──────────────────────► │ CANCELLED │                              
-                               └───────────┘                              
+┌─────────┐     ┌─────────────────────────┐     ┌───────────┐     ┌───────────┐     ┌────────┐     ┌───────────┐
+│   NEW   │ ──► │ PENDING_CUSTOMER_CONFIRM│ ──► │ CONFIRMED │ ──► │ PREPARING │ ──► │ ON_WAY │ ──► │ DELIVERED │
+└─────────┘     │ (تم التسعير، انتظار تأكيد)│     └───────────┘     └───────────┘     └────────┘     └───────────┘
+      │         └─────────────────────────┘            ▲
+      │                        │                       │ العميل يضغط تأكيد
+      │                        ┌───────────┐
+      └──────────────────────► │ CANCELLED │  (رفض من البداية أو إلغاء بعد القبول)
+                               └───────────┘
 ```
 
 ### Status Values
 | Status | Arabic | Description |
 |--------|--------|-------------|
 | `new` | جديد | New order received |
-| `confirmed` | مؤكد | Order confirmed by shop |
+| `pending_customer_confirm` | في انتظار تأكيد العميل | Shop accepted & priced; customer must press Confirm |
+| `confirmed` | مؤكد | Order confirmed by customer |
 | `preparing` | قيد التحضير | Being prepared |
 | `on_way` | في الطريق | Out for delivery |
 | `delivered` | تم التوصيل | Successfully delivered |
-| `cancelled` | ملغي | Order cancelled |
+| `cancelled` | ملغي | Order cancelled or rejected |
 
 ---
 

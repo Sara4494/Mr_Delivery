@@ -21,6 +21,7 @@ from .serializers import (
     DriverLocationUpdateSerializer,
     OrderSerializer,
     OrderCreateSerializer,
+    CustomerOrderCreateSerializer,
     InvoiceSerializer,
     InvoiceCreateSerializer,
     EmployeeSerializer,
@@ -46,7 +47,7 @@ from .serializers import (
 from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
 from user.models import ShopOwner
 from user.utils import success_response, error_response, build_message_fields, t
-from .websocket_utils import notify_order_update, notify_driver_assigned
+from .websocket_utils import notify_order_update, notify_driver_assigned, notify_new_order, broadcast_chat_message_to_order
 
 
 class OrderPagination(PageNumberPagination):
@@ -465,14 +466,14 @@ def product_detail_view(request, product_id):
 
 # Order APIs
 @api_view(['GET', 'POST'])
-@permission_classes([IsShopOwner])
+@permission_classes([IsShopOwnerOrEmployee])
 def order_list_view(request):
     """
     عرض قائمة الطلبات وإنشاء طلب جديد
     GET /api/shop/orders/ - عرض قائمة الطلبات
-    POST /api/shop/orders/ - إنشاء طلب جديد
+    POST /api/shop/orders/ - إنشاء طلب جديد (من المحل)
     """
-    shop_owner = request.user
+    shop_owner = _get_shop_owner_from_request(request)
     
     if request.method == 'GET':
         status_filter = request.query_params.get('status')
@@ -530,16 +531,24 @@ def order_list_view(request):
         )
 
 
+def _get_shop_owner_from_request(request):
+    """صاحب المحل من الطلب (صاحب محل أو موظف)"""
+    user = request.user
+    if hasattr(user, 'shop_owner_id') and user.shop_owner_id:
+        return user.shop_owner
+    return user
+
+
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsShopOwner])
+@permission_classes([IsShopOwnerOrEmployee])
 def order_detail_view(request, order_id):
     """
     عرض، تحديث، أو حذف طلب
     GET /api/shop/orders/{id}/ - عرض طلب
-    PUT /api/shop/orders/{id}/ - تحديث طلب
+    PUT /api/shop/orders/{id}/ - تحديث طلب (قبول/رفض/إلغاء/تسعير)
     DELETE /api/shop/orders/{id}/ - حذف طلب
     """
-    shop_owner = request.user
+    shop_owner = _get_shop_owner_from_request(request)
     
     try:
         order = Order.objects.get(id=order_id, shop_owner=shop_owner)
@@ -560,6 +569,19 @@ def order_detail_view(request, order_id):
     elif request.method == 'PUT':
         # تحديث الطلب
         old_driver = order.driver
+        old_status = order.status
+        
+        # قبول الطلب: يجب تعبئة سعر الطلب (سعر التوصيل اختياري)
+        new_status = request.data.get('status', order.status)
+        if new_status == 'pending_customer_confirm':
+            new_total = request.data.get('total_amount')
+            if new_total is None:
+                new_total = order.total_amount
+            if new_total is None or (isinstance(new_total, (int, float)) and float(new_total) <= 0):
+                return error_response(
+                    message=t(request, 'order_price_required_for_accept'),
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
         
         if 'customer_id' in request.data:
             try:
@@ -604,6 +626,64 @@ def order_detail_view(request, order_id):
                 setattr(order, field, request.data[field])
         
         order.save()
+        
+        # رسائل تلقائية عند الرفض/الإلغاء/القبول (حسب الصور والـ PDF)
+        try:
+            if new_status == 'cancelled':
+                if old_status == 'new':
+                    msg_content = t(request, 'store_reject_message')
+                else:
+                    msg_content = t(request, 'order_cancelled_successfully')
+                sender_type = 'employee' if getattr(request.user, 'user_type', None) == 'employee' else 'shop_owner'
+                sys_msg = ChatMessage.objects.create(
+                    order=order,
+                    chat_type='shop_customer',
+                    sender_type=sender_type,
+                    sender_shop_owner=shop_owner if sender_type == 'shop_owner' else None,
+                    sender_employee=request.user if sender_type == 'employee' else None,
+                    message_type='text',
+                    content=msg_content,
+                )
+                broadcast_chat_message_to_order(order.id, {
+                    'id': sys_msg.id,
+                    'sender_type': sys_msg.sender_type,
+                    'sender_name': sys_msg.sender_name,
+                    'message_type': 'text',
+                    'content': sys_msg.content,
+                    'is_read': False,
+                    'created_at': sys_msg.created_at.isoformat(),
+                    'audio_file_url': None,
+                    'image_file_url': None,
+                    'latitude': None,
+                    'longitude': None,
+                })
+            elif new_status == 'pending_customer_confirm':
+                msg_content = t(request, 'order_priced_please_confirm')
+                sender_type = 'employee' if getattr(request.user, 'user_type', None) == 'employee' else 'shop_owner'
+                sys_msg = ChatMessage.objects.create(
+                    order=order,
+                    chat_type='shop_customer',
+                    sender_type=sender_type,
+                    sender_shop_owner=shop_owner if sender_type == 'shop_owner' else None,
+                    sender_employee=request.user if sender_type == 'employee' else None,
+                    message_type='text',
+                    content=msg_content,
+                )
+                broadcast_chat_message_to_order(order.id, {
+                    'id': sys_msg.id,
+                    'sender_type': sys_msg.sender_type,
+                    'sender_name': sys_msg.sender_name,
+                    'message_type': 'text',
+                    'content': sys_msg.content,
+                    'is_read': False,
+                    'created_at': sys_msg.created_at.isoformat(),
+                    'audio_file_url': None,
+                    'image_file_url': None,
+                    'latitude': None,
+                    'longitude': None,
+                })
+        except Exception as e:
+            print(f"Order system message broadcast error: {e}")
         
         # تحديث عدد الطلبات للسائقين
         if old_driver:
@@ -1053,6 +1133,110 @@ def customer_login_view(request):
     return success_response(
         data=serializer.validated_data,
         message=t(request, 'login_successful'),
+        status_code=status.HTTP_200_OK
+    )
+
+
+def _get_customer_from_request(request):
+    """العميل من الطلب (لـ JWT عميل)"""
+    user = request.user
+    if isinstance(user, Customer):
+        return user
+    try:
+        return Customer.objects.get(id=user.id)
+    except (Customer.DoesNotExist, AttributeError):
+        return None
+
+
+# ==================== Customer Orders (طلبات العميل - الطلب كأول رسالة) ====================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsCustomer])
+def customer_orders_list_create_view(request):
+    """
+    قائمة طلبات العميل وإنشاء طلب جديد (الرسالة الأولى = الفاتورة: اسم، عنوان، بند 1، 2، 3، ...)
+    GET /api/customer/orders/ - قائمة طلباتي
+    POST /api/customer/orders/ - إنشاء طلب (يملأ النموذج ويبعث للمحل)
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        orders = Order.objects.filter(customer=customer).order_by('-created_at')
+        serializer = OrderSerializer(orders, many=True, context={'request': request})
+        return success_response(
+            data=serializer.data,
+            message=t(request, 'orders_retrieved_successfully'),
+            status_code=status.HTTP_200_OK
+        )
+    
+    elif request.method == 'POST':
+        serializer = CustomerOrderCreateSerializer(
+            data=request.data,
+            context={'customer': customer, 'request': request}
+        )
+        if serializer.is_valid():
+            order = serializer.save()
+            response_serializer = OrderSerializer(order, context={'request': request})
+            try:
+                notify_new_order(order.shop_owner_id, response_serializer.data)
+            except Exception as e:
+                print(f"new_order WebSocket error: {e}")
+            return success_response(
+                data=response_serializer.data,
+                message=t(request, 'order_created_successfully'),
+                status_code=status.HTTP_201_CREATED
+            )
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsCustomer])
+def customer_order_confirm_view(request, order_id):
+    """
+    تأكيد الطلب بعد التسعير (العميل يضغط زرار تأكيد)
+    POST /api/customer/orders/{id}/confirm/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+    
+    try:
+        order = Order.objects.get(id=order_id, customer=customer)
+    except Order.DoesNotExist:
+        return error_response(
+            message=t(request, 'order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+    
+    if order.status != 'pending_customer_confirm':
+        return error_response(
+            message=t(request, 'order_not_pending_confirm'),
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    order.status = 'confirmed'
+    order.save()
+    
+    response_serializer = OrderSerializer(order, context={'request': request})
+    try:
+        notify_order_update(
+            shop_owner_id=order.shop_owner_id,
+            customer_id=order.customer_id,
+            driver_id=order.driver_id,
+            order_data=response_serializer.data
+        )
+    except Exception as e:
+        print(f"WebSocket notification error: {e}")
+    
+    return success_response(
+        data=response_serializer.data,
+        message=t(request, 'order_confirmed_successfully'),
         status_code=status.HTTP_200_OK
     )
 

@@ -361,10 +361,11 @@
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" onclick="showTab('chat')">💬 شات الطلب</button>
-            <button class="tab" onclick="showTab('shop')">🏪 طلبات المحل</button>
-            <button class="tab" onclick="showTab('customer')">👤 طلبات العميل</button>
-            <button class="tab" onclick="showTab('driver')">🚗 السائق</button>
+            <button class="tab active" data-tab="chat" onclick="showTab('chat')">💬 شات الطلب</button>
+            <button class="tab" data-tab="customerChat" onclick="showTab('customerChat')">📝 شات العميل / طلب أوردر</button>
+            <button class="tab" data-tab="shop" onclick="showTab('shop')">🏪 طلبات المحل</button>
+            <button class="tab" data-tab="customer" onclick="showTab('customer')">👤 طلبات العميل</button>
+            <button class="tab" data-tab="driver" onclick="showTab('driver')">🚗 السائق</button>
         </div>
 
         <!-- Chat Tab -->
@@ -448,6 +449,57 @@
                         </div>
 
                         <button onclick="sendChatMessage()" id="chatSendBtn" disabled>📤 إرسال</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer Chat / Order Tab (شات العميل: اختيار 1 طلب أوردر، 2 استفسار، 3 شكوى + نموذج البند 1، 2، 3، ...) -->
+        <div id="customerChatTab" class="tab-content">
+            <div class="content">
+                <div class="panel">
+                    <h2>📝 شات العميل</h2>
+                    <p class="info-box">غير متاح الكتابة أولاً — عند الدخول اختر 1 أو 2 أو 3 فقط.</p>
+                    <div id="customerChatChoice" class="actions">
+                        <button type="button" class="choice-btn" onclick="customerChatChoose(1)" style="flex:1;">① طلب أوردر</button>
+                        <button type="button" class="choice-btn" onclick="customerChatChoose(2)" style="flex:1;">② استفسار</button>
+                        <button type="button" class="choice-btn" onclick="customerChatChoose(3)" style="flex:1;">③ شكوى</button>
+                    </div>
+                    <div id="customerOrderForm" style="display:none;">
+                        <p class="info-box">العميل يملأ النموذج ويبعثه للمحل. الاسم يُضاف تلقائياً من المسجل.</p>
+                        <div class="form-group">
+                            <label>الاسم (تلقائي من المسجل):</label>
+                            <input type="text" id="customerOrderName" readonly placeholder="سيُملأ من البروفايل">
+                        </div>
+                        <div class="form-group">
+                            <label>العنوان (يدوي):</label>
+                            <input type="text" id="customerOrderAddress" placeholder="اكتب العنوان">
+                        </div>
+                        <div class="form-group">
+                            <label>تفاصيل الأوردر (بند 1، بند 2، بند 3 — اضغط Enter في آخر بند لإضافة بند جديد):</label>
+                            <div id="customerOrderBands">
+                                <input type="text" id="band1" placeholder="بند 1" data-band="1">
+                                <input type="text" id="band2" placeholder="بند 2" data-band="2" style="margin-top:8px;">
+                                <input type="text" id="band3" placeholder="بند 3" data-band="3" style="margin-top:8px;">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>ملاحظات:</label>
+                            <input type="text" id="customerOrderNotes" placeholder="اختياري">
+                        </div>
+                        <div class="form-group">
+                            <label>API Base (لإنشاء الطلب):</label>
+                            <input type="text" id="customerOrderApiBase" value="http://127.0.0.1:8000/api" placeholder="http://127.0.0.1:8000/api">
+                        </div>
+                        <div class="form-group">
+                            <label>JWT Token (عميل):</label>
+                            <input type="text" id="customerOrderToken" placeholder="JWT Token">
+                        </div>
+                        <button type="button" onclick="submitCustomerOrder()">إرسال الطلب للمحل</button>
+                        <div id="customerOrderResult" class="status" style="margin-top:12px; display:none;"></div>
+                    </div>
+                    <div id="customerInquiryComplaintNote" style="display:none;" class="info-box">
+                        لو اختار استفسار أو شكوى يفتح الشات عادي ويتكلم مع المحل (بدون فاتورة).
                     </div>
                 </div>
             </div>
@@ -618,9 +670,78 @@
         function showTab(tabName) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            
-            event.target.classList.add('active');
-            document.getElementById(tabName + 'Tab').classList.add('active');
+            const btn = document.querySelector('.tab[data-tab="' + tabName + '"]');
+            if (btn) btn.classList.add('active');
+            const tabEl = document.getElementById(tabName + 'Tab');
+            if (tabEl) tabEl.classList.add('active');
+        }
+
+        // ==================== شات العميل: اختيار 1 طلب أوردر، 2 استفسار، 3 شكوى ====================
+        function customerChatChoose(choice) {
+            document.getElementById('customerOrderForm').style.display = (choice === 1) ? 'block' : 'none';
+            document.getElementById('customerInquiryComplaintNote').style.display = (choice === 2 || choice === 3) ? 'block' : 'none';
+            if (choice === 1) setupBandEnterHandlers();
+        }
+
+        let bandCount = 3;
+        function setupBandEnterHandlers() {
+            const container = document.getElementById('customerOrderBands');
+            if (!container || container._bandHandlers) return;
+            container._bandHandlers = true;
+            container.addEventListener('keydown', function(e) {
+                if (e.key !== 'Enter') return;
+                const inputs = container.querySelectorAll('input[data-band]');
+                const target = e.target;
+                if (!target.matches('input[data-band]')) return;
+                e.preventDefault();
+                const last = inputs[inputs.length - 1];
+                if (target !== last) return;
+                bandCount++;
+                const newInput = document.createElement('input');
+                newInput.type = 'text';
+                newInput.placeholder = 'بند ' + bandCount;
+                newInput.dataset.band = String(bandCount);
+                newInput.style.marginTop = '8px';
+                container.appendChild(newInput);
+                newInput.focus();
+            });
+        }
+
+        function submitCustomerOrder() {
+            const base = (document.getElementById('customerOrderApiBase') || {}).value || '/api';
+            const token = (document.getElementById('customerOrderToken') || {}).value;
+            const address = (document.getElementById('customerOrderAddress') || {}).value.trim();
+            const notes = (document.getElementById('customerOrderNotes') || {}).value.trim();
+            const container = document.getElementById('customerOrderBands');
+            const inputs = container ? container.querySelectorAll('input[data-band]') : [];
+            const items = [];
+            inputs.forEach(inp => { const v = inp.value.trim(); if (v) items.push(v); });
+            if (!address) { alert('العنوان مطلوب'); return; }
+            if (items.length === 0) { alert('أضف بنداً واحداً على الأقل (تفاصيل الأوردر)'); return; }
+            if (!token) { alert('أدخل JWT Token (عميل)'); return; }
+            const resultEl = document.getElementById('customerOrderResult');
+            resultEl.style.display = 'block';
+            resultEl.className = 'status connecting';
+            resultEl.textContent = 'جاري إرسال الطلب...';
+            fetch((base.replace(/\/$/, '')) + '/customer/orders/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ address, items, notes })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.data && data.data.id) {
+                    resultEl.className = 'status connected';
+                    resultEl.innerHTML = 'تم إرسال الطلب بنجاح. رقم الطلب: <strong>' + (data.data.order_number || data.data.id) + '</strong>. افتح تبويب "شات الطلب" وادخل معرف الطلب: <strong>' + data.data.id + '</strong> للدردشة مع المحل.';
+                } else {
+                    resultEl.className = 'status disconnected';
+                    resultEl.textContent = (data.message || 'خطأ') + (data.errors ? ' ' + JSON.stringify(data.errors) : '');
+                }
+            })
+            .catch(err => {
+                resultEl.className = 'status disconnected';
+                resultEl.textContent = 'خطأ: ' + err.message;
+            });
         }
 
         // ==================== Utility Functions ====================

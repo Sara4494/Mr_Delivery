@@ -199,6 +199,20 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         return None
 
 
+def _order_items_to_representation(value):
+    """تحويل items من نص/JSON إلى قائمة (بند 1، بند 2، ...) للعرض"""
+    if not value:
+        return []
+    import json
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return parsed
+        return [value]
+    except (TypeError, ValueError):
+        return [value] if isinstance(value, str) else []
+
+
 class OrderSerializer(serializers.ModelSerializer):
     """Serializer للطلب"""
     customer = CustomerSerializer(read_only=True)
@@ -206,6 +220,7 @@ class OrderSerializer(serializers.ModelSerializer):
     driver = DriverSerializer(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     last_message = serializers.SerializerMethodField()
+    items = serializers.SerializerMethodField()
     
     class Meta:
         model = Order
@@ -213,6 +228,10 @@ class OrderSerializer(serializers.ModelSerializer):
                   'items', 'total_amount', 'delivery_fee', 'address', 'notes',
                   'unread_messages_count', 'last_message', 'created_at', 'updated_at']
         read_only_fields = ['id', 'order_number', 'created_at', 'updated_at']
+    
+    def get_items(self, obj):
+        """عرض الأصناف كقائمة (بند 1، بند 2، ...)"""
+        return _order_items_to_representation(obj.items)
     
     def get_employee(self, obj):
         """الموظف المسؤول (معرف + اسم)"""
@@ -229,16 +248,32 @@ class OrderSerializer(serializers.ModelSerializer):
         return None
 
 
+def _items_to_db_value(value):
+    """تحويل items من قائمة أو نص إلى JSON string للحفظ"""
+    import json
+    if isinstance(value, list):
+        return json.dumps(value, ensure_ascii=False)
+    return value if value else '[]'
+
 class OrderCreateSerializer(serializers.Serializer):
-    """Serializer لإنشاء طلب جديد"""
+    """Serializer لإنشاء طلب جديد (من المحل)"""
     customer_id = serializers.IntegerField(required=True)
     employee_id = serializers.IntegerField(required=False, allow_null=True)
     driver_id = serializers.IntegerField(required=False, allow_null=True)
-    items = serializers.CharField(required=True)
+    items = serializers.JSONField(required=True)  # قائمة أصناف [بند1، بند2، ...] أو نص قديم
     total_amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=True)
     delivery_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     address = serializers.CharField(required=True)
     notes = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate_items(self, value):
+        if value is None:
+            raise serializers.ValidationError('تفاصيل الطلب (البند) مطلوبة')
+        if isinstance(value, list):
+            if len(value) == 0:
+                raise serializers.ValidationError('تفاصيل الطلب (البند) مطلوبة')
+            return _items_to_db_value(value)
+        return _items_to_db_value([value]) if isinstance(value, str) else value
     
     def validate_customer_id(self, value):
         """التحقق من وجود العميل"""
@@ -306,6 +341,38 @@ class OrderCreateSerializer(serializers.Serializer):
             driver.current_orders_count = driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
             driver.save()
         
+        return order
+
+
+class CustomerOrderCreateSerializer(serializers.Serializer):
+    """إنشاء طلب من العميل (الرسالة الأولى = الفاتورة: الاسم، العنوان، البند 1، 2، 3، ...)"""
+    address = serializers.CharField(required=True)
+    items = serializers.ListField(child=serializers.CharField(), min_length=1)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    
+    def create(self, validated_data):
+        import random
+        customer = self.context['customer']
+        shop_owner = getattr(customer, 'shop_owner', None)
+        if not shop_owner:
+            raise serializers.ValidationError({'shop': 'العميل غير مرتبط بمحل. يرجى اختيار المحل أولاً.'})
+        
+        items_str = _items_to_db_value(validated_data['items'])
+        order_number = f"{shop_owner.shop_number}{random.randint(1000, 9999)}"
+        while Order.objects.filter(order_number=order_number).exists():
+            order_number = f"{shop_owner.shop_number}{random.randint(1000, 9999)}"
+        
+        order = Order.objects.create(
+            shop_owner=shop_owner,
+            customer=customer,
+            order_number=order_number,
+            address=validated_data['address'],
+            items=items_str,
+            notes=validated_data.get('notes') or '',
+            total_amount=0,
+            delivery_fee=0,
+            status='new',
+        )
         return order
 
 

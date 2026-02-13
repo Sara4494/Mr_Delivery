@@ -238,6 +238,7 @@ class Order(models.Model):
     """نموذج الطلب"""
     STATUS_CHOICES = [
         ('new', 'جديد'),
+        ('pending_customer_confirm', 'في انتظار تأكيد العميل'),
         ('confirmed', 'مؤكد'),
         ('preparing', 'قيد التحضير'),
         ('on_way', 'في الطريق'),
@@ -257,7 +258,7 @@ class Order(models.Model):
     driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="السائق")
     delivery_address = models.ForeignKey('CustomerAddress', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="عنوان التوصيل")
     order_number = models.CharField(max_length=50, unique=True, verbose_name="رقم الطلب")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', verbose_name="حالة الطلب")
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='new', verbose_name="حالة الطلب")
     items = models.TextField(verbose_name="الأصناف")  # JSON string أو text
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="المبلغ الإجمالي")
     delivery_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="رسوم التوصيل")
