@@ -63,6 +63,10 @@ urlpatterns = [
     path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
     path('customer/orders/<int:order_id>/reject/', views.customer_order_reject_view, name='customer_order_reject'),
     
+    # ==================== Customer Orders (طلب أوردر - البند 1، 2، 3، ...) ====================
+    path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
+    path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
+    
     # ==================== Customer Addresses ====================
     path('customer/addresses/', views.customer_address_list_view, name='customer_address_list'),
     path('customer/addresses/<int:address_id>/', views.customer_address_detail_view, name='customer_address_detail'),
