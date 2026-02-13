@@ -1148,6 +1148,69 @@ def _get_customer_from_request(request):
         return None
 
 
+# ==================== Public Shops (for Customer selection) ====================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_shops_list_view(request):
+    """
+    List active shops (public).
+    GET /api/shops/
+    """
+    shops = ShopOwner.objects.filter(is_active=True).order_by('shop_name', 'shop_number')
+    data = [{'id': s.id, 'shop_number': s.shop_number, 'shop_name': s.shop_name} for s in shops]
+    return success_response(
+        data=data,
+        message="shops_retrieved_successfully",
+        status_code=status.HTTP_200_OK
+    )
+
+
+# ==================== Customer Shop Selection ====================
+
+@api_view(['POST'])
+@permission_classes([IsCustomer])
+def customer_select_shop_view(request):
+    """
+    Link customer to a shop to allow creating orders.
+    POST /api/customer/select-shop/
+    Body: { "shop_owner_id": 1 } or { "shop_number": "12345" }
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    shop_owner_id = request.data.get('shop_owner_id') or request.data.get('shop_id')
+    shop_number = request.data.get('shop_number')
+
+    if shop_owner_id:
+        shop = ShopOwner.objects.filter(id=shop_owner_id, is_active=True).first()
+    elif shop_number:
+        shop = ShopOwner.objects.filter(shop_number=shop_number, is_active=True).first()
+    else:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'shop': 'يرجى إرسال shop_owner_id أو shop_number لاختيار المحل.'},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not shop:
+        return error_response(
+            message=t(request, 'not_found'),
+            errors={'shop': 'المحل غير موجود.'},
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    customer.shop_owner = shop
+    customer.save()
+
+    return success_response(
+        data={'shop_owner_id': shop.id, 'shop_number': shop.shop_number, 'shop_name': shop.shop_name},
+        message="تم اختيار المحل بنجاح.",
+        status_code=status.HTTP_200_OK
+    )
+
+
 # ==================== Customer Orders (طلبات العميل - الطلب كأول رسالة) ====================
 
 @api_view(['GET', 'POST'])

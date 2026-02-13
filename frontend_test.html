@@ -484,11 +484,23 @@
                             </div>
                         </div>
                         <div class="form-group">
-                            <label>ملاحظات:</label>
-                            <input type="text" id="customerOrderNotes" placeholder="اختياري">
+                            <label>Notes:</label>
+                            <input type="text" id="customerOrderNotes" placeholder="Optional">
                         </div>
                         <div class="form-group">
-                            <label>API Base (لإنشاء الطلب):</label>
+                            <label>Select Shop:</label>
+                            <select id="customerOrderShopSelect">
+                                <option value="">(Load shops)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Or Shop Number (shop_number):</label>
+                            <input type="text" id="customerOrderShopNumber" placeholder="e.g. 12345">
+                        </div>
+                        <button type="button" class="btn-info" onclick="selectCustomerShop()">Choose Shop</button>
+                        <div id="customerShopResult" class="status" style="margin-top:12px; display:none;"></div>
+                        <div class="form-group">
+                            <label>API Base:</label>
                             <input type="text" id="customerOrderApiBase" value="http://86.48.3.103/api" placeholder="http://86.48.3.103/api">
                         </div>
                         <div class="form-group">
@@ -680,7 +692,10 @@
         function customerChatChoose(choice) {
             document.getElementById('customerOrderForm').style.display = (choice === 1) ? 'block' : 'none';
             document.getElementById('customerInquiryComplaintNote').style.display = (choice === 2 || choice === 3) ? 'block' : 'none';
-            if (choice === 1) setupBandEnterHandlers();
+            if (choice === 1) {
+                setupBandEnterHandlers();
+                loadCustomerShops();
+            }
         }
 
         let bandCount = 3;
@@ -707,8 +722,81 @@
             });
         }
 
-        function submitCustomerOrder() {
+        function _customerOrderApiBase() {
             const base = (document.getElementById('customerOrderApiBase') || {}).value || '/api';
+            return (base || '').replace(/\/$/, '');
+        }
+
+        function loadCustomerShops() {
+            const base = _customerOrderApiBase();
+            const selectEl = document.getElementById('customerOrderShopSelect');
+            if (!selectEl) return;
+
+            selectEl.innerHTML = '<option value=\"\">(Load shops)</option>';
+
+            fetch(base + '/shops/', { method: 'GET' })
+                .then(r => r.json())
+                .then(data => {
+                    const shops = (data && data.data) || [];
+                    selectEl.innerHTML = '<option value=\"\">(Select)</option>';
+                    shops.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = String(s.id);
+                        opt.textContent = (s.shop_name || 'Shop') + ' (' + (s.shop_number || s.id) + ')';
+                        selectEl.appendChild(opt);
+                    });
+
+                    const saved = localStorage.getItem('mr_delivery_shop_owner_id');
+                    if (saved) selectEl.value = saved;
+                })
+                .catch(() => {
+                    selectEl.innerHTML = '<option value=\"\">(Failed to load)</option>';
+                });
+        }
+
+        function selectCustomerShop() {
+            const base = _customerOrderApiBase();
+            const token = (document.getElementById('customerOrderToken') || {}).value;
+            const shopOwnerId = (document.getElementById('customerOrderShopSelect') || {}).value;
+            const shopNumber = ((document.getElementById('customerOrderShopNumber') || {}).value || '').trim();
+
+            if (!token) { alert('Enter JWT Token (customer)'); return; }
+            if (!shopOwnerId && !shopNumber) { alert('Select shop or enter shop number'); return; }
+
+            const resultEl = document.getElementById('customerShopResult');
+            if (!resultEl) return;
+            resultEl.style.display = 'block';
+            resultEl.className = 'status connecting';
+            resultEl.textContent = 'Choosing shop...';
+
+            const payload = shopOwnerId ? { shop_owner_id: Number(shopOwnerId) } : { shop_number: shopNumber };
+
+            fetch(base + '/customer/select-shop/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (ok && json && json.data && json.data.shop_owner_id) {
+                    resultEl.className = 'status connected';
+                    resultEl.textContent = 'Selected: ' + (json.data.shop_name || '') + ' (' + (json.data.shop_number || json.data.shop_owner_id) + ')';
+                    localStorage.setItem('mr_delivery_shop_owner_id', String(json.data.shop_owner_id));
+                    const selectEl = document.getElementById('customerOrderShopSelect');
+                    if (selectEl) selectEl.value = String(json.data.shop_owner_id);
+                } else {
+                    resultEl.className = 'status disconnected';
+                    resultEl.textContent = (json && (json.message || json.detail)) ? (json.message || json.detail) : 'Failed';
+                }
+            })
+            .catch(err => {
+                resultEl.className = 'status disconnected';
+                resultEl.textContent = 'Error: ' + err.message;
+            });
+        }
+
+        function submitCustomerOrder() {
+            const base = _customerOrderApiBase();
             const token = (document.getElementById('customerOrderToken') || {}).value;
             const address = (document.getElementById('customerOrderAddress') || {}).value.trim();
             const notes = (document.getElementById('customerOrderNotes') || {}).value.trim();
@@ -723,7 +811,7 @@
             resultEl.style.display = 'block';
             resultEl.className = 'status connecting';
             resultEl.textContent = 'جاري إرسال الطلب...';
-            fetch((base.replace(/\/$/, '')) + '/customer/orders/', {
+            fetch(base + '/customer/orders/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                 body: JSON.stringify({ address, items, notes })

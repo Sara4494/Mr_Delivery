@@ -4,6 +4,9 @@ from . import views
 app_name = 'shop'
 
 urlpatterns = [
+    # Public shops list (for customers)
+    path('shops/', views.public_shops_list_view, name='public_shops_list'),
+
     # Shop Status
     path('shop/status/', views.shop_status_view, name='shop_status'),
     
@@ -50,6 +53,7 @@ urlpatterns = [
     path('customer/register/', views.customer_register_view, name='customer_register'),
     path('customer/login/', views.customer_login_view, name='customer_login'),
     path('customer/profile/', views.customer_profile_view, name='customer_profile'),
+    path('customer/select-shop/', views.customer_select_shop_view, name='customer_select_shop'),
     
     # ==================== Customer Orders (طلب أوردر - البند 1، 2، 3، ...) ====================
     path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
