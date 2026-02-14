@@ -6,10 +6,11 @@ class ShopOwnerSerializer(serializers.ModelSerializer):
     """Serializer لصاحب المحل"""
     password = serializers.CharField(write_only=True, required=False, style={'input_type': 'password'})
     profile_image_url = serializers.SerializerMethodField()
+    shop_category_name = serializers.CharField(source='shop_category.name', read_only=True)
 
     class Meta:
         model = ShopOwner
-        fields = ['id', 'owner_name', 'shop_name', 'shop_number', 'password', 
+        fields = ['id', 'owner_name', 'shop_name', 'shop_number', 'shop_category', 'shop_category_name', 'password',
                   'profile_image', 'profile_image_url', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {

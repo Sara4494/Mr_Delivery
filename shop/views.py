@@ -12,6 +12,7 @@ from .models import (
     Notification, Cart, CartItem
 )
 from .serializers import (
+    ShopCategorySerializer,
     ShopStatusSerializer,
     CustomerSerializer,
     CustomerCreateSerializer,
@@ -32,6 +33,8 @@ from .serializers import (
     CustomerTokenObtainPairSerializer,
     CustomerRegisterSerializer,
     ProductSerializer,
+    PublicProductSerializer,
+    PublicOfferProductSerializer,
     ProductCreateSerializer,
     CategorySerializer,
     OrderRatingSerializer,
@@ -45,7 +48,7 @@ from .serializers import (
     UpdateCartItemSerializer,
 )
 from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
-from user.models import ShopOwner
+from user.models import ShopCategory, ShopOwner
 from user.utils import success_response, error_response, build_message_fields, t
 from .websocket_utils import notify_order_update, notify_driver_assigned, notify_new_order, broadcast_chat_message_to_order
 
@@ -104,6 +107,11 @@ class CustomerPagination(PageNumberPagination):
         }
         
         return Response(response_data, status=status.HTTP_200_OK)
+
+
+def _is_true_query_value(value):
+    """تحويل قيمة query param إلى bool."""
+    return str(value).lower() in {'1', 'true', 'yes', 'on'}
 
 
 # Shop Status APIs
@@ -391,9 +399,21 @@ def product_list_view(request):
     shop_owner = request.user
     if request.method == 'GET':
         available_only = request.query_params.get('available')
-        queryset = Product.objects.filter(shop_owner=shop_owner)
-        if available_only == 'true':
+        category_id = request.query_params.get('category_id')
+        has_offer = request.query_params.get('has_offer')
+        search_query = request.query_params.get('search')
+
+        queryset = Product.objects.filter(shop_owner=shop_owner).select_related('category')
+        if _is_true_query_value(available_only):
             queryset = queryset.filter(is_available=True)
+        if category_id:
+            queryset = queryset.filter(category_id=category_id)
+        if _is_true_query_value(has_offer):
+            queryset = queryset.filter(discount_price__isnull=False, discount_price__lt=F('price'))
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) | Q(description__icontains=search_query)
+            )
         serializer = ProductSerializer(queryset, many=True, context={'request': request})
         return success_response(
             data=serializer.data,
@@ -401,7 +421,7 @@ def product_list_view(request):
             status_code=status.HTTP_200_OK
         )
     elif request.method == 'POST':
-        serializer = ProductCreateSerializer(data=request.data)
+        serializer = ProductCreateSerializer(data=request.data, context={'shop_owner': shop_owner})
         if serializer.is_valid():
             product = Product.objects.create(shop_owner=shop_owner, **serializer.validated_data)
             response_serializer = ProductSerializer(product, context={'request': request})
@@ -442,7 +462,12 @@ def product_detail_view(request, product_id):
             status_code=status.HTTP_200_OK
         )
     elif request.method == 'PUT':
-        serializer = ProductCreateSerializer(product, data=request.data, partial=True)
+        serializer = ProductCreateSerializer(
+            product,
+            data=request.data,
+            partial=True,
+            context={'shop_owner': shop_owner}
+        )
         if serializer.is_valid():
             serializer.save()
             response_serializer = ProductSerializer(product, context={'request': request})
@@ -1148,6 +1173,74 @@ def _get_customer_from_request(request):
         return None
 
 
+# ==================== Shop Categories (master data for shop type) ====================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsShopOwner])
+def shop_category_list_view(request):
+    """
+    List/Create shop categories used by ShopOwner.shop_category.
+    GET /api/shop/shop-categories/
+    POST /api/shop/shop-categories/
+    """
+    if request.method == 'GET':
+        categories = ShopCategory.objects.all().order_by('name')
+        serializer = ShopCategorySerializer(categories, many=True)
+        return success_response(
+            data=serializer.data,
+            message='shop_categories_retrieved_successfully',
+            status_code=status.HTTP_200_OK
+        )
+
+    serializer = ShopCategorySerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return success_response(
+            data=serializer.data,
+            message='shop_category_created_successfully',
+            status_code=status.HTTP_201_CREATED
+        )
+    return error_response(
+        message=t(request, 'invalid_data'),
+        errors=serializer.errors,
+        status_code=status.HTTP_400_BAD_REQUEST
+    )
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsShopOwner])
+def shop_category_detail_view(request, category_id):
+    """
+    Retrieve/Update/Delete shop category.
+    GET/PUT/DELETE /api/shop/shop-categories/{id}/
+    """
+    category = ShopCategory.objects.filter(id=category_id).first()
+    if not category:
+        return error_response(
+            message=t(request, 'not_found'),
+            errors={'shop_category': 'shop category not found.'},
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    if request.method == 'GET':
+        serializer = ShopCategorySerializer(category)
+        return success_response(data=serializer.data, message='shop_category_retrieved_successfully')
+
+    if request.method == 'PUT':
+        serializer = ShopCategorySerializer(category, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return success_response(data=serializer.data, message='shop_category_updated_successfully')
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    category.delete()
+    return success_response(message='shop_category_deleted_successfully')
+
+
 # ==================== Public Shops (for Customer selection) ====================
 
 @api_view(['GET'])
@@ -1157,11 +1250,135 @@ def public_shops_list_view(request):
     List active shops (public).
     GET /api/shops/
     """
-    shops = ShopOwner.objects.filter(is_active=True).order_by('shop_name', 'shop_number')
-    data = [{'id': s.id, 'shop_number': s.shop_number, 'shop_name': s.shop_name} for s in shops]
+    shops = ShopOwner.objects.filter(is_active=True).select_related('shop_category').order_by('shop_name', 'shop_number')
+    data = [
+        {
+            'id': s.id,
+            'shop_number': s.shop_number,
+            'shop_name': s.shop_name,
+            'shop_category': (
+                {'id': s.shop_category.id, 'name': s.shop_category.name}
+                if s.shop_category else None
+            )
+        }
+        for s in shops
+    ]
     return success_response(
         data=data,
-        message="shops_retrieved_successfully",
+        message='shops_retrieved_successfully',
+        status_code=status.HTTP_200_OK
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_shop_categories_list_view(request):
+    """
+    List all available shop categories.
+    GET /api/shops/shop-categories/
+    """
+    categories = ShopCategory.objects.filter(is_active=True).order_by('name')
+    return success_response(
+        data=[{'id': c.id, 'name': c.name} for c in categories],
+        message='shop_categories_retrieved_successfully',
+        status_code=status.HTTP_200_OK
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_products_by_shop_category_view(request):
+    """
+    List products for all shops in a specific shop category.
+    GET /api/shops/products/by-shop-category/?shop_category_id=1
+    """
+    shop_category_id = request.query_params.get('shop_category_id')
+    shop_category_name = request.query_params.get('shop_category_name')
+    product_category_id = request.query_params.get('category_id')
+    has_offer = request.query_params.get('has_offer')
+    search_query = request.query_params.get('search')
+
+    if not shop_category_id and not shop_category_name:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'shop_category': 'shop_category_id or shop_category_name is required.'},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    shop_category = None
+    if shop_category_id:
+        shop_category = ShopCategory.objects.filter(id=shop_category_id, is_active=True).first()
+    elif shop_category_name:
+        shop_category = ShopCategory.objects.filter(name__iexact=shop_category_name, is_active=True).first()
+
+    if not shop_category:
+        return error_response(
+            message=t(request, 'not_found'),
+            errors={'shop_category': 'shop category not found.'},
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    products = Product.objects.filter(
+        shop_owner__is_active=True,
+        shop_owner__shop_category=shop_category,
+        is_available=True
+    ).select_related('shop_owner', 'category', 'shop_owner__shop_category')
+
+    if product_category_id:
+        products = products.filter(category_id=product_category_id)
+    if _is_true_query_value(has_offer):
+        products = products.filter(discount_price__isnull=False, discount_price__lt=F('price'))
+    if search_query:
+        products = products.filter(
+            Q(name__icontains=search_query) | Q(description__icontains=search_query)
+        )
+
+    serializer = PublicProductSerializer(products, many=True, context={'request': request})
+    return success_response(
+        data={
+            'shop_category': {'id': shop_category.id, 'name': shop_category.name},
+            'total_products': products.count(),
+            'products': serializer.data
+        },
+        message=t(request, 'product_list_retrieved_successfully'),
+        status_code=status.HTTP_200_OK
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_offers_view(request):
+    """
+    List current offers (fixed logic = discounted products only).
+    GET /api/shops/offers/?shop_id=1&shop_category_id=1&category_id=2
+    """
+    shop_id = request.query_params.get('shop_id')
+    shop_category_id = request.query_params.get('shop_category_id')
+    category_id = request.query_params.get('category_id')
+    search_query = request.query_params.get('search')
+
+    offers = Product.objects.filter(
+        shop_owner__is_active=True,
+        is_available=True,
+        discount_price__isnull=False,
+        discount_price__lt=F('price')
+    ).select_related('shop_owner', 'category', 'shop_owner__shop_category')
+
+    if shop_id:
+        offers = offers.filter(shop_owner_id=shop_id)
+    if shop_category_id:
+        offers = offers.filter(shop_owner__shop_category_id=shop_category_id)
+    if category_id:
+        offers = offers.filter(category_id=category_id)
+    if search_query:
+        offers = offers.filter(
+            Q(name__icontains=search_query) | Q(description__icontains=search_query)
+        )
+
+    serializer = PublicOfferProductSerializer(offers, many=True, context={'request': request})
+    return success_response(
+        data=serializer.data,
+        message='offers_retrieved_successfully',
         status_code=status.HTTP_200_OK
     )
 
@@ -1184,29 +1401,37 @@ def customer_select_shop_view(request):
     shop_number = request.data.get('shop_number')
 
     if shop_owner_id:
-        shop = ShopOwner.objects.filter(id=shop_owner_id, is_active=True).first()
+        shop = ShopOwner.objects.filter(id=shop_owner_id, is_active=True).select_related('shop_category').first()
     elif shop_number:
-        shop = ShopOwner.objects.filter(shop_number=shop_number, is_active=True).first()
+        shop = ShopOwner.objects.filter(shop_number=shop_number, is_active=True).select_related('shop_category').first()
     else:
         return error_response(
             message=t(request, 'invalid_data'),
-            errors={'shop': 'يرجى إرسال shop_owner_id أو shop_number لاختيار المحل.'},
+            errors={'shop': 'shop_owner_id or shop_number is required.'},
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
     if not shop:
         return error_response(
             message=t(request, 'not_found'),
-            errors={'shop': 'المحل غير موجود.'},
+            errors={'shop': 'shop not found.'},
             status_code=status.HTTP_404_NOT_FOUND
         )
 
     customer.shop_owner = shop
-    customer.save()
+    customer.save(update_fields=['shop_owner'])
 
     return success_response(
-        data={'shop_owner_id': shop.id, 'shop_number': shop.shop_number, 'shop_name': shop.shop_name},
-        message="تم اختيار المحل بنجاح.",
+        data={
+            'shop_owner_id': shop.id,
+            'shop_number': shop.shop_number,
+            'shop_name': shop.shop_name,
+            'shop_category': (
+                {'id': shop.shop_category.id, 'name': shop.shop_category.name}
+                if shop.shop_category else None
+            )
+        },
+        message='shop selected successfully.',
         status_code=status.HTTP_200_OK
     )
 

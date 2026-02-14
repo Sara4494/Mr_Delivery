@@ -127,6 +127,8 @@ def unified_login_view(request):
             refresh = RefreshToken.for_user(shop_owner)
             refresh['shop_owner_id'] = shop_owner.id
             refresh['shop_number'] = shop_owner.shop_number
+            refresh['shop_category_id'] = shop_owner.shop_category_id
+            refresh['shop_category_name'] = shop_owner.shop_category.name if shop_owner.shop_category else None
             refresh['user_type'] = 'shop_owner'
             
             return success_response(
@@ -138,6 +140,8 @@ def unified_login_view(request):
                         'shop_number': shop_owner.shop_number,
                         'shop_name': shop_owner.shop_name,
                         'owner_name': shop_owner.owner_name,
+                        'shop_category_id': shop_owner.shop_category_id,
+                        'shop_category_name': shop_owner.shop_category.name if shop_owner.shop_category else None,
                     },
                     'role': 'shop_owner'
                 },

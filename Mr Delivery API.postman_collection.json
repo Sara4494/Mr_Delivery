@@ -9,462 +9,542 @@
   },
   "item": [
     {
-      "name": "🔐 Auth (تسجيل الدخول والتسجيل)",
+      "name": "Customer",
       "item": [
         {
-          "name": "🏪 صاحب المحل",
+          "name": "Auth",
           "item": [
             {
-              "name": "تسجيل دخول - صاحب المحل",
-              "event": [
+              "name": "👤 العميل",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "    var jsonData = pm.response.json();",
-                      "    if (jsonData.success && jsonData.data) {",
-                      "        pm.environment.set(\"access_token\", jsonData.data.access);",
-                      "        pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
-                      "    }",
-                      "}"
+                  "name": "تسجيل عميل جديد (الخطوة 1)",
+                  "request": {
+                    "method": "POST",
+                    "header": [],
+                    "body": {
+                      "mode": "formdata",
+                      "formdata": [
+                        {
+                          "key": "role",
+                          "value": "customer",
+                          "type": "text"
+                        },
+                        {
+                          "key": "name",
+                          "value": "أحمد محمد",
+                          "type": "text"
+                        },
+                        {
+                          "key": "phone_number",
+                          "value": "01098765432",
+                          "type": "text"
+                        },
+                        {
+                          "key": "password",
+                          "value": "password123",
+                          "type": "text"
+                        },
+                        {
+                          "key": "profile_image",
+                          "type": "file",
+                          "value": null
+                        }
+                      ]
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/register/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "register",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 1 للتسجيل: إنشاء الحساب أولاً بدون OTP. يمكن رفع profile_image اختيارياً"
+                  },
+                  "response": []
+                },
+                {
+                  "name": "إرسال OTP - للتسجيل",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
                     ],
-                    "type": "text/javascript"
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"role\": \"shop_owner\",\n    \"shop_number\": \"12345\",\n    \"password\": \"password123\"\n}"
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01098765432\",\n    \"purpose\": \"register\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/send/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "send",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 2 للتسجيل: إرسال OTP بعد إنشاء الحساب"
+                  },
+                  "response": []
                 },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/login/",
-                  "host": [
-                    "{{base_url}}"
+                {
+                  "name": "التحقق من OTP - للتسجيل",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "    var jsonData = pm.response.json();",
+                          "    if (jsonData.data) {",
+                          "        pm.environment.set(\"customer_token\", jsonData.data.access);",
+                          "    }",
+                          "}"
+                        ],
+                        "type": "text/javascript"
+                      }
+                    }
                   ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "login",
-                    ""
-                  ]
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01098765432\",\n    \"otp\": \"123456\",\n    \"purpose\": \"register\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/verify/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "verify",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 3 للتسجيل: التحقق من OTP وتفعيل الحساب"
+                  },
+                  "response": []
+                },
+                {
+                  "name": "تسجيل دخول - عميل",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "    var jsonData = pm.response.json();",
+                          "    if (jsonData.success && jsonData.data) {",
+                          "        pm.environment.set(\"customer_token\", jsonData.data.access);",
+                          "    }",
+                          "}"
+                        ],
+                        "type": "text/javascript"
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"role\": \"customer\",\n    \"phone_number\": \"01012345678\",\n    \"password\": \"password123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/login/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "login",
+                        ""
+                      ]
+                    }
+                  },
+                  "response": []
+                },
+                {
+                  "name": "إرسال OTP - تسجيل دخول",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"login\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/send/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "send",
+                        ""
+                      ]
+                    },
+                    "description": "إرسال رمز OTP عبر واتساب. purpose: login | register | reset_password"
+                  },
+                  "response": []
+                },
+                {
+                  "name": "تسجيل دخول بـ OTP",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "    var jsonData = pm.response.json();",
+                          "    if (jsonData.data) {",
+                          "        pm.environment.set(\"customer_token\", jsonData.data.access);",
+                          "    }",
+                          "}"
+                        ],
+                        "type": "text/javascript"
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"purpose\": \"login\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/verify/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "verify",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 2: التحقق من OTP وتسجيل الدخول (بدون كلمة مرور)"
+                  },
+                  "response": []
+                },
+                {
+                  "name": "إرسال OTP - استعادة كلمة المرور (عميل)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"customer\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/send/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "send",
+                        ""
+                      ]
+                    },
+                    "description": "العميل - الرقم يجب أن يكون مسجلاً"
+                  },
+                  "response": []
+                },
+                {
+                  "name": "استعادة كلمة المرور (عميل)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"role\": \"customer\",\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/password-reset/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "password-reset",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 2 - العميل"
+                  },
+                  "response": []
                 }
-              },
-              "response": []
+              ]
             },
             {
-              "name": "إرسال OTP - استعادة كلمة المرور (صاحب محل)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"shop_owner\"\n}"
+              "name": "Direct JWT",
+              "item": [
+                {
+                  "name": "تسجيل عميل جديد (JWT مباشر)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"name\": \"عميل\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/customer/register/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "customer",
+                        "register",
+                        ""
+                      ]
+                    }
+                  },
+                  "response": []
                 },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/otp/send/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "otp",
-                    "send",
-                    ""
-                  ]
-                },
-                "description": "صاحب المحل - يجب إضافة رقم الهاتف في الإعدادات أولاً"
-              },
-              "response": []
-            },
-            {
-              "name": "استعادة كلمة المرور (صاحب محل)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"role\": \"shop_owner\",\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/password-reset/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "password-reset",
-                    ""
-                  ]
-                },
-                "description": "الخطوة 2 - صاحب المحل"
-              },
-              "response": []
+                {
+                  "name": "تسجيل دخول - عميل (JWT مباشر)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/customer/login/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "customer",
+                        "login",
+                        ""
+                      ]
+                    }
+                  },
+                  "response": []
+                }
+              ]
             }
           ]
         },
         {
-          "name": "👤 العميل",
+          "name": "🏬 المتاجر العامة (Public Shops)",
           "item": [
             {
-              "name": "تسجيل عميل جديد (الخطوة 1)",
+              "name": "قائمة المحلات المتاحة",
               "request": {
-                "method": "POST",
+                "method": "GET",
                 "header": [],
-                "body": {
-                  "mode": "formdata",
-                  "formdata": [
+                "url": {
+                  "raw": "{{base_url}}/api/shops/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "قائمة تصنيفات المحلات",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/shops/shop-categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    "shop-categories",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "المنتجات حسب تصنيف المحل",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/shops/products/by-shop-category/?shop_category_id=1",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    "products",
+                    "by-shop-category",
+                    ""
+                  ],
+                  "query": [
                     {
-                      "key": "role",
-                      "value": "customer",
-                      "type": "text"
+                      "key": "shop_category_id",
+                      "value": "1",
+                      "description": "Required if shop_category_name is not provided."
                     },
                     {
-                      "key": "name",
-                      "value": "أحمد محمد",
-                      "type": "text"
+                      "key": "shop_category_name",
+                      "value": "",
+                      "description": "Alternative to shop_category_id.",
+                      "disabled": true
                     },
                     {
-                      "key": "phone_number",
-                      "value": "01098765432",
-                      "type": "text"
+                      "key": "category_id",
+                      "value": "",
+                      "disabled": true
                     },
                     {
-                      "key": "password",
-                      "value": "password123",
-                      "type": "text"
+                      "key": "has_offer",
+                      "value": "true",
+                      "disabled": true
                     },
                     {
-                      "key": "profile_image",
-                      "type": "file",
-                      "value": null
+                      "key": "search",
+                      "value": "",
+                      "disabled": true
                     }
                   ]
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/register/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "register",
-                    ""
-                  ]
-                },
-                "description": "الخطوة 1 للتسجيل: إنشاء الحساب أولاً بدون OTP. يمكن رفع profile_image اختيارياً"
-              },
-              "response": []
-            },
-            {
-              "name": "إرسال OTP - للتسجيل",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01098765432\",\n    \"purpose\": \"register\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/otp/send/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "otp",
-                    "send",
-                    ""
-                  ]
-                },
-                "description": "الخطوة 2 للتسجيل: إرسال OTP بعد إنشاء الحساب"
-              },
-              "response": []
-            },
-            {
-              "name": "التحقق من OTP - للتسجيل",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "    var jsonData = pm.response.json();",
-                      "    if (jsonData.data) {",
-                      "        pm.environment.set(\"customer_token\", jsonData.data.access);",
-                      "    }",
-                      "}"
-                    ],
-                    "type": "text/javascript"
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01098765432\",\n    \"otp\": \"123456\",\n    \"purpose\": \"register\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/otp/verify/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "otp",
-                    "verify",
-                    ""
-                  ]
-                },
-                "description": "الخطوة 3 للتسجيل: التحقق من OTP وتفعيل الحساب"
-              },
-              "response": []
-            },
-            {
-              "name": "تسجيل دخول - عميل",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "    var jsonData = pm.response.json();",
-                      "    if (jsonData.success && jsonData.data) {",
-                      "        pm.environment.set(\"customer_token\", jsonData.data.access);",
-                      "    }",
-                      "}"
-                    ],
-                    "type": "text/javascript"
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"role\": \"customer\",\n    \"phone_number\": \"01012345678\",\n    \"password\": \"password123\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/login/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "login",
-                    ""
-                  ]
                 }
               },
               "response": []
             },
             {
-              "name": "إرسال OTP - تسجيل دخول",
+              "name": "العروض العامة",
               "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"login\"\n}"
-                },
+                "method": "GET",
+                "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/auth/otp/send/",
+                  "raw": "{{base_url}}/api/shops/offers/?shop_id=&shop_category_id=&category_id=&search=",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
-                    "auth",
-                    "otp",
-                    "send",
+                    "shops",
+                    "offers",
                     ""
+                  ],
+                  "query": [
+                    {
+                      "key": "shop_id",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "category_id",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "search",
+                      "value": "",
+                      "disabled": true
+                    }
                   ]
-                },
-                "description": "إرسال رمز OTP عبر واتساب. purpose: login | register | reset_password"
-              },
-              "response": []
-            },
-            {
-              "name": "تسجيل دخول بـ OTP",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "    var jsonData = pm.response.json();",
-                      "    if (jsonData.data) {",
-                      "        pm.environment.set(\"customer_token\", jsonData.data.access);",
-                      "    }",
-                      "}"
-                    ],
-                    "type": "text/javascript"
-                  }
                 }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"purpose\": \"login\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/otp/verify/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "otp",
-                    "verify",
-                    ""
-                  ]
-                },
-                "description": "الخطوة 2: التحقق من OTP وتسجيل الدخول (بدون كلمة مرور)"
-              },
-              "response": []
-            },
-            {
-              "name": "إرسال OTP - استعادة كلمة المرور (عميل)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"customer\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/otp/send/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "otp",
-                    "send",
-                    ""
-                  ]
-                },
-                "description": "العميل - الرقم يجب أن يكون مسجلاً"
-              },
-              "response": []
-            },
-            {
-              "name": "استعادة كلمة المرور (عميل)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"role\": \"customer\",\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/password-reset/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "password-reset",
-                    ""
-                  ]
-                },
-                "description": "الخطوة 2 - العميل"
               },
               "response": []
             }
           ]
         },
         {
-          "name": "👨‍💼 الموظف",
+          "name": "🏪 اختيار المحل (Customer Select Shop)",
           "item": [
             {
-              "name": "تسجيل دخول - موظف",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "    var jsonData = pm.response.json();",
-                      "    if (jsonData.success && jsonData.data) {",
-                      "        pm.environment.set(\"employee_token\", jsonData.data.access);",
-                      "    }",
-                      "}"
-                    ],
-                    "type": "text/javascript"
-                  }
-                }
-              ],
+              "name": "اختيار/ربط المحل للعميل",
               "request": {
                 "method": "POST",
                 "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
                   {
                     "key": "Content-Type",
                     "value": "application/json"
@@ -472,194 +552,806 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+                  "raw": "{\n    \"shop_owner_id\": 1\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/auth/login/",
+                  "raw": "{{base_url}}/api/customer/select-shop/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
-                    "auth",
-                    "login",
+                    "customer",
+                    "select-shop",
                     ""
                   ]
                 }
-              },
-              "response": []
-            },
-            {
-              "name": "إرسال OTP - استعادة كلمة المرور (موظف/سائق)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"employee\",\n    \"shop_number\": \"12345\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/otp/send/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "otp",
-                    "send",
-                    ""
-                  ]
-                },
-                "description": "الموظف/السائق - مطلوب shop_number"
-              },
-              "response": []
-            },
-            {
-              "name": "استعادة كلمة المرور (موظف/سائق)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"shop_number\": \"12345\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/password-reset/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "password-reset",
-                    ""
-                  ]
-                },
-                "description": "الخطوة 2 - الموظف/السائق (مطلوب shop_number)"
               },
               "response": []
             }
           ]
         },
         {
-          "name": "🚚 السائق",
+          "name": "👤 ملف العميل (Customer Profile)",
           "item": [
             {
-              "name": "تسجيل دخول - سائق",
-              "event": [
+              "name": "عرض ملف العميل",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "profile",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث ملف العميل",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"أحمد محمد الجديد\",\n    \"email\": \"ahmed.new@example.com\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/customer/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "profile",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "عناوين العميل (Addresses)",
+          "item": [
+            {
+              "name": "قائمة العناوين",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/addresses/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "addresses",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إضافة عنوان",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"title\": \"المنزل\",\n    \"address_type\": \"home\",\n    \"full_address\": \"الرياض، حي النخيل، شارع الملك فهد\",\n    \"building_number\": \"15\",\n    \"floor\": \"2\",\n    \"apartment\": \"5\",\n    \"is_default\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/customer/addresses/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "addresses",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث عنوان",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"title\": \"العمل\",\n    \"address_type\": \"work\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/customer/addresses/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "addresses",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "حذف عنوان",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/addresses/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "addresses",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "طرق الدفع (Payment Methods)",
+          "item": [
+            {
+              "name": "قائمة طرق الدفع",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/payment-methods/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "payment-methods",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إضافة بطاقة",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"card_type\": \"visa\",\n    \"card_number\": \"4111111111111111\",\n    \"card_holder_name\": \"AHMED MOHAMED\",\n    \"expiry_month\": \"12\",\n    \"expiry_year\": \"2027\",\n    \"cvv\": \"123\",\n    \"is_default\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/customer/payment-methods/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "payment-methods",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "حذف طريقة دفع",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/payment-methods/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "payment-methods",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "📝 طلبات العميل (Customer Orders)",
+          "item": [
+            {
+              "name": "قائمة طلبات العميل",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/orders/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "orders",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إنشاء طلب (أول رسالة - فاتورة)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"address\": \"عنوان العميل\",\n    \"items\": [\"بند 1\", \"بند 2\", \"بند 3\"],\n    \"notes\": \"\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/customer/orders/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "orders",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تأكيد الطلب",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/orders/1/confirm/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "orders",
+                    "1",
+                    "confirm",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "سلة التسوق (Cart)",
+          "item": [
+            {
+              "name": "عرض السلة",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/cart/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "cart",
+                    "1",
+                    ""
+                  ]
+                },
+                "description": "عرض سلة محل معين (غيّر 1 إلى shop_id)"
+              },
+              "response": []
+            },
+            {
+              "name": "إضافة منتج للسلة",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"product_id\": 1,\n    \"quantity\": 2,\n    \"notes\": \"بدون بصل\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/cart/1/add/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "cart",
+                    "1",
+                    "add",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث عنصر في السلة",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"quantity\": 3\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/cart/1/items/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "cart",
+                    "1",
+                    "items",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "حذف عنصر من السلة",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/cart/1/items/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "cart",
+                    "1",
+                    "items",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تفريغ السلة",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/cart/1/clear/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "cart",
+                    "1",
+                    "clear",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "الإشعارات (Notifications)",
+          "item": [
+            {
+              "name": "قائمة الإشعارات",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/notifications/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "notifications",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديد إشعار كمقروء",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/notifications/1/read/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "notifications",
+                    "1",
+                    "read",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديد الكل كمقروء",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/notifications/read-all/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "notifications",
+                    "read-all",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Order Rating",
+          "item": [
+            {
+              "name": "تقييم طلب",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"order_id\": 1,\n    \"shop_rating\": 5,\n    \"driver_rating\": 4,\n    \"food_rating\": 5,\n    \"comment\": \"خدمة ممتازة!\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/orders/rate/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "orders",
+                    "rate",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "المحادثات (Chat) - WebSocket فقط",
+          "item": [],
+          "description": "الشات يتم عبر WebSocket وليس REST API.\n\nURLs:\n- ws://server/ws/chat/order/{order_id}/?token=JWT&chat_type=shop_customer\n- ws://server/ws/orders/shop/{shop_owner_id}/?token=JWT\n- ws://server/ws/orders/customer/{customer_id}/?token=JWT\n- ws://server/ws/driver/{driver_id}/?token=JWT\n\nراجع frontend_test.html للاختبار"
+        }
+      ]
+    },
+    {
+      "name": "Shops",
+      "item": [
+        {
+          "name": "Owner Auth",
+          "item": [
+            {
+              "name": "🏪 صاحب المحل",
+              "item": [
                 {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "    var jsonData = pm.response.json();",
-                      "    if (jsonData.success && jsonData.data) {",
-                      "        pm.environment.set(\"driver_token\", jsonData.data.access);",
-                      "    }",
-                      "}"
+                  "name": "تسجيل دخول - صاحب المحل",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "    var jsonData = pm.response.json();",
+                          "    if (jsonData.success && jsonData.data) {",
+                          "        pm.environment.set(\"access_token\", jsonData.data.access);",
+                          "        pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
+                          "    }",
+                          "}"
+                        ],
+                        "type": "text/javascript"
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
                     ],
-                    "type": "text/javascript"
-                  }
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"role\": \"shop_owner\",\n    \"shop_number\": \"12345\",\n    \"password\": \"password123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/login/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "login",
+                        ""
+                      ]
+                    }
+                  },
+                  "response": []
+                },
+                {
+                  "name": "إرسال OTP - استعادة كلمة المرور (صاحب محل)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"shop_owner\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/send/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "send",
+                        ""
+                      ]
+                    },
+                    "description": "صاحب المحل - يجب إضافة رقم الهاتف في الإعدادات أولاً"
+                  },
+                  "response": []
+                },
+                {
+                  "name": "استعادة كلمة المرور (صاحب محل)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"role\": \"shop_owner\",\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/password-reset/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "password-reset",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 2 - صاحب المحل"
+                  },
+                  "response": []
                 }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"role\": \"driver\",\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/login/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "login",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "إرسال OTP - استعادة كلمة المرور (موظف/سائق)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"employee\",\n    \"shop_number\": \"12345\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/otp/send/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "otp",
-                    "send",
-                    ""
-                  ]
-                },
-                "description": "الموظف/السائق - مطلوب shop_number"
-              },
-              "response": []
-            },
-            {
-              "name": "استعادة كلمة المرور (موظف/سائق)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"shop_number\": \"12345\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/auth/password-reset/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "auth",
-                    "password-reset",
-                    ""
-                  ]
-                },
-                "description": "الخطوة 2 - الموظف/السائق (مطلوب shop_number)"
-              },
-              "response": []
+              ]
             }
           ]
         },
@@ -697,1611 +1389,2295 @@
               "response": []
             }
           ]
-        }
-      ],
-      "description": "تسجيل دخول موحد لجميع المستخدمين"
-    },
-    {
-      "name": "Shop Profile",
-      "item": [
-        {
-          "name": "عرض الملف الشخصي",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/profile/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "profile",
-                ""
-              ]
-            }
-          },
-          "response": []
         },
         {
-          "name": "تحديث الملف الشخصي (بيانات + صورة - الأونر فقط)",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
+          "name": "Owner Legacy Login",
+          "item": [
+            {
+              "name": "تسجيل دخول - صاحب المحل (Legacy)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"shop_number\": \"{{shop_number}}\",\n    \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/login/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "login",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Driver Auth",
+          "item": [
+            {
+              "name": "🚚 السائق",
+              "item": [
                 {
-                  "key": "owner_name",
-                  "value": "سارة أحمد المالكي",
-                  "type": "text",
-                  "description": "اسم صاحب المحل"
+                  "name": "تسجيل دخول - سائق",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "    var jsonData = pm.response.json();",
+                          "    if (jsonData.success && jsonData.data) {",
+                          "        pm.environment.set(\"driver_token\", jsonData.data.access);",
+                          "    }",
+                          "}"
+                        ],
+                        "type": "text/javascript"
+                      }
+                    }
+                  ],
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"role\": \"driver\",\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/login/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "login",
+                        ""
+                      ]
+                    }
+                  },
+                  "response": []
                 },
                 {
-                  "key": "shop_name",
-                  "value": "مصور فوتوغرافي محترف",
-                  "type": "text",
-                  "description": "اسم المحل"
+                  "name": "إرسال OTP - استعادة كلمة المرور (موظف/سائق)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"employee\",\n    \"shop_number\": \"12345\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/send/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "send",
+                        ""
+                      ]
+                    },
+                    "description": "الموظف/السائق - مطلوب shop_number"
+                  },
+                  "response": []
                 },
                 {
-                  "key": "phone_number",
-                  "value": "01012345678",
-                  "type": "text",
-                  "description": "رقم الهاتف (للاستعادة كلمة المرور)"
-                },
-                {
-                  "key": "profile_image",
-                  "type": "file",
-                  "description": "صورة البروفيل (اختياري)",
-                  "value": null
+                  "name": "استعادة كلمة المرور (موظف/سائق)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"shop_number\": \"12345\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/password-reset/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "password-reset",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 2 - الموظف/السائق (مطلوب shop_number)"
+                  },
+                  "response": []
                 }
               ]
             },
-            "url": {
-              "raw": "{{base_url}}/api/shop/profile/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "profile",
-                ""
-              ]
-            },
-            "description": "تحديث الملف الشخصي في endpoint واحد: owner_name، shop_name، و/أو profile_image. الأونر فقط يقدر يعدّل. يمكن إرسال application/json بدل formdata لتحديث النصوص فقط."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Work Schedule",
-      "item": [
-        {
-          "name": "عرض مواعيد العمل",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/schedule/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "schedule",
-                ""
-              ]
+            {
+              "name": "تسجيل دخول - سائق",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/login/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "login",
+                    ""
+                  ]
+                }
+              },
+              "response": []
             }
-          },
-          "response": []
+          ]
         },
         {
-          "name": "تحديث مواعيد العمل",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
+          "name": "📌 حالة المحل (Shop Status)",
+          "item": [
+            {
+              "name": "عرض حالة المحل",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/status/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "status",
+                    ""
+                  ]
+                }
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"work_days\": \"السبت - الأربعاء\",\n    \"work_hours\": \"10:00 صباحاً - 6:00 مساءً\"\n}"
+              "response": []
             },
-            "url": {
-              "raw": "{{base_url}}/api/shop/schedule/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "schedule",
-                ""
-              ]
+            {
+              "name": "تحديث حالة المحل",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"status\": \"open\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/status/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "status",
+                    ""
+                  ]
+                }
+              },
+              "response": []
             }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Gallery",
-      "item": [
+          ]
+        },
         {
-          "name": "عرض قائمة الصور",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/gallery/?status=published&sort_by=-uploaded_at&page=1&page_size=12",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "gallery",
-                ""
-              ],
-              "query": [
+          "name": "Shop Profile",
+          "item": [
+            {
+              "name": "عرض الملف الشخصي",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "profile",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث الملف الشخصي (بيانات + صورة - الأونر فقط)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "owner_name",
+                      "value": "سارة أحمد المالكي",
+                      "type": "text",
+                      "description": "اسم صاحب المحل"
+                    },
+                    {
+                      "key": "shop_name",
+                      "value": "مصور فوتوغرافي محترف",
+                      "type": "text",
+                      "description": "اسم المحل"
+                    },
+                    {
+                      "key": "phone_number",
+                      "value": "01012345678",
+                      "type": "text",
+                      "description": "رقم الهاتف (للاستعادة كلمة المرور)"
+                    },
+                    {
+                      "key": "profile_image",
+                      "type": "file",
+                      "description": "صورة البروفيل (اختياري)",
+                      "value": null
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "profile",
+                    ""
+                  ]
+                },
+                "description": "تحديث الملف الشخصي في endpoint واحد: owner_name، shop_name، و/أو profile_image. الأونر فقط يقدر يعدّل. يمكن إرسال application/json بدل formdata لتحديث النصوص فقط."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Work Schedule",
+          "item": [
+            {
+              "name": "عرض مواعيد العمل",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/schedule/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "schedule",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث مواعيد العمل",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"work_days\": \"السبت - الأربعاء\",\n    \"work_hours\": \"10:00 صباحاً - 6:00 مساءً\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/schedule/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "schedule",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Gallery",
+          "item": [
+            {
+              "name": "عرض قائمة الصور",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/gallery/?status=published&sort_by=-uploaded_at&page=1&page_size=12",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "gallery",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "published",
+                      "description": "draft أو published"
+                    },
+                    {
+                      "key": "search",
+                      "value": "",
+                      "description": "البحث في وصف الصور",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sort_by",
+                      "value": "-uploaded_at",
+                      "description": "uploaded_at, -uploaded_at, likes_count, -likes_count"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "12"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إضافة صورة جديدة",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "value": null
+                    },
+                    {
+                      "key": "description",
+                      "value": "وصف الصورة",
+                      "type": "text"
+                    },
+                    {
+                      "key": "status",
+                      "value": "draft",
+                      "type": "text",
+                      "description": "draft أو published"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/gallery/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "gallery",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "عرض صورة محددة",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/gallery/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "gallery",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث صورة",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"description\": \"وصف جديد للصورة\",\n    \"status\": \"published\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/gallery/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "gallery",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "حذف صورة",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/gallery/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "gallery",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "الإعجاب بصورة",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"user_identifier\": \"966501234567\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/gallery/1/like/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "gallery",
+                    "1",
+                    "like",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إلغاء الإعجاب",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"user_identifier\": \"966501234567\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/gallery/1/like/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "gallery",
+                    "1",
+                    "like",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Statistics",
+          "item": [
+            {
+              "name": "إحصائيات المحل",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/statistics/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "statistics",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Customer",
+          "item": [
+            {
+              "name": "قائمة العملاء",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/customers/?search=",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "customers",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "search",
+                      "value": "",
+                      "description": "البحث بالاسم أو رقم الهاتف"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إضافة عميل",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"عميل جديد\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/customers/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "customers",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تفاصيل عميل",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/customers/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "customers",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث عميل",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"اسم محدث\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/customers/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "customers",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "حذف عميل",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/customers/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "customers",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Employees",
+          "item": [
+            {
+              "name": "Auth",
+              "item": [
                 {
-                  "key": "status",
-                  "value": "published",
-                  "description": "draft أو published"
+                  "name": "👨‍💼 الموظف",
+                  "item": [
+                    {
+                      "name": "تسجيل دخول - موظف",
+                      "event": [
+                        {
+                          "listen": "test",
+                          "script": {
+                            "exec": [
+                              "if (pm.response.code === 200) {",
+                              "    var jsonData = pm.response.json();",
+                              "    if (jsonData.success && jsonData.data) {",
+                              "        pm.environment.set(\"employee_token\", jsonData.data.access);",
+                              "    }",
+                              "}"
+                            ],
+                            "type": "text/javascript"
+                          }
+                        }
+                      ],
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json"
+                          }
+                        ],
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+                        },
+                        "url": {
+                          "raw": "{{base_url}}/api/auth/login/",
+                          "host": [
+                            "{{base_url}}"
+                          ],
+                          "path": [
+                            "api",
+                            "auth",
+                            "login",
+                            ""
+                          ]
+                        }
+                      },
+                      "response": []
+                    },
+                    {
+                      "name": "إرسال OTP - استعادة كلمة المرور (موظف/سائق)",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json"
+                          }
+                        ],
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"employee\",\n    \"shop_number\": \"12345\"\n}"
+                        },
+                        "url": {
+                          "raw": "{{base_url}}/api/auth/otp/send/",
+                          "host": [
+                            "{{base_url}}"
+                          ],
+                          "path": [
+                            "api",
+                            "auth",
+                            "otp",
+                            "send",
+                            ""
+                          ]
+                        },
+                        "description": "الموظف/السائق - مطلوب shop_number"
+                      },
+                      "response": []
+                    },
+                    {
+                      "name": "استعادة كلمة المرور (موظف/سائق)",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          {
+                            "key": "Content-Type",
+                            "value": "application/json"
+                          }
+                        ],
+                        "body": {
+                          "mode": "raw",
+                          "raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"shop_number\": \"12345\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+                        },
+                        "url": {
+                          "raw": "{{base_url}}/api/auth/password-reset/",
+                          "host": [
+                            "{{base_url}}"
+                          ],
+                          "path": [
+                            "api",
+                            "auth",
+                            "password-reset",
+                            ""
+                          ]
+                        },
+                        "description": "الخطوة 2 - الموظف/السائق (مطلوب shop_number)"
+                      },
+                      "response": []
+                    }
+                  ]
                 },
                 {
-                  "key": "search",
-                  "value": "",
-                  "description": "البحث في وصف الصور",
-                  "disabled": true
+                  "name": "تسجيل دخول - موظف",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/employee/login/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "employee",
+                        "login",
+                        ""
+                      ]
+                    }
+                  },
+                  "response": []
+                }
+              ]
+            },
+            {
+              "name": "الموظفين (صاحب المحل)",
+              "item": [
+                {
+                  "name": "عرض قائمة الموظفين",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{access_token}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{base_url}}/api/shop/employees/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "shop",
+                        "employees",
+                        ""
+                      ],
+                      "query": [
+                        {
+                          "key": "role",
+                          "value": "cashier",
+                          "description": "اختياري: cashier, accountant, manager",
+                          "disabled": true
+                        }
+                      ]
+                    },
+                    "description": "عرض جميع الموظفين - يتطلب توكين صاحب المحل"
+                  },
+                  "response": []
                 },
                 {
-                  "key": "sort_by",
-                  "value": "-uploaded_at",
-                  "description": "uploaded_at, -uploaded_at, likes_count, -likes_count"
+                  "name": "إنشاء موظف",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{access_token}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"name\": \"موظف تجريبي\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\",\n    \"role\": \"cashier\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/shop/employees/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "shop",
+                        "employees",
+                        ""
+                      ]
+                    },
+                    "description": "إنشاء موظف جديد - role: cashier, accountant, manager"
+                  },
+                  "response": []
                 },
                 {
-                  "key": "page",
-                  "value": "1"
+                  "name": "عرض تفاصيل موظف",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{access_token}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{base_url}}/api/shop/employees/1/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "shop",
+                        "employees",
+                        "1",
+                        ""
+                      ]
+                    },
+                    "description": "عرض تفاصيل موظف - غيّري 1 إلى id الموظف"
+                  },
+                  "response": []
                 },
                 {
-                  "key": "page_size",
-                  "value": "12"
+                  "name": "تحديث موظف",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{access_token}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"name\": \"موظف محدث\",\n    \"phone_number\": \"01000000000\",\n    \"role\": \"accountant\",\n    \"is_active\": true\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/shop/employees/1/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "shop",
+                        "employees",
+                        "1",
+                        ""
+                      ]
+                    },
+                    "description": "تحديث بيانات موظف - غيّري 1 إلى id الموظف"
+                  },
+                  "response": []
+                },
+                {
+                  "name": "حذف موظف",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{access_token}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{base_url}}/api/shop/employees/1/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "shop",
+                        "employees",
+                        "1",
+                        ""
+                      ]
+                    },
+                    "description": "حذف موظف - غيّري 1 إلى id الموظف"
+                  },
+                  "response": []
+                },
+                {
+                  "name": "إحصائيات الموظفين",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{access_token}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{base_url}}/api/shop/employees/statistics/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "shop",
+                        "employees",
+                        "statistics",
+                        ""
+                      ]
+                    },
+                    "description": "إحصائيات الموظفين (العدد، النشطين، حسب الدور)"
+                  },
+                  "response": []
                 }
               ]
             }
-          },
-          "response": []
+          ]
         },
         {
-          "name": "إضافة صورة جديدة",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "image",
-                  "type": "file",
-                  "value": null
+          "name": "السائقين (صاحب المحل)",
+          "item": [
+            {
+              "name": "عرض قائمة السائقين",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/drivers/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "drivers",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "available",
+                      "description": "اختياري: available, busy, offline",
+                      "disabled": true
+                    }
+                  ]
                 },
-                {
-                  "key": "description",
-                  "value": "وصف الصورة",
-                  "type": "text"
+                "description": "عرض جميع السائقين - يتطلب توكين صاحب المحل"
+              },
+              "response": []
+            },
+            {
+              "name": "إنشاء سائق",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"سائق تجريبي\",\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\",\n    \"status\": \"available\"\n}"
                 },
-                {
-                  "key": "status",
-                  "value": "draft",
-                  "type": "text",
-                  "description": "draft أو published"
+                "url": {
+                  "raw": "{{base_url}}/api/shop/drivers/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "drivers",
+                    ""
+                  ]
+                },
+                "description": "إنشاء سائق جديد - status: available, busy, offline"
+              },
+              "response": []
+            },
+            {
+              "name": "عرض تفاصيل سائق",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/drivers/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "drivers",
+                    "1",
+                    ""
+                  ]
+                },
+                "description": "عرض تفاصيل سائق - غيّري 1 إلى id السائق"
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث سائق",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"سائق محدث\",\n    \"phone_number\": \"01000000001\",\n    \"status\": \"busy\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/drivers/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "drivers",
+                    "1",
+                    ""
+                  ]
+                },
+                "description": "تحديث بيانات سائق - غيّري 1 إلى id السائق"
+              },
+              "response": []
+            },
+            {
+              "name": "حذف سائق",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/drivers/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "drivers",
+                    "1",
+                    ""
+                  ]
+                },
+                "description": "حذف سائق - غيّري 1 إلى id السائق"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "✅ موافقة السائق (Driver Approval)",
+          "item": [
+            {
+              "name": "الموافقة على السائق",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/drivers/1/approve/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "drivers",
+                    "1",
+                    "approve",
+                    ""
+                  ]
                 }
-              ]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/shop/gallery/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "gallery",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "عرض صورة محددة",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/gallery/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "gallery",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "تحديث صورة",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"description\": \"وصف جديد للصورة\",\n    \"status\": \"published\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/shop/gallery/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "gallery",
-                "1",
-                ""
-              ]
+              "response": []
             }
-          },
-          "response": []
+          ]
         },
         {
-          "name": "حذف صورة",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/gallery/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "gallery",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "الإعجاب بصورة",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"user_identifier\": \"966501234567\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/shop/gallery/1/like/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "gallery",
-                "1",
-                "like",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "إلغاء الإعجاب",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"user_identifier\": \"966501234567\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/shop/gallery/1/like/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "gallery",
-                "1",
-                "like",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Statistics",
-      "item": [
-        {
-          "name": "إحصائيات المحل",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/statistics/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "statistics",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "الموظفين (صاحب المحل)",
-      "item": [
-        {
-          "name": "عرض قائمة الموظفين",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/employees/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "employees",
-                ""
-              ],
-              "query": [
-                {
-                  "key": "role",
-                  "value": "cashier",
-                  "description": "اختياري: cashier, accountant, manager",
-                  "disabled": true
+          "name": "تصنيفات المحلات (Shop Categories)",
+          "item": [
+            {
+              "name": "قائمة تصنيفات المحلات",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/shop-categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "shop-categories",
+                    ""
+                  ]
                 }
-              ]
-            },
-            "description": "عرض جميع الموظفين - يتطلب توكين صاحب المحل"
-          },
-          "response": []
-        },
-        {
-          "name": "إنشاء موظف",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"name\": \"موظف تجريبي\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\",\n    \"role\": \"cashier\"\n}"
+              "response": []
             },
-            "url": {
-              "raw": "{{base_url}}/api/shop/employees/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "employees",
-                ""
-              ]
-            },
-            "description": "إنشاء موظف جديد - role: cashier, accountant, manager"
-          },
-          "response": []
-        },
-        {
-          "name": "عرض تفاصيل موظف",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/employees/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "employees",
-                "1",
-                ""
-              ]
-            },
-            "description": "عرض تفاصيل موظف - غيّري 1 إلى id الموظف"
-          },
-          "response": []
-        },
-        {
-          "name": "تحديث موظف",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"name\": \"موظف محدث\",\n    \"phone_number\": \"01000000000\",\n    \"role\": \"accountant\",\n    \"is_active\": true\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/shop/employees/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "employees",
-                "1",
-                ""
-              ]
-            },
-            "description": "تحديث بيانات موظف - غيّري 1 إلى id الموظف"
-          },
-          "response": []
-        },
-        {
-          "name": "حذف موظف",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/employees/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "employees",
-                "1",
-                ""
-              ]
-            },
-            "description": "حذف موظف - غيّري 1 إلى id الموظف"
-          },
-          "response": []
-        },
-        {
-          "name": "إحصائيات الموظفين",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/employees/statistics/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "employees",
-                "statistics",
-                ""
-              ]
-            },
-            "description": "إحصائيات الموظفين (العدد، النشطين، حسب الدور)"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "السائقين (صاحب المحل)",
-      "item": [
-        {
-          "name": "عرض قائمة السائقين",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/drivers/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "drivers",
-                ""
-              ],
-              "query": [
-                {
-                  "key": "status",
-                  "value": "available",
-                  "description": "اختياري: available, busy, offline",
-                  "disabled": true
+            {
+              "name": "إضافة تصنيف محل",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"مطعم\",\n    \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/shop-categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "shop-categories",
+                    ""
+                  ]
                 }
-              ]
-            },
-            "description": "عرض جميع السائقين - يتطلب توكين صاحب المحل"
-          },
-          "response": []
-        },
-        {
-          "name": "إنشاء سائق",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"name\": \"سائق تجريبي\",\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\",\n    \"status\": \"available\"\n}"
+              "response": []
             },
-            "url": {
-              "raw": "{{base_url}}/api/shop/drivers/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "drivers",
-                ""
-              ]
-            },
-            "description": "إنشاء سائق جديد - status: available, busy, offline"
-          },
-          "response": []
-        },
-        {
-          "name": "عرض تفاصيل سائق",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/drivers/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "drivers",
-                "1",
-                ""
-              ]
-            },
-            "description": "عرض تفاصيل سائق - غيّري 1 إلى id السائق"
-          },
-          "response": []
-        },
-        {
-          "name": "تحديث سائق",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
+            {
+              "name": "تفاصيل تصنيف محل",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/shop-categories/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "shop-categories",
+                    "1",
+                    ""
+                  ]
+                }
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"name\": \"سائق محدث\",\n    \"phone_number\": \"01000000001\",\n    \"status\": \"busy\"\n}"
+              "response": []
             },
-            "url": {
-              "raw": "{{base_url}}/api/shop/drivers/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "drivers",
-                "1",
-                ""
-              ]
+            {
+              "name": "تحديث تصنيف محل",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"مطعم محدث\",\n    \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/shop-categories/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "shop-categories",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
             },
-            "description": "تحديث بيانات سائق - غيّري 1 إلى id السائق"
-          },
-          "response": []
+            {
+              "name": "حذف تصنيف محل",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/shop-categories/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "shop-categories",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
         },
         {
-          "name": "حذف سائق",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/drivers/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "drivers",
-                "1",
-                ""
-              ]
+          "name": "التصنيفات (Categories)",
+          "item": [
+            {
+              "name": "قائمة التصنيفات",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "categories",
+                    ""
+                  ]
+                }
+              },
+              "response": []
             },
-            "description": "حذف سائق - غيّري 1 إلى id السائق"
-          },
-          "response": []
+            {
+              "name": "إضافة تصنيف",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"مشروبات\",\n    \"name_en\": \"Beverages\",\n    \"icon\": \"drink\",\n    \"display_order\": 1\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "categories",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث تصنيف",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"مشروبات باردة\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/categories/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "categories",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "حذف تصنيف",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/categories/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "categories",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "🛍️ المنتجات (Products)",
+          "item": [
+            {
+              "name": "قائمة المنتجات",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/products/?available=true",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "products",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "available",
+                      "value": "true",
+                      "description": "true لإرجاع المتاح فقط",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إضافة منتج",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"بيتزا\",\n    \"description\": \"وصف المنتج\",\n    \"price\": \"75.00\",\n    \"display_order\": 1,\n    \"is_available\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/products/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "products",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تفاصيل منتج",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/products/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "products",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث منتج",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"price\": \"80.00\",\n    \"is_available\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/products/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "products",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "حذف منتج",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/products/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "products",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "📦 الطلبات (Orders)",
+          "item": [
+            {
+              "name": "قائمة الطلبات",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/?status=&search=&sort_by=-created_at&page=1&page_size=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "",
+                      "description": "فلتر بالحالة",
+                      "disabled": true
+                    },
+                    {
+                      "key": "search",
+                      "value": "",
+                      "description": "بحث برقم الطلب/اسم العميل/الهاتف",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sort_by",
+                      "value": "-created_at",
+                      "description": "created_at, -created_at, updated_at, -updated_at, total_amount, -total_amount"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "10"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إنشاء طلب (من المحل)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"customer_id\": 1,\n    \"employee_id\": null,\n    \"driver_id\": null,\n    \"items\": [\"بند 1\", \"بند 2\"],\n    \"total_amount\": \"120.00\",\n    \"delivery_fee\": \"0.00\",\n    \"address\": \"عنوان العميل\",\n    \"notes\": \"\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تفاصيل طلب",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث طلب (تسعير/قبول/تغيير حالة)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"status\": \"pending_customer_confirm\",\n    \"total_amount\": \"120.00\",\n    \"delivery_fee\": \"10.00\",\n    \"driver_id\": null\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "حذف طلب",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "🧾 الفواتير (Invoices)",
+          "item": [
+            {
+              "name": "قائمة الفواتير",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/invoices/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "invoices",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "إنشاء فاتورة سريعة",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"customer_name\": \"عميل\",\n    \"phone_number\": \"01000000000\",\n    \"address\": \"عنوان العميل\",\n    \"items\": [\n        {\"item_name\": \"بند 1\", \"price\": \"50.00\", \"quantity\": 1},\n        {\"item_name\": \"بند 2\", \"price\": \"20.00\", \"quantity\": 2}\n    ],\n    \"delivery\": \"10.00\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/invoices/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "invoices",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تفاصيل فاتورة",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/invoices/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "invoices",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "تحديث حالة إرسال الفاتورة",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"is_sent\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/invoices/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "invoices",
+                    "1",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "📊 لوحة التحكم (Dashboard)",
+          "item": [
+            {
+              "name": "إحصائيات لوحة التحكم",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/dashboard/statistics/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "dashboard",
+                    "statistics",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Order Rating",
+          "item": [
+            {
+              "name": "عرض تقييم طلب",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/1/rating/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    "1",
+                    "rating",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Order Tracking",
+          "item": [
+            {
+              "name": "تتبع موقع السائق",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/1/track/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    "1",
+                    "track",
+                    ""
+                  ]
+                },
+                "description": "تتبع الطلب وموقع السائق (غيّر 1 إلى order_id)"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Driver Tracking",
+          "item": [
+            {
+              "name": "تحديث موقع السائق",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"latitude\": \"24.7136\",\n    \"longitude\": \"46.6753\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/location/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "location",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
         }
       ]
-    },
-    {
-      "name": "👤 ملف العميل (Customer Profile)",
-      "item": [
-        {
-          "name": "عرض ملف العميل",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/customer/profile/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "profile",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "تحديث ملف العميل",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"name\": \"أحمد محمد الجديد\",\n    \"email\": \"ahmed.new@example.com\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/customer/profile/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "profile",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "عناوين العميل (Addresses)",
-      "item": [
-        {
-          "name": "قائمة العناوين",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/customer/addresses/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "addresses",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "إضافة عنوان",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"title\": \"المنزل\",\n    \"address_type\": \"home\",\n    \"full_address\": \"الرياض، حي النخيل، شارع الملك فهد\",\n    \"building_number\": \"15\",\n    \"floor\": \"2\",\n    \"apartment\": \"5\",\n    \"is_default\": true\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/customer/addresses/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "addresses",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "تحديث عنوان",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"title\": \"العمل\",\n    \"address_type\": \"work\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/customer/addresses/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "addresses",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "حذف عنوان",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/customer/addresses/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "addresses",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "طرق الدفع (Payment Methods)",
-      "item": [
-        {
-          "name": "قائمة طرق الدفع",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/customer/payment-methods/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "payment-methods",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "إضافة بطاقة",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"card_type\": \"visa\",\n    \"card_number\": \"4111111111111111\",\n    \"card_holder_name\": \"AHMED MOHAMED\",\n    \"expiry_month\": \"12\",\n    \"expiry_year\": \"2027\",\n    \"cvv\": \"123\",\n    \"is_default\": true\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/customer/payment-methods/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "payment-methods",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "حذف طريقة دفع",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/customer/payment-methods/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "customer",
-                "payment-methods",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "التصنيفات (Categories)",
-      "item": [
-        {
-          "name": "قائمة التصنيفات",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/categories/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "categories",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "إضافة تصنيف",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"name\": \"مشروبات\",\n    \"name_en\": \"Beverages\",\n    \"icon\": \"drink\",\n    \"display_order\": 1\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/shop/categories/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "categories",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "تحديث تصنيف",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"name\": \"مشروبات باردة\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/shop/categories/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "categories",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "حذف تصنيف",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/categories/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "categories",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "سلة التسوق (Cart)",
-      "item": [
-        {
-          "name": "عرض السلة",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/cart/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "cart",
-                "1",
-                ""
-              ]
-            },
-            "description": "عرض سلة محل معين (غيّر 1 إلى shop_id)"
-          },
-          "response": []
-        },
-        {
-          "name": "إضافة منتج للسلة",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"product_id\": 1,\n    \"quantity\": 2,\n    \"notes\": \"بدون بصل\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/cart/1/add/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "cart",
-                "1",
-                "add",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "تحديث عنصر في السلة",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"quantity\": 3\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/cart/1/items/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "cart",
-                "1",
-                "items",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "حذف عنصر من السلة",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/cart/1/items/1/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "cart",
-                "1",
-                "items",
-                "1",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "تفريغ السلة",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/cart/1/clear/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "cart",
-                "1",
-                "clear",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "الإشعارات (Notifications)",
-      "item": [
-        {
-          "name": "قائمة الإشعارات",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/notifications/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "notifications",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "تحديد إشعار كمقروء",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/notifications/1/read/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "notifications",
-                "1",
-                "read",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "تحديد الكل كمقروء",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/notifications/read-all/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "notifications",
-                "read-all",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "تقييم الطلبات (Order Rating)",
-      "item": [
-        {
-          "name": "تقييم طلب",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"order_id\": 1,\n    \"shop_rating\": 5,\n    \"driver_rating\": 4,\n    \"food_rating\": 5,\n    \"comment\": \"خدمة ممتازة!\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/orders/rate/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "orders",
-                "rate",
-                ""
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "عرض تقييم طلب",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/orders/1/rating/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "orders",
-                "1",
-                "rating",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "تتبع الطلب (Order Tracking)",
-      "item": [
-        {
-          "name": "تتبع موقع السائق",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{customer_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/shop/orders/1/track/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "shop",
-                "orders",
-                "1",
-                "track",
-                ""
-              ]
-            },
-            "description": "تتبع الطلب وموقع السائق (غيّر 1 إلى order_id)"
-          },
-          "response": []
-        },
-        {
-          "name": "تحديث موقع السائق",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{driver_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"latitude\": \"24.7136\",\n    \"longitude\": \"46.6753\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/driver/location/",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "driver",
-                "location",
-                ""
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "المحادثات (Chat) - WebSocket فقط",
-      "item": [],
-      "description": "الشات يتم عبر WebSocket وليس REST API.\n\nURLs:\n- ws://server/ws/chat/order/{order_id}/?token=JWT&chat_type=shop_customer\n- ws://server/ws/orders/shop/{shop_owner_id}/?token=JWT\n- ws://server/ws/orders/customer/{customer_id}/?token=JWT\n- ws://server/ws/driver/{driver_id}/?token=JWT\n\nراجع frontend_test.html للاختبار"
     }
   ],
   "variable": [

@@ -17,6 +17,8 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
         token['shop_owner_id'] = shop_owner.id
         token['shop_number'] = shop_owner.shop_number
         token['shop_name'] = shop_owner.shop_name
+        token['shop_category_id'] = shop_owner.shop_category_id
+        token['shop_category_name'] = shop_owner.shop_category.name if shop_owner.shop_category else None
         return token
     
     def validate(self, attrs):
@@ -48,5 +50,7 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
                 'owner_name': shop_owner.owner_name,
                 'shop_name': shop_owner.shop_name,
                 'shop_number': shop_owner.shop_number,
+                'shop_category_id': shop_owner.shop_category_id,
+                'shop_category_name': shop_owner.shop_category.name if shop_owner.shop_category else None,
             }
         }

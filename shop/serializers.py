@@ -4,7 +4,7 @@ from .models import (
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
     Notification, Cart, CartItem
 )
-from user.models import ShopOwner
+from user.models import ShopCategory, ShopOwner
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
@@ -16,6 +16,15 @@ class ShopStatusSerializer(serializers.ModelSerializer):
         model = ShopStatus
         fields = ['id', 'status', 'status_display', 'updated_at']
         read_only_fields = ['id', 'updated_at']
+
+
+class ShopCategorySerializer(serializers.ModelSerializer):
+    """Serializer لتصنيفات المحلات."""
+
+    class Meta:
+        model = ShopCategory
+        fields = ['id', 'name', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class CustomerAddressSerializer(serializers.ModelSerializer):
@@ -391,10 +400,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     """Serializer للمنتج"""
     image_url = serializers.SerializerMethodField()
+    category_name = serializers.SerializerMethodField()
+    final_price = serializers.SerializerMethodField()
+    has_offer = serializers.SerializerMethodField()
     
     class Meta:
         model = Product
-        fields = ['id', 'name', 'description', 'price', 'image', 'image_url', 'display_order', 'is_available', 'created_at', 'updated_at']
+        fields = [
+            'id', 'category', 'category_name', 'name', 'description',
+            'price', 'discount_price', 'final_price', 'has_offer',
+            'image', 'image_url', 'display_order', 'is_available',
+            'is_featured', 'created_at', 'updated_at'
+        ]
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_image_url(self, obj):
@@ -405,13 +422,63 @@ class ProductSerializer(serializers.ModelSerializer):
             return obj.image.url
         return None
 
+    def get_category_name(self, obj):
+        return obj.category.name if obj.category else None
+
+    def get_final_price(self, obj):
+        return obj.final_price
+
+    def get_has_offer(self, obj):
+        return bool(obj.discount_price is not None and obj.discount_price < obj.price)
+
+
+class PublicProductSerializer(ProductSerializer):
+    """Serializer لمنتجات واجهات العميل مع بيانات المحل"""
+    shop_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
+    shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
+    shop_number = serializers.CharField(source='shop_owner.shop_number', read_only=True)
+    shop_category_id = serializers.IntegerField(source='shop_owner.shop_category_id', read_only=True)
+    shop_category_name = serializers.CharField(source='shop_owner.shop_category.name', read_only=True, allow_null=True)
+
+    class Meta(ProductSerializer.Meta):
+        fields = [
+            'id', 'shop_id', 'shop_name', 'shop_number', 'shop_category_id', 'shop_category_name',
+            'category', 'category_name', 'name', 'description',
+            'price', 'discount_price', 'final_price', 'has_offer',
+            'image', 'image_url', 'is_available'
+        ]
+
+
+class PublicOfferProductSerializer(PublicProductSerializer):
+    """Serializer لعروض المنتجات في واجهات العميل"""
+    offer_percentage = serializers.SerializerMethodField()
+
+    class Meta(PublicProductSerializer.Meta):
+        fields = PublicProductSerializer.Meta.fields + ['offer_percentage']
+
+    def get_offer_percentage(self, obj):
+        if obj.discount_price is None or obj.price <= 0 or obj.discount_price >= obj.price:
+            return 0
+        return round(((obj.price - obj.discount_price) / obj.price) * 100, 2)
+
 
 class ProductCreateSerializer(serializers.ModelSerializer):
     """Serializer لإنشاء/تحديث منتج"""
     
     class Meta:
         model = Product
-        fields = ['name', 'description', 'price', 'image', 'display_order', 'is_available']
+        fields = [
+            'category', 'name', 'description', 'price', 'discount_price',
+            'image', 'display_order', 'is_available', 'is_featured'
+        ]
+
+    def validate_category(self, value):
+        if value is None:
+            return value
+        shop_owner = self.context.get('shop_owner')
+        if shop_owner and value.shop_owner_id != shop_owner.id:
+            raise serializers.ValidationError('التصنيف لا يتبع هذا المحل.')
+        return value
 
 
 class InvoiceItemSerializer(serializers.Serializer):

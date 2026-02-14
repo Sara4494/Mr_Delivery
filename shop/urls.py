@@ -6,9 +6,14 @@ app_name = 'shop'
 urlpatterns = [
     # Public shops list (for customers)
     path('shops/', views.public_shops_list_view, name='public_shops_list'),
+    path('shops/shop-categories/', views.public_shop_categories_list_view, name='public_shop_categories_list'),
+    path('shops/products/by-shop-category/', views.public_products_by_shop_category_view, name='public_products_by_shop_category'),
+    path('shops/offers/', views.public_offers_view, name='public_offers'),
 
     # Shop Status
     path('shop/status/', views.shop_status_view, name='shop_status'),
+    path('shop/shop-categories/', views.shop_category_list_view, name='shop_category_list'),
+    path('shop/shop-categories/<int:category_id>/', views.shop_category_detail_view, name='shop_category_detail'),
     
     # Customers (للمحل)
     path('shop/customers/', views.customer_list_view, name='customer_list'),
