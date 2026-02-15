@@ -50,6 +50,7 @@ from .serializers import (
 from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
 from user.models import ShopCategory, ShopOwner
 from user.utils import success_response, error_response, build_message_fields, t
+from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 from .websocket_utils import notify_order_update, notify_driver_assigned, notify_new_order, broadcast_chat_message_to_order
 
 
@@ -272,6 +273,74 @@ def _clean_staff_payload(request):
     return payload
 
 
+def _driver_phone_variants(phone_number):
+    raw = str(phone_number or '').strip()
+    normalized = normalize_phone(raw)
+    variants = {raw, normalized}
+    if normalized.startswith('+20'):
+        variants.add(normalized[1:])  # 20xxxxxxxxxx
+        variants.add('0' + normalized[3:])  # 01xxxxxxxxx
+    return [v for v in variants if v]
+
+
+def _invite_driver(request, shop_owner, payload):
+    phone_number = payload.get('phone_number')
+    if not phone_number:
+        return error_response(
+            message=t(request, 'phone_number_is_required'),
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    phone_candidates = _driver_phone_variants(phone_number)
+    normalized_phone = normalize_phone(phone_number)
+    if not normalized_phone:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'phone_number': ['Invalid phone number.']},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    driver = Driver.objects.filter(shop_owner=shop_owner, phone_number__in=phone_candidates).first()
+    if driver and driver.status != 'pending':
+        return error_response(
+            message='Driver already exists and is not pending invitation.',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    if driver is None:
+        invite_name = payload.get('name') or f'Driver {normalized_phone[-4:]}'
+        driver = Driver.objects.create(
+            shop_owner=shop_owner,
+            name=invite_name,
+            phone_number=normalized_phone,
+            status='pending',
+            password=''
+        )
+    else:
+        if payload.get('name'):
+            driver.name = payload.get('name')
+        driver.phone_number = normalized_phone
+        driver.status = 'pending'
+        driver.save()
+
+    send_ok, send_msg = otp_send(normalized_phone)
+    if not send_ok:
+        return error_response(
+            message=str(send_msg),
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    response_data = _serialize_staff_member(driver, STAFF_TYPE_DRIVER, request)
+    response_data['invitation_sent'] = True
+    response_data['invitation_channel'] = 'whatsapp_otp'
+    response_data['invitation_note'] = 'Driver should respond using /api/driver/invitation/respond/'
+    return success_response(
+        data=response_data,
+        message='Driver invitation sent successfully.',
+        status_code=status.HTTP_201_CREATED
+    )
+
+
 @api_view(['GET', 'POST', 'PUT'])
 @permission_classes([IsShopOwner])
 def staff_view(request):
@@ -384,18 +453,15 @@ def staff_view(request):
             return _staff_type_validation_error(request)
 
         payload = _clean_staff_payload(request)
+        if staff_type == STAFF_TYPE_DRIVER:
+            return _invite_driver(request, shop_owner, payload)
+
         if staff_type == STAFF_TYPE_EMPLOYEE:
             serializer = EmployeeCreateSerializer(
                 data=payload,
                 context={'shop_owner': shop_owner, 'request': request}
             )
             success_message = 'employee_added_successfully'
-        else:
-            serializer = DriverCreateSerializer(
-                data=payload,
-                context={'shop_owner': shop_owner, 'request': request}
-            )
-            success_message = 'driver_added_successfully'
 
         if serializer.is_valid():
             staff_member = serializer.save()
@@ -524,6 +590,111 @@ def staff_block_view(request, staff_type, staff_id):
     return success_response(
         data=response_data,
         message=t(request, 'staff_block_status_updated_successfully'),
+        status_code=status.HTTP_200_OK
+    )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def driver_invitation_respond_view(request):
+    """
+    Driver accepts/rejects invitation sent by shop owner.
+    POST /api/driver/invitation/respond/
+    Body: {
+      "phone_number": "01000000001",
+      "shop_number": "12345",
+      "otp": "123456",
+      "action": "accept|reject",
+      "name": "Driver Name",            # required for accept when missing
+      "password": "password123"         # required for accept when no password yet
+    }
+    """
+    phone_number = request.data.get('phone_number')
+    shop_number = request.data.get('shop_number')
+    otp_code = request.data.get('otp')
+    action = str(request.data.get('action', '')).strip().lower()
+
+    errors = {}
+    if not phone_number:
+        errors['phone_number'] = ['phone_number is required.']
+    if not shop_number:
+        errors['shop_number'] = ['shop_number is required.']
+    if not otp_code:
+        errors['otp'] = ['otp is required.']
+    if action not in {'accept', 'reject'}:
+        errors['action'] = ['action must be accept or reject.']
+    if errors:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    normalized_phone = normalize_phone(phone_number)
+    if not otp_verify(normalized_phone, otp_code):
+        return error_response(
+            message=t(request, 'verification_code_is_invalid_or_expired'),
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+
+    shop_owner = ShopOwner.objects.filter(shop_number=shop_number).first()
+    if not shop_owner:
+        return error_response(
+            message=t(request, 'shop_number_or_password_is_incorrect'),
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    driver = Driver.objects.filter(
+        shop_owner=shop_owner,
+        phone_number__in=_driver_phone_variants(normalized_phone),
+        status='pending'
+    ).first()
+    if not driver:
+        return error_response(
+            message='No pending driver invitation found.',
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    if action == 'reject':
+        driver.delete()
+        return success_response(
+            data={
+                'action': 'reject',
+                'phone_number': normalized_phone,
+                'shop_number': shop_owner.shop_number
+            },
+            message='Driver invitation rejected successfully.',
+            status_code=status.HTTP_200_OK
+        )
+
+    password = request.data.get('password')
+    name = request.data.get('name')
+    if not driver.password and (not password or len(str(password)) < 6):
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'password': ['password is required and must be at least 6 characters.']},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    if name:
+        driver.name = name
+    if password:
+        driver.set_password(password)
+    driver.phone_number = normalized_phone
+    driver.status = 'available'
+    driver.save()
+
+    return success_response(
+        data={
+            'action': 'accept',
+            'shop': {
+                'id': shop_owner.id,
+                'shop_name': shop_owner.shop_name,
+                'shop_number': shop_owner.shop_number,
+            },
+            'driver': DriverSerializer(driver, context={'request': request}).data
+        },
+        message='Driver invitation accepted successfully.',
         status_code=status.HTTP_200_OK
     )
 

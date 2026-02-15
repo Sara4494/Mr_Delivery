@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "8a2b4047-df26-4b36-aa39-a96008469a76",
+    "_postman_id": "5b412539-3a10-441c-8d62-88fa82bab17d",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery - APIs للمحلات والمعارض",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-8a2b4047-df26-4b36-aa39-a96008469a76?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-5b412539-3a10-441c-8d62-88fa82bab17d?source=collection_link"
   },
   "item": [
     {
@@ -494,7 +494,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/offers/?shop_id=&shop_category_id=&category_id=&search=",
+                  "raw": "{{base_url}}/api/shops/offers/",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -1254,7 +1254,9 @@
                           "    }",
                           "}"
                         ],
-                        "type": "text/javascript"
+                        "type": "text/javascript",
+                        "packages": {},
+                        "requests": {}
                       }
                     }
                   ],
@@ -1268,7 +1270,7 @@
                     ],
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n    \"role\": \"shop_owner\",\n    \"shop_number\": \"12345\",\n    \"password\": \"password123\"\n}"
+                      "raw": "{\n    \"role\": \"shop_owner\",\n    \"shop_number\": \"01024305307\",\n    \"password\": \"Hh@123456\"\n}"
                     },
                     "url": {
                       "raw": "{{base_url}}/api/auth/login/",
@@ -2403,7 +2405,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shop/staff/?staff_type=all",
+                  "raw": "{{base_url}}/api/shop/staff/",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -2412,12 +2414,6 @@
                     "shop",
                     "staff",
                     ""
-                  ],
-                  "query": [
-                    {
-                      "key": "staff_type",
-                      "value": "all"
-                    }
                   ]
                 },
                 "description": "Unified list for employees + drivers"
@@ -2512,7 +2508,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"staff_type\": \"driver\",\n  \"name\": \"???? ??????\",\n  \"phone_number\": \"01000000001\",\n  \"password\": \"password123\",\n  \"status\": \"available\"\n}"
+                  "raw": "{\n  \"staff_type\": \"driver\",\n  \"phone_number\": \"01000000001\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/shop/staff/",
@@ -2525,7 +2521,8 @@
                     "staff",
                     ""
                   ]
-                }
+                },
+                "description": "Invite driver by phone only. OTP invitation will be sent."
               },
               "response": []
             },
@@ -2692,6 +2689,68 @@
                     ""
                   ]
                 }
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Accept Invitation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone_number\": \"01000000001\",\n  \"shop_number\": \"12345\",\n  \"otp\": \"123456\",\n  \"action\": \"accept\",\n  \"name\": \"Driver Ahmed\",\n  \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/invitation/respond/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "invitation",
+                    "respond",
+                    ""
+                  ]
+                },
+                "description": "Driver accepts invitation using OTP."
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Reject Invitation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone_number\": \"01000000001\",\n  \"shop_number\": \"12345\",\n  \"otp\": \"123456\",\n  \"action\": \"reject\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/invitation/respond/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "invitation",
+                    "respond",
+                    ""
+                  ]
+                },
+                "description": "Driver rejects invitation using OTP."
               },
               "response": []
             }
@@ -2993,7 +3052,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shop/products/?available=true",
+                  "raw": "{{base_url}}/api/shop/products/",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -3155,7 +3214,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shop/orders/?status=&search=&sort_by=-created_at&page=1&page_size=10",
+                  "raw": "{{base_url}}/api/shop/orders/?sort_by=-created_at&page=1&page_size=10",
                   "host": [
                     "{{base_url}}"
                   ],

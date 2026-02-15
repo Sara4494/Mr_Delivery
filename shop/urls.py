@@ -49,6 +49,7 @@ urlpatterns = [
     # ==================== Login APIs ====================
     path('employee/login/', views.employee_login_view, name='employee_login'),
     path('driver/login/', views.driver_login_view, name='driver_login'),
+    path('driver/invitation/respond/', views.driver_invitation_respond_view, name='driver_invitation_respond'),
     
     # ==================== Customer Auth ====================
     path('customer/register/', views.customer_register_view, name='customer_register'),
