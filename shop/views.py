@@ -143,16 +143,93 @@ def _staff_type_validation_error(request, allow_all=False):
     )
 
 
+def _staff_orders_queryset(shop_owner, member, staff_type):
+    queryset = Order.objects.filter(shop_owner=shop_owner).exclude(status='cancelled')
+    if staff_type == STAFF_TYPE_EMPLOYEE:
+        return queryset.filter(employee=member)
+    return queryset.filter(driver=member)
+
+
+def _to_float(value):
+    return float(value) if value is not None else 0.0
+
+
+def _build_staff_metrics(shop_owner, member, staff_type):
+    today = timezone.localdate()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    orders_qs = _staff_orders_queryset(shop_owner, member, staff_type)
+    today_orders_qs = orders_qs.filter(created_at__date=today)
+    week_orders_qs = orders_qs.filter(created_at__date__gte=week_start)
+    month_orders_qs = orders_qs.filter(created_at__date__gte=month_start)
+
+    started_today_at = today_orders_qs.order_by('created_at').values_list('created_at', flat=True).first()
+    started_today_time = (
+        timezone.localtime(started_today_at).strftime('%H:%M')
+        if started_today_at
+        else None
+    )
+
+    metrics = {
+        'total_orders': orders_qs.count(),
+        'daily_orders_count': today_orders_qs.count(),
+        'weekly_orders_count': week_orders_qs.count(),
+        'monthly_orders_count': month_orders_qs.count(),
+        'started_today_at': started_today_at,
+        'started_today_time': started_today_time,
+    }
+
+    if staff_type == STAFF_TYPE_EMPLOYEE:
+        delivered_qs = orders_qs.filter(status='delivered')
+        metrics.update({
+            'daily_sales': _to_float(
+                delivered_qs.filter(created_at__date=today).aggregate(total=Sum('total_amount'))['total']
+            ),
+            'weekly_sales': _to_float(
+                delivered_qs.filter(created_at__date__gte=week_start).aggregate(total=Sum('total_amount'))['total']
+            ),
+            'monthly_sales': _to_float(
+                delivered_qs.filter(created_at__date__gte=month_start).aggregate(total=Sum('total_amount'))['total']
+            ),
+            'metric_type': 'sales',
+        })
+        metrics['daily_value'] = metrics['daily_sales']
+        metrics['weekly_value'] = metrics['weekly_sales']
+        metrics['monthly_value'] = metrics['monthly_sales']
+    else:
+        metrics.update({
+            'daily_sales': None,
+            'weekly_sales': None,
+            'monthly_sales': None,
+            'metric_type': 'orders',
+        })
+        metrics['daily_value'] = metrics['daily_orders_count']
+        metrics['weekly_value'] = metrics['weekly_orders_count']
+        metrics['monthly_value'] = metrics['monthly_orders_count']
+
+    return metrics
+
+
 def _serialize_staff_member(member, staff_type, request):
+    shop_owner = request.user
+    metrics = _build_staff_metrics(shop_owner, member, staff_type)
+
     if staff_type == STAFF_TYPE_EMPLOYEE:
         data = dict(EmployeeSerializer(member, context={'request': request}).data)
         data['staff_type'] = STAFF_TYPE_EMPLOYEE
         data['is_blocked'] = not member.is_active
+        data['status'] = 'active' if member.is_active else 'blocked'
+        data['status_display'] = 'نشط' if member.is_active else 'محظور'
+        data['job_title'] = data.get('role_display')
+        data.update(metrics)
         return data
 
     data = dict(DriverSerializer(member, context={'request': request}).data)
     data['staff_type'] = STAFF_TYPE_DRIVER
     data['is_blocked'] = member.status == 'offline'
+    data['job_title'] = 'سائق'
+    data.update(metrics)
     return data
 
 
@@ -271,9 +348,22 @@ def staff_view(request):
             'total_staff': len(staff_results),
             'total_employees': Employee.objects.filter(shop_owner=shop_owner).count(),
             'active_employees': Employee.objects.filter(shop_owner=shop_owner, is_active=True).count(),
+            'blocked_employees': Employee.objects.filter(shop_owner=shop_owner, is_active=False).count(),
             'total_drivers': Driver.objects.filter(shop_owner=shop_owner).count(),
             'available_drivers': Driver.objects.filter(shop_owner=shop_owner, status='available').count(),
+            'active_drivers': Driver.objects.filter(shop_owner=shop_owner, status__in=['available', 'busy']).count(),
+            'blocked_drivers': Driver.objects.filter(shop_owner=shop_owner, status='offline').count(),
         }
+
+        if staff_type == STAFF_TYPE_EMPLOYEE:
+            summary['selected_total_count'] = summary['total_employees']
+            summary['selected_active_count'] = summary['active_employees']
+        elif staff_type == STAFF_TYPE_DRIVER:
+            summary['selected_total_count'] = summary['total_drivers']
+            summary['selected_active_count'] = summary['active_drivers']
+        else:
+            summary['selected_total_count'] = summary['total_staff']
+            summary['selected_active_count'] = summary['active_employees'] + summary['active_drivers']
 
         if staff_type == STAFF_TYPE_EMPLOYEE:
             message_key = 'employees_retrieved_successfully'
@@ -825,6 +915,9 @@ def order_detail_view(request, order_id):
                     )
             else:
                 order.employee = None
+        elif getattr(request.user, 'user_type', None) == 'employee' and not order.employee_id:
+            # Auto-link the order with the logged-in employee when no explicit employee_id is sent.
+            order.employee = request.user
         
         if 'driver_id' in request.data:
             driver_id = request.data['driver_id']
