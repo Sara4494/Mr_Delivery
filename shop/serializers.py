@@ -4,8 +4,17 @@ from .models import (
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
     Notification, Cart, CartItem
 )
-from user.models import ShopOwner
+from user.models import ShopOwner, ShopCategory
 from rest_framework_simplejwt.tokens import RefreshToken
+
+
+class ShopCategorySerializer(serializers.ModelSerializer):
+    """Serializer for shop categories."""
+
+    class Meta:
+        model = ShopCategory
+        fields = ['id', 'name', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class ShopStatusSerializer(serializers.ModelSerializer):
