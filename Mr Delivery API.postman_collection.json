@@ -1227,11 +1227,6 @@
               "response": []
             }
           ]
-        },
-        {
-          "name": "المحادثات (Chat) - WebSocket فقط",
-          "item": [],
-          "description": "الشات يتم عبر WebSocket وليس REST API.\n\nURLs:\n- ws://server/ws/chat/order/{order_id}/?token=JWT&chat_type=shop_customer\n- ws://server/ws/orders/shop/{shop_owner_id}/?token=JWT\n- ws://server/ws/orders/customer/{customer_id}/?token=JWT\n- ws://server/ws/driver/{driver_id}/?token=JWT\n\nراجع frontend_test.html للاختبار"
         }
       ]
     },
@@ -2390,209 +2385,14 @@
                   "response": []
                 }
               ]
-            },
-            {
-              "name": "الموظفين (صاحب المحل)",
-              "item": [
-                {
-                  "name": "عرض قائمة الموظفين",
-                  "request": {
-                    "method": "GET",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{access_token}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{base_url}}/api/shop/employees/",
-                      "host": [
-                        "{{base_url}}"
-                      ],
-                      "path": [
-                        "api",
-                        "shop",
-                        "employees",
-                        ""
-                      ],
-                      "query": [
-                        {
-                          "key": "role",
-                          "value": "cashier",
-                          "description": "اختياري: cashier, accountant, manager",
-                          "disabled": true
-                        }
-                      ]
-                    },
-                    "description": "عرض جميع الموظفين - يتطلب توكين صاحب المحل"
-                  },
-                  "response": []
-                },
-                {
-                  "name": "إنشاء موظف",
-                  "request": {
-                    "method": "POST",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{access_token}}",
-                        "type": "text"
-                      },
-                      {
-                        "key": "Content-Type",
-                        "value": "application/json"
-                      }
-                    ],
-                    "body": {
-                      "mode": "raw",
-                      "raw": "{\n    \"name\": \"موظف تجريبي\",\n    \"phone_number\": \"01000000000\",\n    \"password\": \"password123\",\n    \"role\": \"cashier\"\n}"
-                    },
-                    "url": {
-                      "raw": "{{base_url}}/api/shop/employees/",
-                      "host": [
-                        "{{base_url}}"
-                      ],
-                      "path": [
-                        "api",
-                        "shop",
-                        "employees",
-                        ""
-                      ]
-                    },
-                    "description": "إنشاء موظف جديد - role: cashier, accountant, manager"
-                  },
-                  "response": []
-                },
-                {
-                  "name": "عرض تفاصيل موظف",
-                  "request": {
-                    "method": "GET",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{access_token}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{base_url}}/api/shop/employees/1/",
-                      "host": [
-                        "{{base_url}}"
-                      ],
-                      "path": [
-                        "api",
-                        "shop",
-                        "employees",
-                        "1",
-                        ""
-                      ]
-                    },
-                    "description": "عرض تفاصيل موظف - غيّري 1 إلى id الموظف"
-                  },
-                  "response": []
-                },
-                {
-                  "name": "تحديث موظف",
-                  "request": {
-                    "method": "PUT",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{access_token}}",
-                        "type": "text"
-                      },
-                      {
-                        "key": "Content-Type",
-                        "value": "application/json"
-                      }
-                    ],
-                    "body": {
-                      "mode": "raw",
-                      "raw": "{\n    \"name\": \"موظف محدث\",\n    \"phone_number\": \"01000000000\",\n    \"role\": \"accountant\",\n    \"is_active\": true\n}"
-                    },
-                    "url": {
-                      "raw": "{{base_url}}/api/shop/employees/1/",
-                      "host": [
-                        "{{base_url}}"
-                      ],
-                      "path": [
-                        "api",
-                        "shop",
-                        "employees",
-                        "1",
-                        ""
-                      ]
-                    },
-                    "description": "تحديث بيانات موظف - غيّري 1 إلى id الموظف"
-                  },
-                  "response": []
-                },
-                {
-                  "name": "حذف موظف",
-                  "request": {
-                    "method": "DELETE",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{access_token}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{base_url}}/api/shop/employees/1/",
-                      "host": [
-                        "{{base_url}}"
-                      ],
-                      "path": [
-                        "api",
-                        "shop",
-                        "employees",
-                        "1",
-                        ""
-                      ]
-                    },
-                    "description": "حذف موظف - غيّري 1 إلى id الموظف"
-                  },
-                  "response": []
-                },
-                {
-                  "name": "إحصائيات الموظفين",
-                  "request": {
-                    "method": "GET",
-                    "header": [
-                      {
-                        "key": "Authorization",
-                        "value": "Bearer {{access_token}}",
-                        "type": "text"
-                      }
-                    ],
-                    "url": {
-                      "raw": "{{base_url}}/api/shop/employees/statistics/",
-                      "host": [
-                        "{{base_url}}"
-                      ],
-                      "path": [
-                        "api",
-                        "shop",
-                        "employees",
-                        "statistics",
-                        ""
-                      ]
-                    },
-                    "description": "إحصائيات الموظفين (العدد، النشطين، حسب الدور)"
-                  },
-                  "response": []
-                }
-              ]
             }
           ]
         },
         {
-          "name": "السائقين (صاحب المحل)",
+          "name": "Staff (Unified)",
           "item": [
             {
-              "name": "عرض قائمة السائقين",
+              "name": "List Staff (All)",
               "request": {
                 "method": "GET",
                 "header": [
@@ -2603,31 +2403,66 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shop/drivers/",
+                  "raw": "{{base_url}}/api/shop/staff/?staff_type=all",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shop",
-                    "drivers",
+                    "staff",
                     ""
                   ],
                   "query": [
                     {
-                      "key": "status",
-                      "value": "available",
-                      "description": "اختياري: available, busy, offline",
-                      "disabled": true
+                      "key": "staff_type",
+                      "value": "all"
                     }
                   ]
                 },
-                "description": "عرض جميع السائقين - يتطلب توكين صاحب المحل"
+                "description": "Unified list for employees + drivers"
               },
               "response": []
             },
             {
-              "name": "إنشاء سائق",
+              "name": "Get Staff Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/staff/?staff_type=employee&staff_id=1",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "staff",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "staff_type",
+                      "value": "employee"
+                    },
+                    {
+                      "key": "staff_id",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "Use staff_type=employee or driver with staff_id"
+              },
+              "response": []
+            },
+            {
+              "name": "Create Employee (Unified)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2643,54 +2478,59 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"name\": \"سائق تجريبي\",\n    \"phone_number\": \"01000000001\",\n    \"password\": \"password123\",\n    \"status\": \"available\"\n}"
+                  "raw": "{\n  \"staff_type\": \"employee\",\n  \"name\": \"???? ??????\",\n  \"phone_number\": \"01000000000\",\n  \"password\": \"password123\",\n  \"role\": \"cashier\"\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/shop/drivers/",
+                  "raw": "{{base_url}}/api/shop/staff/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shop",
-                    "drivers",
+                    "staff",
                     ""
                   ]
-                },
-                "description": "إنشاء سائق جديد - status: available, busy, offline"
+                }
               },
               "response": []
             },
             {
-              "name": "عرض تفاصيل سائق",
+              "name": "Create Driver (Unified)",
               "request": {
-                "method": "GET",
+                "method": "POST",
                 "header": [
                   {
                     "key": "Authorization",
                     "value": "Bearer {{access_token}}",
                     "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
                   }
                 ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"staff_type\": \"driver\",\n  \"name\": \"???? ??????\",\n  \"phone_number\": \"01000000001\",\n  \"password\": \"password123\",\n  \"status\": \"available\"\n}"
+                },
                 "url": {
-                  "raw": "{{base_url}}/api/shop/drivers/1/",
+                  "raw": "{{base_url}}/api/shop/staff/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shop",
-                    "drivers",
-                    "1",
+                    "staff",
                     ""
                   ]
-                },
-                "description": "عرض تفاصيل سائق - غيّري 1 إلى id السائق"
+                }
               },
               "response": []
             },
             {
-              "name": "تحديث سائق",
+              "name": "Update Staff (Unified)",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -2706,27 +2546,25 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"name\": \"سائق محدث\",\n    \"phone_number\": \"01000000001\",\n    \"status\": \"busy\"\n}"
+                  "raw": "{\n  \"staff_type\": \"employee\",\n  \"staff_id\": 1,\n  \"name\": \"??? ????\"\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/shop/drivers/1/",
+                  "raw": "{{base_url}}/api/shop/staff/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shop",
-                    "drivers",
-                    "1",
+                    "staff",
                     ""
                   ]
-                },
-                "description": "تحديث بيانات سائق - غيّري 1 إلى id السائق"
+                }
               },
               "response": []
             },
             {
-              "name": "حذف سائق",
+              "name": "Delete Staff (Employee)",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -2737,31 +2575,27 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shop/drivers/1/",
+                  "raw": "{{base_url}}/api/shop/staff/employee/1/delete/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shop",
-                    "drivers",
+                    "staff",
+                    "employee",
                     "1",
+                    "delete",
                     ""
                   ]
-                },
-                "description": "حذف سائق - غيّري 1 إلى id السائق"
+                }
               },
               "response": []
-            }
-          ]
-        },
-        {
-          "name": "✅ موافقة السائق (Driver Approval)",
-          "item": [
+            },
             {
-              "name": "الموافقة على السائق",
+              "name": "Delete Staff (Driver)",
               "request": {
-                "method": "POST",
+                "method": "DELETE",
                 "header": [
                   {
                     "key": "Authorization",
@@ -2770,16 +2604,91 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shop/drivers/1/approve/",
+                  "raw": "{{base_url}}/api/shop/staff/driver/1/delete/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shop",
-                    "drivers",
+                    "staff",
+                    "driver",
                     "1",
-                    "approve",
+                    "delete",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Block Staff",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"blocked\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/staff/employee/1/block/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "staff",
+                    "employee",
+                    "1",
+                    "block",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Unblock Staff",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"blocked\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/staff/employee/1/block/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "staff",
+                    "employee",
+                    "1",
+                    "block",
                     ""
                   ]
                 }

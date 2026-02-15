@@ -4,7 +4,7 @@ from .models import (
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
     Notification, Cart, CartItem
 )
-from user.models import ShopCategory, ShopOwner
+from user.models import ShopOwner
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
@@ -16,15 +16,6 @@ class ShopStatusSerializer(serializers.ModelSerializer):
         model = ShopStatus
         fields = ['id', 'status', 'status_display', 'updated_at']
         read_only_fields = ['id', 'updated_at']
-
-
-class ShopCategorySerializer(serializers.ModelSerializer):
-    """Serializer لتصنيفات المحلات."""
-
-    class Meta:
-        model = ShopCategory
-        fields = ['id', 'name', 'is_active', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class CustomerAddressSerializer(serializers.ModelSerializer):
@@ -397,7 +388,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'invoice_number', 'sent_at', 'created_at']
 
 
-class ProductSerializer(serializers.ModelSerializer):
+class  ProductSerializer(serializers.ModelSerializer):
     """Serializer للمنتج"""
     image_url = serializers.SerializerMethodField()
     category_name = serializers.SerializerMethodField()
@@ -432,29 +423,20 @@ class ProductSerializer(serializers.ModelSerializer):
         return bool(obj.discount_price is not None and obj.discount_price < obj.price)
 
 
-class PublicProductSerializer(ProductSerializer):
-    """Serializer لمنتجات واجهات العميل مع بيانات المحل"""
+class PublicOfferProductSerializer(ProductSerializer):
+    """Serializer لعروض المنتجات في واجهات العميل"""
     shop_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
     shop_number = serializers.CharField(source='shop_owner.shop_number', read_only=True)
-    shop_category_id = serializers.IntegerField(source='shop_owner.shop_category_id', read_only=True)
-    shop_category_name = serializers.CharField(source='shop_owner.shop_category.name', read_only=True, allow_null=True)
+    offer_percentage = serializers.SerializerMethodField()
 
     class Meta(ProductSerializer.Meta):
         fields = [
-            'id', 'shop_id', 'shop_name', 'shop_number', 'shop_category_id', 'shop_category_name',
+            'id', 'shop_id', 'shop_name', 'shop_number',
             'category', 'category_name', 'name', 'description',
             'price', 'discount_price', 'final_price', 'has_offer',
-            'image', 'image_url', 'is_available'
+            'offer_percentage', 'image', 'image_url', 'is_available'
         ]
-
-
-class PublicOfferProductSerializer(PublicProductSerializer):
-    """Serializer لعروض المنتجات في واجهات العميل"""
-    offer_percentage = serializers.SerializerMethodField()
-
-    class Meta(PublicProductSerializer.Meta):
-        fields = PublicProductSerializer.Meta.fields + ['offer_percentage']
 
     def get_offer_percentage(self, obj):
         if obj.discount_price is None or obj.price <= 0 or obj.discount_price >= obj.price:

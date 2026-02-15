@@ -152,4 +152,6 @@ MESSAGES = {
     'work_schedule_retrieved_successfully': 'Work schedule retrieved successfully',
     'work_schedule_updated_successfully': 'Work schedule updated successfully',
     'you_must_create_the_account_first_via_api_auth_register': 'You must create the account first before requesting an OTP.',
+    'staff_retrieved_successfully': 'Staff retrieved successfully',
+    'staff_block_status_updated_successfully': 'Block status updated successfully',
 }

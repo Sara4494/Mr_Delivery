@@ -152,4 +152,6 @@ MESSAGES = {
     'work_schedule_retrieved_successfully': 'تم جلب مواعيد العمل بنجاح',
     'work_schedule_updated_successfully': 'تم تحديث مواعيد العمل بنجاح',
     'you_must_create_the_account_first_via_api_auth_register': 'يجب إنشاء الحساب أولاً قبل طلب رمز التحقق.',
+    'staff_retrieved_successfully': 'تم جلب الموظفين والسائقين بنجاح',
+    'staff_block_status_updated_successfully': 'تم تحديث حالة الحظر بنجاح',
 }
