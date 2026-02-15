@@ -432,6 +432,28 @@ class  ProductSerializer(serializers.ModelSerializer):
         return bool(obj.discount_price is not None and obj.discount_price < obj.price)
 
 
+class PublicProductSerializer(ProductSerializer):
+    """Serializer for public product listing across shops."""
+    shop_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
+    shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
+    shop_number = serializers.CharField(source='shop_owner.shop_number', read_only=True)
+    shop_category = serializers.SerializerMethodField()
+
+    class Meta(ProductSerializer.Meta):
+        fields = [
+            'id', 'shop_id', 'shop_name', 'shop_number', 'shop_category',
+            'category', 'category_name', 'name', 'description',
+            'price', 'discount_price', 'final_price', 'has_offer',
+            'image', 'image_url', 'is_available'
+        ]
+
+    def get_shop_category(self, obj):
+        category = getattr(obj.shop_owner, 'shop_category', None)
+        if not category:
+            return None
+        return {'id': category.id, 'name': category.name}
+
+
 class PublicOfferProductSerializer(ProductSerializer):
     """Serializer لعروض المنتجات في واجهات العميل"""
     shop_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
