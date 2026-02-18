@@ -1062,7 +1062,7 @@ def order_detail_view(request, order_id):
         new_status = request.data.get('status', old_status)
 
         locked_after_customer_confirm = {'confirmed', 'preparing', 'on_way', 'delivered'}
-        invoice_locked_statuses = locked_after_customer_confirm | {'cancelled'}
+        invoice_closed_statuses = {'cancelled', 'delivered'}
         invoice_fields = {'items', 'total_amount', 'delivery_fee'}
         has_invoice_update = any(field in request.data for field in invoice_fields)
         driver_raw_value = request.data.get('driver_id') if 'driver_id' in request.data else None
@@ -1070,15 +1070,15 @@ def order_detail_view(request, order_id):
             driver_raw_value is not None and str(driver_raw_value).strip() not in {'', '0', 'null', 'None'}
         )
 
-        if new_status == 'pending_customer_confirm' and old_status in invoice_locked_statuses:
+        if new_status == 'pending_customer_confirm' and old_status in invoice_closed_statuses:
             return error_response(
-                message='لا يمكن إعادة الفاتورة بعد تأكيد العميل أو بعد إلغائها.',
+                message='لا يمكن إعادة الفاتورة بعد إلغائها أو بعد إتمام الطلب.',
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 
-        if has_invoice_update and old_status in invoice_locked_statuses:
+        if has_invoice_update and old_status in invoice_closed_statuses:
             return error_response(
-                message='لا يمكن تعديل الفاتورة بعد تأكيد العميل أو بعد إلغائها.',
+                message='لا يمكن تعديل الفاتورة بعد إلغائها أو بعد إتمام الطلب.',
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 

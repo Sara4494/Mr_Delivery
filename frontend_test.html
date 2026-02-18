@@ -711,6 +711,7 @@
         let customerWs = null;
         let driverWs = null;
         let currentChatUserType = null;
+        let currentChatTokenUserType = null;
         let chatMediaRecorder = null;
         let chatRecordingStream = null;
         let chatAudioChunks = [];
@@ -776,11 +777,59 @@
         }
 
         function _validateHeaderToken(token) {
-            if (!token) return 'أدخل JWT Token (عميل)';
+            if (!token) return 'أدخل JWT Token';
             if (/[^\u0000-\u00FF]/.test(token)) {
                 return 'JWT Token يحتوي على حروف غير صالحة. الصق التوكن فقط بدون أي نص عربي.';
             }
             return '';
+        }
+
+        function _decodeJwtPayload(token) {
+            try {
+                const parts = String(token || '').split('.');
+                if (parts.length < 2) return null;
+                const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+                return JSON.parse(atob(padded));
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function _extractTokenUserType(token) {
+            const payload = _decodeJwtPayload(token);
+            if (!payload || typeof payload !== 'object') return '';
+            if (payload.user_type) return String(payload.user_type);
+            if (payload.employee_id) return 'employee';
+            if (payload.customer_id) return 'customer';
+            if (payload.driver_id) return 'driver';
+            if (payload.shop_owner_id || payload.user_id) return 'shop_owner';
+            return '';
+        }
+
+        function _isShopManagerUserType(userType) {
+            return userType === 'shop_owner' || userType === 'employee';
+        }
+
+        function _syncChatUserTypeFromToken(token, announceMismatch) {
+            const selectedUserType = ((document.getElementById('chatUserType') || {}).value || '').trim();
+            const tokenUserType = _extractTokenUserType(token);
+            currentChatTokenUserType = tokenUserType || null;
+
+            if (tokenUserType) {
+                currentChatUserType = tokenUserType;
+                const userTypeEl = document.getElementById('chatUserType');
+                if (userTypeEl && userTypeEl.value !== tokenUserType) {
+                    userTypeEl.value = tokenUserType;
+                }
+                if (announceMismatch && selectedUserType && selectedUserType !== tokenUserType) {
+                    addMessage('chatMessages', 'system', 'النظام',
+                        `نوع المستخدم في التوكن هو: ${tokenUserType}. تم ضبط الاختيار تلقائياً.`);
+                }
+            } else {
+                currentChatUserType = selectedUserType || null;
+            }
+            return currentChatUserType;
         }
 
         function loadCustomerShops() {
@@ -969,6 +1018,7 @@
                 return;
             }
             if (tokenInputEl) tokenInputEl.value = token;
+            _syncChatUserTypeFromToken(token, true);
 
             const url = `${server}/ws/chat/order/${orderId}/?token=${token}&chat_type=${chatType}`;
             document.getElementById('chatUrl').textContent = url;
@@ -1341,6 +1391,12 @@
             const base = _chatOrderApiBase();
             if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
 
+            _syncChatUserTypeFromToken(token, false);
+            if (!_isShopManagerUserType(currentChatUserType)) {
+                alert('هذا الإجراء متاح فقط للكاشير/صاحب المحل حسب نوع التوكن.');
+                return;
+            }
+
             fetch(base + '/shop/orders/' + orderId + '/', {
                 method: 'GET',
                 headers: { 'Authorization': 'Bearer ' + token }
@@ -1381,6 +1437,11 @@
             const token = _chatAuthToken();
             const base = _chatOrderApiBase();
             if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+            _syncChatUserTypeFromToken(token, false);
+            if (!_isShopManagerUserType(currentChatUserType)) {
+                alert('هذا الإجراء متاح فقط للكاشير/صاحب المحل حسب نوع التوكن.');
+                return;
+            }
 
             fetch(base + '/shop/orders/' + orderId + '/', {
                 method: 'GET',
@@ -1393,11 +1454,8 @@
                 }
                 const orderData = json.data;
 
-                if (orderData.status === 'confirmed' || orderData.status === 'preparing' || orderData.status === 'on_way' || orderData.status === 'delivered') {
-                    throw new Error('لا يمكن تعديل الفاتورة بعد تأكيد العميل.');
-                }
-                if (isEdit && orderData.status !== 'pending_customer_confirm') {
-                    throw new Error('تعديل الفاتورة متاح فقط عندما تكون بانتظار تأكيد العميل.');
+                if (orderData.status === 'cancelled' || orderData.status === 'delivered') {
+                    throw new Error('لا يمكن تعديل الفاتورة بعد إلغاء الطلب أو بعد إتمامه.');
                 }
 
                 const priced = _buildPricedItemsFromPrompt(orderData);
@@ -1436,6 +1494,12 @@
             const token = _chatAuthToken();
             const base = _chatOrderApiBase();
             if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            _syncChatUserTypeFromToken(token, false);
+            if (!_isShopManagerUserType(currentChatUserType)) {
+                alert('هذا الإجراء متاح فقط للكاشير/صاحب المحل حسب نوع التوكن.');
+                return;
+            }
 
             let currentOrder = null;
             fetch(base + '/shop/orders/' + orderId + '/', {

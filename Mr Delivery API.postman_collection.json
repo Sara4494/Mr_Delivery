@@ -865,7 +865,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{customer_token}}",
                     "type": "text"
                   }
                 ],
@@ -891,7 +891,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{customer_token}}",
                     "type": "text"
                   },
                   {
@@ -925,7 +925,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{customer_token}}",
                     "type": "text"
                   }
                 ],
@@ -943,6 +943,35 @@
                     ""
                   ]
                 }
+              },
+              "response": []
+            },
+            {
+              "name": "Reject Order / Invoice",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/orders/1/reject/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "orders",
+                    "1",
+                    "reject",
+                    ""
+                  ]
+                },
+                "description": "Customer rejects priced invoice before confirmation."
               },
               "response": []
             }
@@ -3377,6 +3406,259 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "Cancel Invoice (Before Customer Confirmation)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"cancelled\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    "1",
+                    ""
+                  ]
+                },
+                "description": "Allowed only while order status is pending_customer_confirm."
+              },
+              "response": []
+            },
+            {
+              "name": "Edit & Resend Invoice",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"pending_customer_confirm\",\n  \"items\": [\n    \"Item 1 - price: 60.00\",\n    \"Item 2 - price: 45.00\"\n  ],\n  \"delivery_fee\": \"15.00\",\n  \"total_amount\": \"120.00\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    "1",
+                    ""
+                  ]
+                },
+                "description": "Edit priced items and resend invoice. Allowed only before customer confirmation."
+              },
+              "response": []
+            },
+            {
+              "name": "Assign Order To Driver (After Confirmation)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"driver_id\": 1,\n  \"status\": \"preparing\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/orders/1/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "orders",
+                    "1",
+                    ""
+                  ]
+                },
+                "description": "Requires order to be confirmed/preparing/on_way before assignment."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Chat (Shop-Customer)",
+          "item": [
+            {
+              "name": "Upload Chat Image",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "chat_type",
+                      "value": "shop_customer",
+                      "type": "text"
+                    },
+                    {
+                      "key": "message_type",
+                      "value": "image",
+                      "type": "text"
+                    },
+                    {
+                      "key": "content",
+                      "value": "optional caption",
+                      "type": "text"
+                    },
+                    {
+                      "key": "image_file",
+                      "type": "file",
+                      "value": ""
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/chat/order/1/send-media/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "chat",
+                    "order",
+                    "1",
+                    "send-media",
+                    ""
+                  ]
+                },
+                "description": "Uploads an image message and broadcasts it to chat subscribers via WebSocket."
+              },
+              "response": []
+            },
+            {
+              "name": "Upload Chat Audio",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "chat_type",
+                      "value": "shop_customer",
+                      "type": "text"
+                    },
+                    {
+                      "key": "message_type",
+                      "value": "audio",
+                      "type": "text"
+                    },
+                    {
+                      "key": "content",
+                      "value": "optional note",
+                      "type": "text"
+                    },
+                    {
+                      "key": "audio_file",
+                      "type": "file",
+                      "value": ""
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/chat/order/1/send-media/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "chat",
+                    "order",
+                    "1",
+                    "send-media",
+                    ""
+                  ]
+                },
+                "description": "Uploads an audio message and broadcasts it to chat subscribers via WebSocket."
+              },
+              "response": []
+            },
+            {
+              "name": "WebSocket URL (Reference)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{ws_base_url}}/ws/chat/order/{{order_id}}/?token={{access_token}}&chat_type=shop_customer",
+                  "host": [
+                    "{{ws_base_url}}"
+                  ],
+                  "path": [
+                    "ws",
+                    "chat",
+                    "order",
+                    "{{order_id}}",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "token",
+                      "value": "{{access_token}}"
+                    },
+                    {
+                      "key": "chat_type",
+                      "value": "shop_customer"
+                    }
+                  ]
+                },
+                "description": "WebSocket reference only. Use this URL from Flutter WebSocket client, not as HTTP GET."
+              },
+              "response": []
             }
           ]
         },
@@ -3652,6 +3934,31 @@
     {
       "key": "base_url",
       "value": "http://86.48.3.103",
+      "type": "string"
+    },
+    {
+      "key": "ws_base_url",
+      "value": "ws://86.48.3.103",
+      "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customer_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driver_token",
+      "value": "",
       "type": "string"
     }
   ]
