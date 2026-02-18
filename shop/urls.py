@@ -88,6 +88,7 @@ urlpatterns = [
     path('driver/location/', views.driver_location_update_view, name='driver_location_update'),
     
     # ==================== Chat ====================
+    path('chat/order/<int:order_id>/send-media/', views.chat_order_media_upload_view, name='chat_order_media_upload'),
     # الشات يتم عبر WebSocket فقط:
     # ws://server/ws/chat/order/{order_id}/?token=JWT&chat_type=shop_customer
 ]

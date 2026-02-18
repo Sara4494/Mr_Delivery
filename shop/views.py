@@ -47,12 +47,19 @@ from .serializers import (
     CartItemSerializer,
     AddToCartSerializer,
     UpdateCartItemSerializer,
+    ChatMessageSerializer,
 )
 from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
 from user.models import ShopCategory, ShopOwner
 from user.utils import success_response, error_response, build_message_fields, t
 from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
-from .websocket_utils import notify_order_update, notify_driver_assigned, notify_new_order, broadcast_chat_message_to_order
+from .websocket_utils import (
+    notify_order_update,
+    notify_driver_assigned,
+    notify_new_order,
+    broadcast_chat_message_to_order,
+    broadcast_chat_message,
+)
 
 
 class OrderPagination(PageNumberPagination):
@@ -1051,14 +1058,60 @@ def order_detail_view(request, order_id):
     elif request.method == 'PUT':
         # تحديث الطلب
         old_driver = order.driver
+        old_status = order.status
+        new_status = request.data.get('status', old_status)
+
+        locked_after_customer_confirm = {'confirmed', 'preparing', 'on_way', 'delivered'}
+        invoice_locked_statuses = locked_after_customer_confirm | {'cancelled'}
+        invoice_fields = {'items', 'total_amount', 'delivery_fee'}
+        has_invoice_update = any(field in request.data for field in invoice_fields)
+        driver_raw_value = request.data.get('driver_id') if 'driver_id' in request.data else None
+        has_driver_assignment = (
+            driver_raw_value is not None and str(driver_raw_value).strip() not in {'', '0', 'null', 'None'}
+        )
+
+        if new_status == 'pending_customer_confirm' and old_status in invoice_locked_statuses:
+            return error_response(
+                message='لا يمكن إعادة الفاتورة بعد تأكيد العميل أو بعد إلغائها.',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        if has_invoice_update and old_status in invoice_locked_statuses:
+            return error_response(
+                message='لا يمكن تعديل الفاتورة بعد تأكيد العميل أو بعد إلغائها.',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_status == 'cancelled' and old_status in locked_after_customer_confirm:
+            return error_response(
+                message='لا يمكن إلغاء الفاتورة بعد تأكيد العميل.',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        if has_driver_assignment and old_status not in {'confirmed', 'preparing', 'on_way'}:
+            return error_response(
+                message='لا يمكن تحويل الأوردر للدليفري قبل تأكيد العميل على الفاتورة.',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_status in {'preparing', 'on_way'}:
+            requested_driver_id = request.data.get('driver_id', order.driver_id)
+            if not requested_driver_id:
+                return error_response(
+                    message='اختار الدليفري أولاً قبل تحويل حالة الأوردر.',
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
         
         # قبول الطلب: يجب تعبئة سعر الطلب (سعر التوصيل اختياري)
-        new_status = request.data.get('status', order.status)
         if new_status == 'pending_customer_confirm':
             new_total = request.data.get('total_amount')
             if new_total is None:
                 new_total = order.total_amount
-            if new_total is None or (isinstance(new_total, (int, float)) and float(new_total) <= 0):
+            try:
+                total_value = float(new_total)
+            except (TypeError, ValueError):
+                total_value = 0.0
+            if new_total is None or total_value <= 0:
                 return error_response(
                     message=t(request, 'order_price_required_for_accept'),
                     status_code=status.HTTP_400_BAD_REQUEST
@@ -1113,12 +1166,15 @@ def order_detail_view(request, order_id):
                 setattr(order, field, field_value)
         
         order.save()
+        sender_type = 'employee' if getattr(request.user, 'user_type', None) == 'employee' else 'shop_owner'
         
         # رسائل تلقائية عند الرفض/الإلغاء/القبول (حسب الصور والـ PDF)
         try:
             if new_status == 'cancelled':
-                msg_content = 'نأسف لعدم استقبال اوردراتكم في الوقت الحالي يرجى المحاوله في وقت لاحق'
-                sender_type = 'employee' if getattr(request.user, 'user_type', None) == 'employee' else 'shop_owner'
+                if old_status == 'pending_customer_confirm':
+                    msg_content = 'تم إلغاء الفاتورة.'
+                else:
+                    msg_content = 'نأسف لعدم استقبال اوردراتكم في الوقت الحالي يرجى المحاوله في وقت لاحق'
                 sys_msg = ChatMessage.objects.create(
                     order=order,
                     chat_type='shop_customer',
@@ -1128,22 +1184,12 @@ def order_detail_view(request, order_id):
                     message_type='text',
                     content=msg_content,
                 )
-                broadcast_chat_message_to_order(order.id, {
-                    'id': sys_msg.id,
-                    'sender_type': sys_msg.sender_type,
-                    'sender_name': sys_msg.sender_name,
-                    'message_type': 'text',
-                    'content': sys_msg.content,
-                    'is_read': False,
-                    'created_at': sys_msg.created_at.isoformat(),
-                    'audio_file_url': None,
-                    'image_file_url': None,
-                    'latitude': None,
-                    'longitude': None,
-                })
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg))
             elif new_status == 'pending_customer_confirm':
-                msg_content = t(request, 'order_priced_please_confirm')
-                sender_type = 'employee' if getattr(request.user, 'user_type', None) == 'employee' else 'shop_owner'
+                if old_status == 'pending_customer_confirm':
+                    msg_content = 'تم تعديل الفاتورة وإعادة إرسالها للعميل بانتظار الموافقة.'
+                else:
+                    msg_content = t(request, 'order_priced_please_confirm')
                 sys_msg = ChatMessage.objects.create(
                     order=order,
                     chat_type='shop_customer',
@@ -1153,19 +1199,19 @@ def order_detail_view(request, order_id):
                     message_type='text',
                     content=msg_content,
                 )
-                broadcast_chat_message_to_order(order.id, {
-                    'id': sys_msg.id,
-                    'sender_type': sys_msg.sender_type,
-                    'sender_name': sys_msg.sender_name,
-                    'message_type': 'text',
-                    'content': sys_msg.content,
-                    'is_read': False,
-                    'created_at': sys_msg.created_at.isoformat(),
-                    'audio_file_url': None,
-                    'image_file_url': None,
-                    'latitude': None,
-                    'longitude': None,
-                })
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg))
+
+            if has_driver_assignment and order.driver and (not old_driver or old_driver.id != order.driver.id):
+                driver_msg = ChatMessage.objects.create(
+                    order=order,
+                    chat_type='shop_customer',
+                    sender_type=sender_type,
+                    sender_shop_owner=shop_owner if sender_type == 'shop_owner' else None,
+                    sender_employee=request.user if sender_type == 'employee' else None,
+                    message_type='text',
+                    content=f'تم تحويل الأوردر للدليفري {order.driver.name}.',
+                )
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(driver_msg))
         except Exception as e:
             print(f"Order system message broadcast error: {e}")
         
@@ -1523,7 +1569,22 @@ def _build_customer_order_request_message(customer, address, items):
     return "\n".join(lines)
 
 
-def _chat_message_payload(message):
+def _chat_message_payload(message, request=None):
+    if request is not None:
+        serialized = ChatMessageSerializer(message, context={'request': request}).data
+        return {
+            'id': serialized.get('id'),
+            'sender_type': serialized.get('sender_type'),
+            'sender_name': serialized.get('sender_name'),
+            'message_type': serialized.get('message_type'),
+            'content': serialized.get('content'),
+            'is_read': serialized.get('is_read'),
+            'created_at': serialized.get('created_at'),
+            'audio_file_url': serialized.get('audio_file_url'),
+            'image_file_url': serialized.get('image_file_url'),
+            'latitude': serialized.get('latitude'),
+            'longitude': serialized.get('longitude'),
+        }
     return {
         'id': message.id,
         'sender_type': message.sender_type,
@@ -1537,6 +1598,143 @@ def _chat_message_payload(message):
         'latitude': str(message.latitude) if message.latitude is not None else None,
         'longitude': str(message.longitude) if message.longitude is not None else None,
     }
+
+
+def _resolve_user_type(user):
+    user_type = getattr(user, 'user_type', None)
+    if user_type in {'customer', 'shop_owner', 'employee', 'driver'}:
+        return user_type
+    if isinstance(user, Customer):
+        return 'customer'
+    if isinstance(user, ShopOwner):
+        return 'shop_owner'
+    if isinstance(user, Employee):
+        return 'employee'
+    if isinstance(user, Driver):
+        return 'driver'
+    return None
+
+
+def _sender_kwargs_for_user(user, user_type):
+    sender_kwargs = {'sender_type': user_type}
+    if user_type == 'customer':
+        sender_kwargs['sender_customer'] = user
+    elif user_type == 'shop_owner':
+        sender_kwargs['sender_shop_owner'] = user
+    elif user_type == 'employee':
+        sender_kwargs['sender_employee'] = user
+    elif user_type == 'driver':
+        sender_kwargs['sender_driver'] = user
+    else:
+        return None
+    return sender_kwargs
+
+
+def _can_user_access_chat(order, user, user_type, chat_type):
+    if user_type == 'shop_owner':
+        return chat_type == 'shop_customer' and order.shop_owner_id == user.id
+    if user_type == 'employee':
+        return chat_type == 'shop_customer' and order.shop_owner_id == getattr(user, 'shop_owner_id', None)
+    if user_type == 'driver':
+        return chat_type == 'driver_customer' and order.driver_id == user.id
+    if user_type == 'customer':
+        if order.customer_id != user.id:
+            return False
+        return chat_type in {'shop_customer', 'driver_customer'}
+    return False
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def chat_order_media_upload_view(request, order_id):
+    """
+    Upload chat media (image/audio) then broadcast instantly to WebSocket subscribers.
+    POST /api/chat/order/{order_id}/send-media/
+    """
+    chat_type = str(request.data.get('chat_type') or 'shop_customer').strip()
+    if chat_type not in {'shop_customer', 'driver_customer'}:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'chat_type': 'chat_type must be shop_customer or driver_customer.'},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        order = Order.objects.get(id=order_id)
+    except Order.DoesNotExist:
+        return error_response(
+            message=t(request, 'order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    user = request.user
+    user_type = _resolve_user_type(user)
+    if not user_type or not _can_user_access_chat(order, user, user_type, chat_type):
+        return error_response(
+            message='ليس لديك صلاحية للوصول إلى هذه المحادثة.',
+            status_code=status.HTTP_403_FORBIDDEN
+        )
+
+    image_file = request.FILES.get('image_file')
+    audio_file = request.FILES.get('audio_file')
+    if bool(image_file) == bool(audio_file):
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'file': 'Send exactly one file: image_file or audio_file.'},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    requested_type = str(request.data.get('message_type') or '').strip().lower()
+    if image_file:
+        if requested_type and requested_type != 'image':
+            return error_response(
+                message=t(request, 'invalid_data'),
+                errors={'message_type': 'message_type must be image when image_file is provided.'},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        message_type = 'image'
+    else:
+        if requested_type and requested_type != 'audio':
+            return error_response(
+                message=t(request, 'invalid_data'),
+                errors={'message_type': 'message_type must be audio when audio_file is provided.'},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        message_type = 'audio'
+
+    sender_kwargs = _sender_kwargs_for_user(user, user_type)
+    if not sender_kwargs:
+        return error_response(
+            message='ليس لديك صلاحية للإرسال في هذه المحادثة.',
+            status_code=status.HTTP_403_FORBIDDEN
+        )
+
+    message = ChatMessage.objects.create(
+        order=order,
+        chat_type=chat_type,
+        message_type=message_type,
+        content=(str(request.data.get('content') or '').strip() or None),
+        audio_file=audio_file,
+        image_file=image_file,
+        **sender_kwargs
+    )
+
+    if user_type == 'customer' and chat_type == 'shop_customer':
+        order.unread_messages_count = order.messages.filter(
+            chat_type='shop_customer',
+            is_read=False,
+            sender_type='customer'
+        ).count()
+        order.save(update_fields=['unread_messages_count'])
+
+    payload = _chat_message_payload(message, request=request)
+    broadcast_chat_message(order.id, chat_type, payload)
+    serialized = ChatMessageSerializer(message, context={'request': request}).data
+    return success_response(
+        data=serialized,
+        message='تم إرسال الوسائط بنجاح',
+        status_code=status.HTTP_201_CREATED
+    )
 
 
 # ==================== Shop Categories (master data for shop type) ====================
@@ -1951,6 +2149,12 @@ def customer_order_reject_view(request, order_id):
         return error_response(
             message=t(request, 'order_not_found'),
             status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    if order.status in {'confirmed', 'preparing', 'on_way', 'delivered'}:
+        return error_response(
+            message='لا يمكن إلغاء الطلب بعد قبول الفاتورة.',
+            status_code=status.HTTP_400_BAD_REQUEST
         )
 
     if order.status != 'pending_customer_confirm':
@@ -2523,6 +2727,3 @@ def order_tracking_view(request, order_id):
         },
         message=t(request, 'tracking_data_retrieved_successfully')
     )
-
-
-

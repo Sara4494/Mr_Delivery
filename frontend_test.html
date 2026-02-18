@@ -439,9 +439,16 @@
                         <div class="quick-actions">
                             <button onclick="sendLocation()" class="location-btn" id="locationBtn" disabled>📍 إرسال موقع</button>
                             <button onclick="markChatRead()" class="btn-secondary" id="markReadBtn" disabled>✓ مقروء</button>
-                            <button onclick="shopCancelCurrentOrder()" id="shopCancelBtn" class="btn-danger" disabled>❌ إلغاء استلام الأوردر</button>
-                            <button onclick="shopSendInvoiceToCustomer()" id="shopInvoiceBtn" class="btn-success" disabled>🧾 إنشاء فاتورة</button>
+                            <button onclick="document.getElementById('chatImageInput').click()" class="btn-info" id="chatImageBtn" disabled>🖼️ صورة</button>
+                            <button onclick="document.getElementById('chatAudioInput').click()" class="btn-secondary" id="chatAudioBtn" disabled>🎵 ملف صوتي</button>
+                            <button onclick="toggleAudioRecording()" class="btn-warning" id="chatRecordBtn" disabled>⏺️ تسجيل</button>
+                            <button onclick="shopCancelCurrentOrder()" id="shopCancelBtn" class="btn-danger" disabled>❌ إلغاء الفاتورة</button>
+                            <button onclick="shopSendInvoiceToCustomer(false)" id="shopInvoiceBtn" class="btn-success" disabled>🧾 إنشاء الفاتورة</button>
+                            <button onclick="shopEditInvoice()" id="shopEditInvoiceBtn" class="btn-info" disabled>✏️ تعديل الفاتورة</button>
+                            <button onclick="shopAssignOrderToDriver()" id="shopAssignDriverBtn" class="btn-success" disabled>🚚 تحويل الأوردر للدليفري</button>
                         </div>
+                        <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
+                        <input type="file" id="chatAudioInput" accept="audio/*" style="display:none;">
 
                         <div class="form-group">
                             <label>نوع الرسالة:</label>
@@ -704,6 +711,9 @@
         let customerWs = null;
         let driverWs = null;
         let currentChatUserType = null;
+        let chatMediaRecorder = null;
+        let chatRecordingStream = null;
+        let chatAudioChunks = [];
 
         // ==================== Tab Switching ====================
         function showTab(tabName) {
@@ -945,14 +955,20 @@
         function connectChat() {
             const server = document.getElementById('chatServer').value;
             const orderId = document.getElementById('chatOrderId').value;
-            const token = document.getElementById('chatToken').value;
+            const tokenInputEl = document.getElementById('chatToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
             const chatType = document.getElementById('chatType').value;
             currentChatUserType = document.getElementById('chatUserType').value;
-
+            const tokenErr = _validateHeaderToken(token);
             if (!orderId || !token) {
                 alert('أدخل معرف الطلب و Token');
                 return;
             }
+            if (tokenErr) {
+                alert(tokenErr);
+                return;
+            }
+            if (tokenInputEl) tokenInputEl.value = token;
 
             const url = `${server}/ws/chat/order/${orderId}/?token=${token}&chat_type=${chatType}`;
             document.getElementById('chatUrl').textContent = url;
@@ -970,9 +986,14 @@
                     document.getElementById('chatSendBtn').disabled = false;
                     document.getElementById('locationBtn').disabled = false;
                     document.getElementById('markReadBtn').disabled = false;
+                    document.getElementById('chatImageBtn').disabled = false;
+                    document.getElementById('chatAudioBtn').disabled = false;
+                    document.getElementById('chatRecordBtn').disabled = false;
                     const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
                     document.getElementById('shopCancelBtn').disabled = !canManageOrder;
                     document.getElementById('shopInvoiceBtn').disabled = !canManageOrder;
+                    document.getElementById('shopEditInvoiceBtn').disabled = !canManageOrder;
+                    document.getElementById('shopAssignDriverBtn').disabled = !canManageOrder;
                     addMessage('chatMessages', 'system', 'النظام', 'تم الاتصال بنجاح!');
                 };
 
@@ -993,8 +1014,13 @@
                     document.getElementById('chatSendBtn').disabled = true;
                     document.getElementById('locationBtn').disabled = true;
                     document.getElementById('markReadBtn').disabled = true;
+                    document.getElementById('chatImageBtn').disabled = true;
+                    document.getElementById('chatAudioBtn').disabled = true;
+                    document.getElementById('chatRecordBtn').disabled = true;
                     document.getElementById('shopCancelBtn').disabled = true;
                     document.getElementById('shopInvoiceBtn').disabled = true;
+                    document.getElementById('shopEditInvoiceBtn').disabled = true;
+                    document.getElementById('shopAssignDriverBtn').disabled = true;
                     
                     let reason = '';
                     if (event.code === 4401) reason = 'غير مصرح';
@@ -1007,63 +1033,83 @@
             } catch (e) {
                 updateStatus('chatStatus', 'disconnected', '❌ فشل');
                 document.getElementById('chatConnectBtn').disabled = false;
+                document.getElementById('chatDisconnectBtn').disabled = true;
+                document.getElementById('chatSendBtn').disabled = true;
+                document.getElementById('locationBtn').disabled = true;
+                document.getElementById('markReadBtn').disabled = true;
+                document.getElementById('chatImageBtn').disabled = true;
+                document.getElementById('chatAudioBtn').disabled = true;
+                document.getElementById('chatRecordBtn').disabled = true;
                 document.getElementById('shopCancelBtn').disabled = true;
                 document.getElementById('shopInvoiceBtn').disabled = true;
+                document.getElementById('shopEditInvoiceBtn').disabled = true;
+                document.getElementById('shopAssignDriverBtn').disabled = true;
                 addMessage('chatMessages', 'error', 'خطأ', e.message);
             }
+        }
+
+        function _buildChatContent(msg) {
+            let content = msg.content || '';
+            if (msg.message_type === 'location' && msg.latitude) {
+                content = `📍 Location: <a href="https://maps.google.com/?q=${msg.latitude},${msg.longitude}" target="_blank">${msg.latitude}, ${msg.longitude}</a>`;
+            }
+            if (msg.image_file_url) {
+                const imageUrl = _chatMediaUrl(msg.image_file_url);
+                content += `<br><img src="${imageUrl}" style="max-width: 150px; margin-top: 5px; border-radius: 5px;">`;
+            }
+            if (msg.audio_file_url) {
+                const audioUrl = _chatMediaUrl(msg.audio_file_url);
+                content += `<br><audio controls src="${audioUrl}" style="margin-top: 6px; max-width: 220px;"></audio>`;
+            }
+            return content;
         }
 
         function handleChatMessage(data) {
             switch(data.type) {
                 case 'connection':
-                    addMessage('chatMessages', 'system', 'النظام', 
-                        `${data.message} | نوع الشات: ${data.chat_type} | المستخدم: ${data.user_type}`);
+                    addMessage('chatMessages', 'system', 'System',
+                        `${data.message} | chat: ${data.chat_type} | user: ${data.user_type}`);
                     break;
 
                 case 'previous_messages':
-                    addMessage('chatMessages', 'system', 'النظام', `📜 ${data.messages.length} رسالة سابقة`);
+                    addMessage('chatMessages', 'system', 'System', `📜 ${data.messages.length} previous messages`);
                     data.messages.forEach(msg => {
-                        let content = msg.content || '';
-                        if (msg.message_type === 'location' && msg.latitude) {
-                            content = `📍 موقع: ${msg.latitude}, ${msg.longitude}`;
-                        }
-                        addMessage('chatMessages', msg.sender_type, 
-                            `${getSenderName(msg.sender_type)} (${msg.sender_name || ''})`, 
-                            content, 
-                            new Date(msg.created_at).toLocaleTimeString('ar-SA'));
+                        addMessage(
+                            'chatMessages',
+                            msg.sender_type,
+                            `${getSenderName(msg.sender_type)} (${msg.sender_name || ''})`,
+                            _buildChatContent(msg),
+                            new Date(msg.created_at).toLocaleTimeString('ar-SA')
+                        );
                     });
                     break;
 
                 case 'chat_message':
                     const msg = data.data;
-                    let content = msg.content || '';
-                    if (msg.message_type === 'location' && msg.latitude) {
-                        content = `📍 موقع: <a href="https://maps.google.com/?q=${msg.latitude},${msg.longitude}" target="_blank">${msg.latitude}, ${msg.longitude}</a>`;
-                    }
-                    if (msg.image_file_url) {
-                        content += `<br><img src="${msg.image_file_url}" style="max-width: 150px; margin-top: 5px; border-radius: 5px;">`;
-                    }
-                    addMessage('chatMessages', msg.sender_type, 
-                        `${getSenderName(msg.sender_type)} (${msg.sender_name || ''})`, 
-                        content);
+                    addMessage(
+                        'chatMessages',
+                        msg.sender_type,
+                        `${getSenderName(msg.sender_type)} (${msg.sender_name || ''})`,
+                        _buildChatContent(msg)
+                    );
                     break;
 
                 case 'typing':
                     const typingEl = document.getElementById('chatTyping');
                     if (data.is_typing) {
                         typingEl.style.display = 'block';
-                        typingEl.textContent = `${data.user_name || getSenderName(data.user_type)} يكتب...`;
+                        typingEl.textContent = `${data.user_name || getSenderName(data.user_type)} is typing...`;
                     } else {
                         typingEl.style.display = 'none';
                     }
                     break;
 
                 case 'messages_read':
-                    addMessage('chatMessages', 'system', 'النظام', `✓ تم قراءة الرسائل بواسطة ${getSenderName(data.reader_type)}`);
+                    addMessage('chatMessages', 'system', 'System', `✓ Messages read by ${getSenderName(data.reader_type)}`);
                     break;
 
                 case 'error':
-                    addMessage('chatMessages', 'error', 'خطأ', data.message);
+                    addMessage('chatMessages', 'error', 'Error', data.message);
                     break;
 
                 default:
@@ -1118,9 +1164,18 @@
 
         function disconnectChat() {
             if (chatWs) {
-                chatWs.close(1000, 'إغلاق يدوي');
+                chatWs.close(1000, 'manual close');
                 chatWs = null;
             }
+            if (chatMediaRecorder && chatMediaRecorder.state === 'recording') {
+                chatMediaRecorder.stop();
+            }
+            if (chatRecordingStream) {
+                chatRecordingStream.getTracks().forEach(t => t.stop());
+                chatRecordingStream = null;
+            }
+            const recordBtn = document.getElementById('chatRecordBtn');
+            if (recordBtn) recordBtn.textContent = '⏺️ Record';
         }
 
         function _chatOrderApiBase() {
@@ -1128,40 +1183,162 @@
             return (base || '').replace(/\/$/, '');
         }
 
+        function _chatMediaUrl(url) {
+            if (!url) return '';
+            if (/^https?:\/\//i.test(url)) return url;
+            const base = _chatOrderApiBase();
+            const origin = base.replace(/\/api$/i, '');
+            if (url.startsWith('/')) return origin + url;
+            return origin + '/' + url;
+        }
+
+        function _chatAuthToken() {
+            const tokenInputEl = document.getElementById('chatToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
+            if (tokenErr) {
+                alert(tokenErr);
+                return '';
+            }
+            if (tokenInputEl) tokenInputEl.value = token;
+            return token;
+        }
+
+        function uploadChatMedia(file, kind) {
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = _chatAuthToken();
+            const base = _chatOrderApiBase();
+            const chatType = (document.getElementById('chatType') || {}).value || 'shop_customer';
+            const caption = ((document.getElementById('chatContent') || {}).value || '').trim();
+
+            if (!orderId || !token) return;
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('chat_type', chatType);
+            formData.append('message_type', kind);
+            if (caption) formData.append('content', caption);
+            if (kind === 'image') formData.append('image_file', file);
+            if (kind === 'audio') formData.append('audio_file', file);
+
+            fetch(base + '/chat/order/' + orderId + '/send-media/', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token },
+                body: formData
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok) {
+                    const msg = (json && (json.message || json.detail)) || 'Failed to upload media';
+                    addMessage('chatMessages', 'error', 'Error', msg);
+                    return;
+                }
+                document.getElementById('chatContent').value = '';
+            })
+            .catch(err => addMessage('chatMessages', 'error', 'Error', err.message || 'Failed to upload media'));
+        }
+
+        function toggleAudioRecording() {
+            const btn = document.getElementById('chatRecordBtn');
+            if (!navigator.mediaDevices || !window.MediaRecorder) {
+                addMessage('chatMessages', 'error', 'Error', 'Recording is not supported in this browser');
+                return;
+            }
+
+            if (chatMediaRecorder && chatMediaRecorder.state === 'recording') {
+                chatMediaRecorder.stop();
+                return;
+            }
+
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    chatRecordingStream = stream;
+                    chatAudioChunks = [];
+                    chatMediaRecorder = new MediaRecorder(stream);
+
+                    chatMediaRecorder.ondataavailable = (event) => {
+                        if (event.data && event.data.size > 0) {
+                            chatAudioChunks.push(event.data);
+                        }
+                    };
+
+                    chatMediaRecorder.onstop = () => {
+                        const blobType = (chatAudioChunks[0] && chatAudioChunks[0].type) || 'audio/webm';
+                        const audioBlob = new Blob(chatAudioChunks, { type: blobType });
+                        const ext = blobType.includes('ogg') ? 'ogg' : 'webm';
+                        const audioFile = new File([audioBlob], `record_${Date.now()}.${ext}`, { type: blobType });
+                        uploadChatMedia(audioFile, 'audio');
+                        if (chatRecordingStream) {
+                            chatRecordingStream.getTracks().forEach(t => t.stop());
+                        }
+                        chatRecordingStream = null;
+                        chatAudioChunks = [];
+                        if (btn) btn.textContent = '⏺️ Record';
+                    };
+
+                    chatMediaRecorder.start();
+                    if (btn) btn.textContent = '⏹️ Stop & Send';
+                })
+                .catch(err => addMessage('chatMessages', 'error', 'Error', 'Microphone error: ' + err.message));
+        }
+
+
+        function _parsePricedItemLine(itemText) {
+            const text = String(itemText || '').trim();
+            const match = text.match(/^(.*?)(?:\s*-\s*السعر:\s*([0-9]+(?:\.[0-9]+)?))?$/);
+            if (!match) return { name: text, price: 0 };
+            return {
+                name: String(match[1] || '').trim(),
+                price: Number(match[2] || 0)
+            };
+        }
+
+        function _buildPricedItemsFromPrompt(orderData) {
+            const rawItems = Array.isArray(orderData.items) ? orderData.items : [];
+            if (!rawItems.length) throw new Error('لا توجد بنود لتسعيرها في الطلب.');
+
+            const parsed = rawItems
+                .map(_parsePricedItemLine)
+                .filter(x => x.name);
+            if (!parsed.length) throw new Error('لا توجد بنود صالحة في الفاتورة.');
+
+            const pricedItems = [];
+            let total = 0;
+            for (let i = 0; i < parsed.length; i++) {
+                const item = parsed[i];
+                const defaultPrice = Number.isFinite(item.price) ? item.price : 0;
+                const entered = prompt('اكتب سعر: ' + item.name, String(defaultPrice));
+                if (entered === null) throw new Error('تم إلغاء العملية.');
+                const price = Number(entered);
+                if (!Number.isFinite(price) || price < 0) {
+                    throw new Error('سعر غير صالح للبند: ' + item.name);
+                }
+                total += price;
+                pricedItems.push(item.name + ' - السعر: ' + Number(price.toFixed(2)));
+            }
+
+            const existingDeliveryFee = Number(orderData.delivery_fee || 0);
+            const deliveryInput = prompt('اكتب تكلفة التوصيل:', String(Number.isFinite(existingDeliveryFee) ? existingDeliveryFee : 0));
+            if (deliveryInput === null) throw new Error('تم إلغاء العملية.');
+            const deliveryFee = Number(deliveryInput);
+            if (!Number.isFinite(deliveryFee) || deliveryFee < 0) {
+                throw new Error('تكلفة التوصيل غير صالحة.');
+            }
+
+            return {
+                items: pricedItems,
+                totalAmount: Number((total + deliveryFee).toFixed(2)),
+                deliveryFee: Number(deliveryFee.toFixed(2))
+            };
+        }
+
         function shopCancelCurrentOrder() {
             const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
             if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
 
             const orderId = (document.getElementById('chatOrderId') || {}).value;
-            const token = (document.getElementById('chatToken') || {}).value;
+            const token = _chatAuthToken();
             const base = _chatOrderApiBase();
-
-            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
-
-            fetch(base + '/shop/orders/' + orderId + '/', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ status: 'cancelled' })
-            })
-            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
-            .then(({ ok, json }) => {
-                if (ok) {
-                    addMessage('chatMessages', 'system', 'النظام', 'تم إلغاء الاستلام. سيتم إرسال رسالة الاعتذار للعميل.');
-                } else {
-                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل الإلغاء');
-                }
-            })
-            .catch(err => addMessage('chatMessages', 'error', 'خطأ', 'Error: ' + err.message));
-        }
-
-        function shopSendInvoiceToCustomer() {
-            const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
-            if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
-
-            const orderId = (document.getElementById('chatOrderId') || {}).value;
-            const token = (document.getElementById('chatToken') || {}).value;
-            const base = _chatOrderApiBase();
-
             if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
 
             fetch(base + '/shop/orders/' + orderId + '/', {
@@ -1171,67 +1348,157 @@
             .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
             .then(({ ok, json }) => {
                 if (!ok || !json || !json.data) {
-                    throw new Error((json && (json.message || json.detail)) || 'تعذر جلب الطلب');
+                    throw new Error((json && (json.message || json.detail)) || 'تعذر جلب الطلب.');
                 }
-
                 const orderData = json.data;
-                const originalItems = Array.isArray(orderData.items) ? orderData.items : [];
-                if (originalItems.length === 0) {
-                    throw new Error('لا توجد بنود لتسعيرها في الطلب');
+                if (orderData.status === 'confirmed' || orderData.status === 'preparing' || orderData.status === 'on_way' || orderData.status === 'delivered') {
+                    throw new Error('لا يمكن إلغاء الفاتورة بعد تأكيد العميل.');
+                }
+                if (orderData.status !== 'pending_customer_confirm') {
+                    throw new Error('لا توجد فاتورة معلقة للإلغاء حالياً.');
+                }
+                return fetch(base + '/shop/orders/' + orderId + '/', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ status: 'cancelled' })
+                }).then(r => r.json().then(j => ({ ok: r.ok, json: j })));
+            })
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('chatMessages', 'system', 'النظام', 'تم إلغاء الفاتورة.');
+                } else {
+                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل إلغاء الفاتورة.');
+                }
+            })
+            .catch(err => addMessage('chatMessages', 'error', 'خطأ', err.message || 'فشل إلغاء الفاتورة.'));
+        }
+
+        function shopSendInvoiceToCustomer(isEdit) {
+            const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+            if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
+
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = _chatAuthToken();
+            const base = _chatOrderApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            fetch(base + '/shop/orders/' + orderId + '/', {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok || !json || !json.data) {
+                    throw new Error((json && (json.message || json.detail)) || 'تعذر جلب الطلب.');
+                }
+                const orderData = json.data;
+
+                if (orderData.status === 'confirmed' || orderData.status === 'preparing' || orderData.status === 'on_way' || orderData.status === 'delivered') {
+                    throw new Error('لا يمكن تعديل الفاتورة بعد تأكيد العميل.');
+                }
+                if (isEdit && orderData.status !== 'pending_customer_confirm') {
+                    throw new Error('تعديل الفاتورة متاح فقط عندما تكون بانتظار تأكيد العميل.');
                 }
 
-                let total = 0;
-                const pricedItems = [];
-                for (let i = 0; i < originalItems.length; i++) {
-                    const item = String(originalItems[i] || '').trim();
-                    if (!item) continue;
-                    const entered = prompt('اكتب سعر: ' + item, '0');
-                    if (entered === null) {
-                        throw new Error('تم إلغاء إنشاء الفاتورة');
-                    }
-                    const price = Number(entered);
-                    if (!Number.isFinite(price) || price < 0) {
-                        throw new Error('سعر غير صالح للبند: ' + item);
-                    }
-                    total += price;
-                    pricedItems.push(item + ' - السعر: ' + price);
-                }
-
-                if (pricedItems.length === 0) {
-                    throw new Error('لم يتم إدخال أي بنود مسعّرة');
-                }
-
-                const deliveryInput = prompt('اكتب تكلفة التوصيل:', '30');
-                if (deliveryInput === null) {
-                    throw new Error('تم إلغاء إنشاء الفاتورة');
-                }
-                const deliveryFee = Number(deliveryInput);
-                if (!Number.isFinite(deliveryFee) || deliveryFee < 0) {
-                    throw new Error('تكلفة التوصيل غير صالحة');
-                }
-                const finalTotal = total + deliveryFee;
-
+                const priced = _buildPricedItemsFromPrompt(orderData);
                 return fetch(base + '/shop/orders/' + orderId + '/', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                     body: JSON.stringify({
                         status: 'pending_customer_confirm',
-                        items: pricedItems,
-                        total_amount: Number(finalTotal.toFixed(2)),
-                        delivery_fee: Number(deliveryFee.toFixed(2))
+                        items: priced.items,
+                        total_amount: priced.totalAmount,
+                        delivery_fee: priced.deliveryFee
                     })
                 }).then(r => r.json().then(j => ({ ok: r.ok, json: j })));
             })
             .then(({ ok, json }) => {
                 if (ok) {
-                    addMessage('chatMessages', 'system', 'النظام', 'تم إرسال الفاتورة للعميل. العميل يقدر يقبل أو يرفض.');
+                    addMessage('chatMessages', 'system', 'النظام', isEdit
+                        ? 'تم تعديل الفاتورة وإعادة إرسالها للعميل.'
+                        : 'تم إرسال الفاتورة للعميل. العميل يقدر يقبل أو يرفض.');
                 } else {
-                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل إنشاء الفاتورة');
+                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل حفظ الفاتورة.');
                 }
             })
-            .catch(err => {
-                addMessage('chatMessages', 'error', 'خطأ', err.message || 'فشل إنشاء الفاتورة');
-            });
+            .catch(err => addMessage('chatMessages', 'error', 'خطأ', err.message || 'فشل حفظ الفاتورة.'));
+        }
+
+        function shopEditInvoice() {
+            shopSendInvoiceToCustomer(true);
+        }
+
+        function shopAssignOrderToDriver() {
+            const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+            if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
+
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = _chatAuthToken();
+            const base = _chatOrderApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            let currentOrder = null;
+            fetch(base + '/shop/orders/' + orderId + '/', {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok || !json || !json.data) {
+                    throw new Error((json && (json.message || json.detail)) || 'تعذر جلب الطلب.');
+                }
+                currentOrder = json.data;
+                if (currentOrder.status !== 'confirmed' && currentOrder.status !== 'preparing' && currentOrder.status !== 'on_way') {
+                    throw new Error('لا يمكن تحويل الأوردر للدليفري قبل تأكيد العميل على الفاتورة.');
+                }
+                return fetch(base + '/shop/staff/?staff_type=driver', {
+                    method: 'GET',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                }).then(r => r.json().then(j => ({ ok: r.ok, json: j })));
+            })
+            .then(({ ok, json }) => {
+                const list = ok ? ((((json || {}).data || {}).results) || []).filter(d => !d.is_blocked) : [];
+                let chosen = null;
+                if (list.length) {
+                    const menu = list.map((d, idx) =>
+                        `${idx + 1}) ${d.name} - الحالة: ${d.status_display || d.status} - الطلبات الحالية: ${d.current_orders_count || 0}`
+                    ).join('\n');
+                    const selected = prompt('اختار رقم الدليفري:\n' + menu, '1');
+                    if (selected === null) throw new Error('تم إلغاء التحويل للدليفري.');
+                    const index = Number(selected) - 1;
+                    if (!Number.isInteger(index) || index < 0 || index >= list.length) {
+                        throw new Error('اختيار غير صالح.');
+                    }
+                    chosen = list[index];
+                } else {
+                    const manualId = prompt('ادخل معرف الدليفري (driver_id):', '');
+                    if (manualId === null) throw new Error('تم إلغاء التحويل للدليفري.');
+                    const numericId = Number(manualId);
+                    if (!Number.isInteger(numericId) || numericId <= 0) {
+                        throw new Error('معرف الدليفري غير صالح.');
+                    }
+                    chosen = { id: numericId, name: `ID ${numericId}` };
+                }
+
+                const nextStatus = currentOrder && currentOrder.status === 'confirmed' ? 'preparing' : (currentOrder ? currentOrder.status : 'preparing');
+
+                return fetch(base + '/shop/orders/' + orderId + '/', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({
+                        driver_id: chosen.id,
+                        status: nextStatus
+                    })
+                }).then(r => r.json().then(j => ({ ok: r.ok, json: j, chosen })));
+            })
+            .then(({ ok, json, chosen }) => {
+                if (ok) {
+                    addMessage('chatMessages', 'system', 'النظام', `تم تحويل الأوردر للدليفري: ${chosen.name}.`);
+                } else {
+                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل تحويل الأوردر للدليفري.');
+                }
+            })
+            .catch(err => addMessage('chatMessages', 'error', 'خطأ', err.message || 'فشل تحويل الأوردر للدليفري.'));
         }
 
         // ==================== Shop WebSocket ====================
@@ -1304,9 +1571,13 @@
 
         function customerConfirmInvoice() {
             const orderId = (document.getElementById('customerInvoiceOrderId') || {}).value;
-            const token = (document.getElementById('customerToken') || {}).value;
+            const tokenInputEl = document.getElementById('customerToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
             const base = _customerApiBase();
             if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+            if (tokenErr) { alert(tokenErr); return; }
+            if (tokenInputEl) tokenInputEl.value = token;
 
             fetch(base + '/customer/orders/' + orderId + '/confirm/', {
                 method: 'POST',
@@ -1325,9 +1596,13 @@
 
         function customerRejectInvoice() {
             const orderId = (document.getElementById('customerInvoiceOrderId') || {}).value;
-            const token = (document.getElementById('customerToken') || {}).value;
+            const tokenInputEl = document.getElementById('customerToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
             const base = _customerApiBase();
             if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+            if (tokenErr) { alert(tokenErr); return; }
+            if (tokenInputEl) tokenInputEl.value = token;
 
             fetch(base + '/customer/orders/' + orderId + '/reject/', {
                 method: 'POST',
@@ -1348,12 +1623,19 @@
         function connectCustomer() {
             const server = document.getElementById('customerServer').value;
             const customerId = document.getElementById('customerId').value;
-            const token = document.getElementById('customerToken').value;
+            const tokenInputEl = document.getElementById('customerToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
 
             if (!customerId || !token) {
                 alert('أدخل البيانات المطلوبة');
                 return;
             }
+            if (tokenErr) {
+                alert(tokenErr);
+                return;
+            }
+            if (tokenInputEl) tokenInputEl.value = token;
 
             const url = `${server}/ws/orders/customer/${customerId}/?token=${token}`;
             updateStatus('customerStatus', 'connecting', '🔄 جاري الاتصال...');
@@ -1521,6 +1803,18 @@
                     chatWs.send(JSON.stringify({ type: 'typing', is_typing: false }));
                 }
             }, 2000);
+        });
+
+        document.getElementById('chatImageInput').addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (file) uploadChatMedia(file, 'image');
+            e.target.value = '';
+        });
+
+        document.getElementById('chatAudioInput').addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (file) uploadChatMedia(file, 'audio');
+            e.target.value = '';
         });
     </script>
 </body>

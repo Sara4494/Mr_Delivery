@@ -51,17 +51,25 @@ def notify_driver_assigned(driver_id, order_data):
     send_to_group(f'driver_{driver_id}', 'new_order', order_data)
 
 
+def broadcast_chat_message(order_id, chat_type, message_payload):
+    """
+    إرسال رسالة شات إلى مجموعة الطلب حسب نوع المحادثة.
+    chat_type: shop_customer | driver_customer
+    """
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            f'chat_order_{order_id}_{chat_type}',
+            {'type': 'chat_message', 'message': message_payload}
+        )
+
+
 def broadcast_chat_message_to_order(order_id, message_payload):
     """
     إرسال رسالة شات إلى مجموعة طلب (لظهورها فوراً عند العميل والمحل).
     message_payload: dict مثل {'id', 'sender_type', 'sender_name', 'message_type', 'content', 'created_at', ...}
     """
-    channel_layer = get_channel_layer()
-    if channel_layer:
-        async_to_sync(channel_layer.group_send)(
-            f'chat_order_{order_id}_shop_customer',
-            {'type': 'chat_message', 'message': message_payload}
-        )
+    broadcast_chat_message(order_id, 'shop_customer', message_payload)
 
 
 # ==================== Driver Location ====================
