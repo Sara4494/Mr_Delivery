@@ -56,13 +56,13 @@ from .websocket_utils import notify_order_update, notify_driver_assigned, notify
 
 
 class OrderPagination(PageNumberPagination):
-    """Pagination Ù„Ù„Ø·Ù„Ø¨Ø§Øª"""
+    """Pagination للطلبات"""
     page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
     
     def get_paginated_response(self, data):
-        """ØªØ®ØµÙŠØµ Ø´ÙƒÙ„ Ø§Ù„Ù€ response Ù„Ù„Ù€ pagination"""
+        """تخصيص شكل الـ response للـ pagination"""
         from rest_framework.response import Response
         from rest_framework import status
         
@@ -84,13 +84,13 @@ class OrderPagination(PageNumberPagination):
 
 
 class CustomerPagination(PageNumberPagination):
-    """Pagination Ù„Ù„Ø¹Ù…Ù„Ø§Ø¡"""
+    """Pagination للعملاء"""
     page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
     
     def get_paginated_response(self, data):
-        """ØªØ®ØµÙŠØµ Ø´ÙƒÙ„ Ø§Ù„Ù€ response Ù„Ù„Ù€ pagination"""
+        """تخصيص شكل الـ response للـ pagination"""
         from rest_framework.response import Response
         from rest_framework import status
         
@@ -112,7 +112,7 @@ class CustomerPagination(PageNumberPagination):
 
 
 def _is_true_query_value(value):
-    """ØªØ­ÙˆÙŠÙ„ Ù‚ÙŠÙ…Ø© query param Ø¥Ù„Ù‰ bool."""
+    """تحويل قيمة query param إلى bool."""
     return str(value).lower() in {'1', 'true', 'yes', 'on'}
 
 
@@ -346,10 +346,10 @@ def _invite_driver(request, shop_owner, payload):
 @permission_classes([IsShopOwner])
 def staff_view(request):
     """
-    Endpoint Ù…ÙˆØ­Ø¯ Ù„Ù„Ù…ÙˆØ¸ÙÙŠÙ† ÙˆØ§Ù„Ø³Ø§Ø¦Ù‚ÙŠÙ†.
-    GET /api/shop/staff/ -> Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© (staff_type=all|employee|driver) Ø£Ùˆ ØªÙØ§ØµÙŠÙ„ Ø¹Ù†ØµØ± ÙˆØ§Ø­Ø¯ (staff_id)
-    POST /api/shop/staff/ -> Ø¥Ø¶Ø§ÙØ© Ù…ÙˆØ¸Ù/Ø³Ø§Ø¦Ù‚ Ø¬Ø¯ÙŠØ¯ (staff_type Ù…Ø·Ù„ÙˆØ¨)
-    PUT /api/shop/staff/ -> ØªØ­Ø¯ÙŠØ« Ù…ÙˆØ¸Ù/Ø³Ø§Ø¦Ù‚ (staff_type + staff_id)
+    Endpoint موحد للموظفين والسائقين.
+    GET /api/shop/staff/ -> القائمة (staff_type=all|employee|driver) أو تفاصيل عنصر واحد (staff_id)
+    POST /api/shop/staff/ -> إضافة موظف/سائق جديد (staff_type مطلوب)
+    PUT /api/shop/staff/ -> تحديث موظف/سائق (staff_type + staff_id)
     """
     shop_owner = request.user
 
@@ -705,9 +705,9 @@ def driver_invitation_respond_view(request):
 @permission_classes([IsShopOwner])
 def shop_status_view(request):
     """
-    Ø¹Ø±Ø¶ ÙˆØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„Ù…ØªØ¬Ø±
-    GET /api/shop/status/ - Ø¹Ø±Ø¶ Ø­Ø§Ù„Ø© Ø§Ù„Ù…ØªØ¬Ø±
-    PUT /api/shop/status/ - ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„Ù…ØªØ¬Ø±
+    عرض وتحديث حالة المتجر
+    GET /api/shop/status/ - عرض حالة المتجر
+    PUT /api/shop/status/ - تحديث حالة المتجر
     """
     shop_owner = request.user
     
@@ -742,9 +742,9 @@ def shop_status_view(request):
 @permission_classes([IsShopOwner])
 def customer_list_view(request):
     """
-    Ø¹Ø±Ø¶ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ ÙˆØ¥Ø¶Ø§ÙØ© Ø¹Ù…ÙŠÙ„ Ø¬Ø¯ÙŠØ¯
-    GET /api/shop/customers/ - Ø¹Ø±Ø¶ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡
-    POST /api/shop/customers/ - Ø¥Ø¶Ø§ÙØ© Ø¹Ù…ÙŠÙ„ Ø¬Ø¯ÙŠØ¯
+    عرض قائمة العملاء وإضافة عميل جديد
+    GET /api/shop/customers/ - عرض قائمة العملاء
+    POST /api/shop/customers/ - إضافة عميل جديد
     """
     shop_owner = request.user
     
@@ -797,10 +797,10 @@ def customer_list_view(request):
 @permission_classes([IsShopOwner])
 def customer_detail_view(request, customer_id):
     """
-    Ø¹Ø±Ø¶ØŒ ØªØ­Ø¯ÙŠØ«ØŒ Ø£Ùˆ Ø­Ø°Ù Ø¹Ù…ÙŠÙ„
-    GET /api/shop/customers/{id}/ - Ø¹Ø±Ø¶ Ø¹Ù…ÙŠÙ„
-    PUT /api/shop/customers/{id}/ - ØªØ­Ø¯ÙŠØ« Ø¹Ù…ÙŠÙ„
-    DELETE /api/shop/customers/{id}/ - Ø­Ø°Ù Ø¹Ù…ÙŠÙ„
+    عرض، تحديث، أو حذف عميل
+    GET /api/shop/customers/{id}/ - عرض عميل
+    PUT /api/shop/customers/{id}/ - تحديث عميل
+    DELETE /api/shop/customers/{id}/ - حذف عميل
     """
     shop_owner = request.user
     
@@ -844,14 +844,14 @@ def customer_detail_view(request, customer_id):
         )
 
 
-# Product APIs (Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª - Ø¨Ø±ÙˆÙØ§ÙŠÙ„ Ø§Ù„Ù…Ø­Ù„)
+# Product APIs (قائمة المنتجات - بروفايل المحل)
 @api_view(['GET', 'POST'])
 @permission_classes([IsShopOwner])
 def product_list_view(request):
     """
-    Ø¹Ø±Ø¶ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª ÙˆØ¥Ø¶Ø§ÙØ© Ù…Ù†ØªØ¬
-    GET /api/shop/products/ - Ø¹Ø±Ø¶ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª
-    POST /api/shop/products/ - Ø¥Ø¶Ø§ÙØ© Ù…Ù†ØªØ¬
+    عرض قائمة المنتجات وإضافة منتج
+    GET /api/shop/products/ - عرض قائمة المنتجات
+    POST /api/shop/products/ - إضافة منتج
     """
     shop_owner = request.user
     if request.method == 'GET':
@@ -898,10 +898,10 @@ def product_list_view(request):
 @permission_classes([IsShopOwner])
 def product_detail_view(request, product_id):
     """
-    Ø¹Ø±Ø¶ØŒ ØªØ­Ø¯ÙŠØ«ØŒ Ø£Ùˆ Ø­Ø°Ù Ù…Ù†ØªØ¬
-    GET /api/shop/products/{id}/ - Ø¹Ø±Ø¶ Ù…Ù†ØªØ¬
-    PUT /api/shop/products/{id}/ - ØªØ­Ø¯ÙŠØ« Ù…Ù†ØªØ¬
-    DELETE /api/shop/products/{id}/ - Ø­Ø°Ù Ù…Ù†ØªØ¬
+    عرض، تحديث، أو حذف منتج
+    GET /api/shop/products/{id}/ - عرض منتج
+    PUT /api/shop/products/{id}/ - تحديث منتج
+    DELETE /api/shop/products/{id}/ - حذف منتج
     """
     shop_owner = request.user
     try:
@@ -951,9 +951,9 @@ def product_detail_view(request, product_id):
 @permission_classes([IsShopOwnerOrEmployee])
 def order_list_view(request):
     """
-    Ø¹Ø±Ø¶ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø·Ù„Ø¨Ø§Øª ÙˆØ¥Ù†Ø´Ø§Ø¡ Ø·Ù„Ø¨ Ø¬Ø¯ÙŠØ¯
-    GET /api/shop/orders/ - Ø¹Ø±Ø¶ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø·Ù„Ø¨Ø§Øª
-    POST /api/shop/orders/ - Ø¥Ù†Ø´Ø§Ø¡ Ø·Ù„Ø¨ Ø¬Ø¯ÙŠØ¯ (Ù…Ù† Ø§Ù„Ù…Ø­Ù„)
+    عرض قائمة الطلبات وإنشاء طلب جديد
+    GET /api/shop/orders/ - عرض قائمة الطلبات
+    POST /api/shop/orders/ - إنشاء طلب جديد (من المحل)
     """
     shop_owner = _get_shop_owner_from_request(request)
     
@@ -1014,7 +1014,7 @@ def order_list_view(request):
 
 
 def _get_shop_owner_from_request(request):
-    """ØµØ§Ø­Ø¨ Ø§Ù„Ù…Ø­Ù„ Ù…Ù† Ø§Ù„Ø·Ù„Ø¨ (ØµØ§Ø­Ø¨ Ù…Ø­Ù„ Ø£Ùˆ Ù…ÙˆØ¸Ù)"""
+    """صاحب المحل من الطلب (صاحب محل أو موظف)"""
     user = request.user
     if hasattr(user, 'shop_owner_id') and user.shop_owner_id:
         return user.shop_owner
@@ -1025,10 +1025,10 @@ def _get_shop_owner_from_request(request):
 @permission_classes([IsShopOwnerOrEmployee])
 def order_detail_view(request, order_id):
     """
-    Ø¹Ø±Ø¶ØŒ ØªØ­Ø¯ÙŠØ«ØŒ Ø£Ùˆ Ø­Ø°Ù Ø·Ù„Ø¨
-    GET /api/shop/orders/{id}/ - Ø¹Ø±Ø¶ Ø·Ù„Ø¨
-    PUT /api/shop/orders/{id}/ - ØªØ­Ø¯ÙŠØ« Ø·Ù„Ø¨ (Ù‚Ø¨ÙˆÙ„/Ø±ÙØ¶/Ø¥Ù„ØºØ§Ø¡/ØªØ³Ø¹ÙŠØ±)
-    DELETE /api/shop/orders/{id}/ - Ø­Ø°Ù Ø·Ù„Ø¨
+    عرض، تحديث، أو حذف طلب
+    GET /api/shop/orders/{id}/ - عرض طلب
+    PUT /api/shop/orders/{id}/ - تحديث طلب (قبول/رفض/إلغاء/تسعير)
+    DELETE /api/shop/orders/{id}/ - حذف طلب
     """
     shop_owner = _get_shop_owner_from_request(request)
     
@@ -1049,10 +1049,10 @@ def order_detail_view(request, order_id):
         )
     
     elif request.method == 'PUT':
-        # ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø·Ù„Ø¨
+        # تحديث الطلب
         old_driver = order.driver
         
-        # Ù‚Ø¨ÙˆÙ„ Ø§Ù„Ø·Ù„Ø¨: ÙŠØ¬Ø¨ ØªØ¹Ø¨Ø¦Ø© Ø³Ø¹Ø± Ø§Ù„Ø·Ù„Ø¨ (Ø³Ø¹Ø± Ø§Ù„ØªÙˆØµÙŠÙ„ Ø§Ø®ØªÙŠØ§Ø±ÙŠ)
+        # قبول الطلب: يجب تعبئة سعر الطلب (سعر التوصيل اختياري)
         new_status = request.data.get('status', order.status)
         if new_status == 'pending_customer_confirm':
             new_total = request.data.get('total_amount')
@@ -1104,7 +1104,7 @@ def order_detail_view(request, order_id):
             else:
                 order.driver = None
         
-        # ØªØ­Ø¯ÙŠØ« Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ø­Ù‚ÙˆÙ„
+        # تحديث باقي الحقول
         for field in ['status', 'items', 'total_amount', 'delivery_fee', 'address', 'notes']:
             if field in request.data:
                 field_value = request.data[field]
@@ -1114,7 +1114,7 @@ def order_detail_view(request, order_id):
         
         order.save()
         
-        # Ø±Ø³Ø§Ø¦Ù„ ØªÙ„Ù‚Ø§Ø¦ÙŠØ© Ø¹Ù†Ø¯ Ø§Ù„Ø±ÙØ¶/Ø§Ù„Ø¥Ù„ØºØ§Ø¡/Ø§Ù„Ù‚Ø¨ÙˆÙ„ (Ø­Ø³Ø¨ Ø§Ù„ØµÙˆØ± ÙˆØ§Ù„Ù€ PDF)
+        # رسائل تلقائية عند الرفض/الإلغاء/القبول (حسب الصور والـ PDF)
         try:
             if new_status == 'cancelled':
                 msg_content = 'نأسف لعدم استقبال اوردراتكم في الوقت الحالي يرجى المحاوله في وقت لاحق'
@@ -1169,7 +1169,7 @@ def order_detail_view(request, order_id):
         except Exception as e:
             print(f"Order system message broadcast error: {e}")
         
-        # ØªØ­Ø¯ÙŠØ« Ø¹Ø¯Ø¯ Ø§Ù„Ø·Ù„Ø¨Ø§Øª Ù„Ù„Ø³Ø§Ø¦Ù‚ÙŠÙ†
+        # تحديث عدد الطلبات للسائقين
         if old_driver:
             old_driver.current_orders_count = old_driver.orders.filter(
                 status__in=['new', 'preparing', 'on_way']
@@ -1184,7 +1184,7 @@ def order_detail_view(request, order_id):
         
         response_serializer = OrderSerializer(order, context={'request': request})
         
-        # Ø¥Ø±Ø³Ø§Ù„ Ø¥Ø´Ø¹Ø§Ø± WebSocket Ø¨ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø·Ù„Ø¨
+        # إرسال إشعار WebSocket بتحديث الطلب
         try:
             order_data = response_serializer.data
             notify_order_update(
@@ -1194,7 +1194,7 @@ def order_detail_view(request, order_id):
                 order_data=order_data
             )
             
-            # Ø¥Ø°Ø§ ØªÙ… ØªØ¹ÙŠÙŠÙ† Ø³Ø§Ø¦Ù‚ Ø¬Ø¯ÙŠØ¯ØŒ Ø¥Ø´Ø¹Ø§Ø±Ù‡
+            # إذا تم تعيين سائق جديد، إشعاره
             if order.driver and (not old_driver or old_driver.id != order.driver.id):
                 notify_driver_assigned(order.driver.id, order_data)
         except Exception as e:
@@ -1219,9 +1219,9 @@ def order_detail_view(request, order_id):
 @permission_classes([IsShopOwner])
 def invoice_list_view(request):
     """
-    Ø¹Ø±Ø¶ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ÙÙˆØ§ØªÙŠØ± ÙˆØ¥Ù†Ø´Ø§Ø¡ ÙØ§ØªÙˆØ±Ø© Ø³Ø±ÙŠØ¹Ø©
-    GET /api/shop/invoices/ - Ø¹Ø±Ø¶ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ÙÙˆØ§ØªÙŠØ±
-    POST /api/shop/invoices/ - Ø¥Ù†Ø´Ø§Ø¡ ÙØ§ØªÙˆØ±Ø© Ø³Ø±ÙŠØ¹Ø©
+    عرض قائمة الفواتير وإنشاء فاتورة سريعة
+    GET /api/shop/invoices/ - عرض قائمة الفواتير
+    POST /api/shop/invoices/ - إنشاء فاتورة سريعة
     """
     shop_owner = request.user
     
@@ -1283,9 +1283,9 @@ def invoice_list_view(request):
 @permission_classes([IsShopOwner])
 def invoice_detail_view(request, invoice_id):
     """
-    Ø¹Ø±Ø¶ ÙØ§ØªÙˆØ±Ø© Ø£Ùˆ ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„Ø¥Ø±Ø³Ø§Ù„
-    GET /api/shop/invoices/{id}/ - Ø¹Ø±Ø¶ ÙØ§ØªÙˆØ±Ø©
-    PUT /api/shop/invoices/{id}/ - ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„Ø¥Ø±Ø³Ø§Ù„
+    عرض فاتورة أو تحديث حالة الإرسال
+    GET /api/shop/invoices/{id}/ - عرض فاتورة
+    PUT /api/shop/invoices/{id}/ - تحديث حالة الإرسال
     """
     shop_owner = request.user
     
@@ -1325,33 +1325,33 @@ def invoice_detail_view(request, invoice_id):
 @permission_classes([IsShopOwner])
 def shop_dashboard_statistics_view(request):
     """
-    Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… Ù„Ù„Ù…Ø­Ù„
+    إحصائيات لوحة التحكم للمحل
     GET /api/shop/dashboard/statistics/
     """
     shop_owner = request.user
     
-    # Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯Ø§Øª
+    # إجمالي الإيرادات
     total_revenue = Order.objects.filter(
         shop_owner=shop_owner,
         status='delivered'
     ).aggregate(total=Sum('total_amount'))['total'] or 0
     
-    # Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø·Ù„Ø¨Ø§Øª
+    # إجمالي الطلبات
     total_orders = Order.objects.filter(shop_owner=shop_owner).count()
     
-    # Ø§Ù„Ø·Ù„Ø¨Ø§Øª Ø­Ø³Ø¨ Ø§Ù„Ø­Ø§Ù„Ø©
+    # الطلبات حسب الحالة
     orders_by_status = Order.objects.filter(shop_owner=shop_owner).values('status').annotate(
         count=Count('id')
     )
     
-    # Ø¹Ø¯Ø¯ Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡
+    # عدد العملاء
     total_customers = Customer.objects.filter(shop_owner=shop_owner).count()
     
-    # Ø¹Ø¯Ø¯ Ø§Ù„Ø³Ø§Ø¦Ù‚ÙŠÙ†
+    # عدد السائقين
     total_drivers = Driver.objects.filter(shop_owner=shop_owner).count()
     available_drivers = Driver.objects.filter(shop_owner=shop_owner, status='available').count()
     
-    # Ø§Ù„Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø©
+    # الطلبات الجديدة
     new_orders_count = Order.objects.filter(shop_owner=shop_owner, status='new').count()
     
     statistics = {
@@ -1376,11 +1376,11 @@ def shop_dashboard_statistics_view(request):
 @permission_classes([AllowAny])
 def employee_login_view(request):
     """
-    ØªØ³Ø¬ÙŠÙ„ Ø¯Ø®ÙˆÙ„ Ø§Ù„Ù…ÙˆØ¸Ù ÙˆØ¥Ø±Ø¬Ø§Ø¹ JWT Token
+    تسجيل دخول الموظف وإرجاع JWT Token
     POST /api/employee/login/
     Body: {
-        "phone_number": "Ø±Ù‚Ù… Ø§Ù„Ù‡Ø§ØªÙ",
-        "password": "ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±"
+        "phone_number": "رقم الهاتف",
+        "password": "كلمة المرور"
     }
     """
     serializer = EmployeeTokenObtainPairSerializer(data=request.data)
@@ -1407,11 +1407,11 @@ def employee_login_view(request):
 @permission_classes([AllowAny])
 def driver_login_view(request):
     """
-    ØªØ³Ø¬ÙŠÙ„ Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø³Ø§Ø¦Ù‚ ÙˆØ¥Ø±Ø¬Ø§Ø¹ JWT Token
+    تسجيل دخول السائق وإرجاع JWT Token
     POST /api/driver/login/
     Body: {
-        "phone_number": "Ø±Ù‚Ù… Ø§Ù„Ù‡Ø§ØªÙ",
-        "password": "ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±"
+        "phone_number": "رقم الهاتف",
+        "password": "كلمة المرور"
     }
     """
     serializer = DriverTokenObtainPairSerializer(data=request.data)
@@ -1439,7 +1439,7 @@ def driver_login_view(request):
 @permission_classes([AllowAny])
 def customer_register_view(request):
     """
-    ØªØ³Ø¬ÙŠÙ„ Ø¹Ù…ÙŠÙ„ Ø¬Ø¯ÙŠØ¯
+    تسجيل عميل جديد
     POST /api/customer/register/
     Body: { "name": "...", "phone_number": "...",   "password": "..." }
     """
@@ -1473,7 +1473,7 @@ def customer_register_view(request):
 @permission_classes([AllowAny])
 def customer_login_view(request):
     """
-    ØªØ³Ø¬ÙŠÙ„ Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø¹Ù…ÙŠÙ„
+    تسجيل دخول العميل
     POST /api/customer/login/
     Body: { "phone_number": "...", "password": "..." }
     """
@@ -1495,7 +1495,7 @@ def customer_login_view(request):
 
 
 def _get_customer_from_request(request):
-    """Ø§Ù„Ø¹Ù…ÙŠÙ„ Ù…Ù† Ø§Ù„Ø·Ù„Ø¨ (Ù„Ù€ JWT Ø¹Ù…ÙŠÙ„)"""
+    """العميل من الطلب (لـ JWT عميل)"""
     user = request.user
     if isinstance(user, Customer):
         return user
@@ -1514,10 +1514,8 @@ def _normalize_order_items(items):
     return normalized_items
 
 
-def _build_customer_order_request_message(customer, address, items, phone_number=None):
+def _build_customer_order_request_message(customer, address, items):
     lines = ["فاتورة الطلب", f"العميل: {customer.name}"]
-    if phone_number:
-        lines.append(f"رقم الهاتف: {phone_number}")
     if address:
         lines.append(f"العنوان: {address}")
     for item in _normalize_order_items(items):
@@ -1804,15 +1802,15 @@ def customer_select_shop_view(request):
     )
 
 
-# ==================== Customer Orders (Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ø¹Ù…ÙŠÙ„ - Ø§Ù„Ø·Ù„Ø¨ ÙƒØ£ÙˆÙ„ Ø±Ø³Ø§Ù„Ø©) ====================
+# ==================== Customer Orders (طلبات العميل - الطلب كأول رسالة) ====================
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsCustomer])
 def customer_orders_list_create_view(request):
     """
-    Ù‚Ø§Ø¦Ù…Ø© Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ø¹Ù…ÙŠÙ„ ÙˆØ¥Ù†Ø´Ø§Ø¡ Ø·Ù„Ø¨ Ø¬Ø¯ÙŠØ¯ (Ø§Ù„Ø±Ø³Ø§Ù„Ø© Ø§Ù„Ø£ÙˆÙ„Ù‰ = Ø§Ù„ÙØ§ØªÙˆØ±Ø©: Ø§Ø³Ù…ØŒ Ø¹Ù†ÙˆØ§Ù†ØŒ Ø¨Ù†Ø¯ 1ØŒ 2ØŒ 3ØŒ ...)
-    GET /api/customer/orders/ - Ù‚Ø§Ø¦Ù…Ø© Ø·Ù„Ø¨Ø§ØªÙŠ
-    POST /api/customer/orders/ - Ø¥Ù†Ø´Ø§Ø¡ Ø·Ù„Ø¨ (ÙŠÙ…Ù„Ø£ Ø§Ù„Ù†Ù…ÙˆØ°Ø¬ ÙˆÙŠØ¨Ø¹Ø« Ù„Ù„Ù…Ø­Ù„)
+    قائمة طلبات العميل وإنشاء طلب جديد (الرسالة الأولى = الفاتورة: اسم، عنوان، بند 1، 2، 3، ...)
+    GET /api/customer/orders/ - قائمة طلباتي
+    POST /api/customer/orders/ - إنشاء طلب (يملأ النموذج ويبعث للمحل)
     """
     customer = _get_customer_from_request(request)
     if not customer:
@@ -1833,16 +1831,12 @@ def customer_orders_list_create_view(request):
             context={'customer': customer, 'request': request}
         )
         if serializer.is_valid():
-            requested_phone = (serializer.validated_data.get('phone_number') or '').strip()
-            requested_phone = normalize_phone(requested_phone) if requested_phone else ''
-            phone_for_message = requested_phone or (customer.phone_number or '')
             order = serializer.save()
 
             # First chat message in the order thread (request/invoice draft card content).
             try:
                 request_message = _build_customer_order_request_message(
                     customer=customer,
-                    phone_number=phone_for_message,
                     address=order.address,
                     items=serializer.validated_data.get('items', [])
                 )
@@ -1885,7 +1879,7 @@ def customer_orders_list_create_view(request):
 @permission_classes([IsCustomer])
 def customer_order_confirm_view(request, order_id):
     """
-    ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø·Ù„Ø¨ Ø¨Ø¹Ø¯ Ø§Ù„ØªØ³Ø¹ÙŠØ± (Ø§Ù„Ø¹Ù…ÙŠÙ„ ÙŠØ¶ØºØ· Ø²Ø±Ø§Ø± ØªØ£ÙƒÙŠØ¯)
+    تأكيد الطلب بعد التسعير (العميل يضغط زرار تأكيد)
     POST /api/customer/orders/{id}/confirm/
     """
     customer = _get_customer_from_request(request)
@@ -2003,17 +1997,17 @@ def customer_order_reject_view(request, order_id):
 @permission_classes([IsCustomer])
 def customer_profile_view(request):
     """
-    Ø¹Ø±Ø¶ ÙˆØªØ­Ø¯ÙŠØ« Ù…Ù„Ù Ø§Ù„Ø¹Ù…ÙŠÙ„
+    عرض وتحديث ملف العميل
     GET/PUT /api/customer/profile/
     """
-    # Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø£Ù† Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ù‡Ùˆ Ø¹Ù…ÙŠÙ„
+    # التحقق من أن المستخدم هو عميل
     user = request.user
     
-    # Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Customer Ù…Ø¨Ø§Ø´Ø±Ø© Ù…Ù† Ø§Ù„Ù€ authentication
+    # إذا كان المستخدم Customer مباشرة من الـ authentication
     if isinstance(user, Customer):
         customer = user
     else:
-        # Ù…Ø­Ø§ÙˆÙ„Ø© Ø¬Ù„Ø¨ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø¨Ø§Ù„Ù€ ID
+        # محاولة جلب العميل بالـ ID
         try:
             customer = Customer.objects.get(id=user.id)
         except Customer.DoesNotExist:
@@ -2029,7 +2023,7 @@ def customer_profile_view(request):
     elif request.method == 'PUT':
         data = request.data.copy()
         if 'password' in data:
-            data.pop('password')  # ØªØºÙŠÙŠØ± ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ù„Ù‡ endpoint Ù…Ù†ÙØµÙ„
+            data.pop('password')  # تغيير كلمة المرور له endpoint منفصل
         for field in ['name',  'profile_image']:
             if field in data:
                 setattr(customer, field, data[field])
@@ -2044,11 +2038,11 @@ def customer_profile_view(request):
 @permission_classes([IsCustomer])
 def customer_address_list_view(request):
     """
-    Ù‚Ø§Ø¦Ù…Ø© Ø¹Ù†Ø§ÙˆÙŠÙ† Ø§Ù„Ø¹Ù…ÙŠÙ„ ÙˆØ¥Ø¶Ø§ÙØ© Ø¹Ù†ÙˆØ§Ù† Ø¬Ø¯ÙŠØ¯
+    قائمة عناوين العميل وإضافة عنوان جديد
     GET /api/customer/addresses/
     POST /api/customer/addresses/
     """
-    customer_id = request.user.id  # Ø£Ùˆ Ù…Ù† JWT
+    customer_id = request.user.id  # أو من JWT
     try:
         customer = Customer.objects.get(id=customer_id)
     except Customer.DoesNotExist:
@@ -2071,7 +2065,7 @@ def customer_address_list_view(request):
 @permission_classes([IsCustomer])
 def customer_address_detail_view(request, address_id):
     """
-    Ø¹Ø±Ø¶ØŒ ØªØ­Ø¯ÙŠØ«ØŒ Ø­Ø°Ù Ø¹Ù†ÙˆØ§Ù†
+    عرض، تحديث، حذف عنوان
     GET/PUT/DELETE /api/customer/addresses/{id}/
     """
     customer_id = request.user.id
@@ -2102,7 +2096,7 @@ def customer_address_detail_view(request, address_id):
 @permission_classes([IsShopOwner])
 def category_list_view(request):
     """
-    Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ØªØµÙ†ÙŠÙØ§Øª
+    قائمة التصنيفات
     GET /api/shop/categories/
     POST /api/shop/categories/
     """
@@ -2125,7 +2119,7 @@ def category_list_view(request):
 @permission_classes([IsShopOwner])
 def category_detail_view(request, category_id):
     """
-    Ø¹Ø±Ø¶ØŒ ØªØ­Ø¯ÙŠØ«ØŒ Ø­Ø°Ù ØªØµÙ†ÙŠÙ
+    عرض، تحديث، حذف تصنيف
     GET/PUT/DELETE /api/shop/categories/{id}/
     """
     shop_owner = request.user
@@ -2156,7 +2150,7 @@ def category_detail_view(request, category_id):
 @permission_classes([IsCustomer])
 def order_rating_create_view(request):
     """
-    ØªÙ‚ÙŠÙŠÙ… Ø·Ù„Ø¨
+    تقييم طلب
     POST /api/orders/rate/
     Body: { "order_id": 1, "shop_rating": 5, "driver_rating": 4, "food_rating": 5, "comment": "..." }
     """
@@ -2187,7 +2181,7 @@ def order_rating_create_view(request):
         comment=data.get('comment', '')
     )
     
-    # ØªØ­Ø¯ÙŠØ« ØªÙ‚ÙŠÙŠÙ… Ø§Ù„Ø³Ø§Ø¦Ù‚ Ø¥Ù† ÙˆØ¬Ø¯
+    # تحديث تقييم السائق إن وجد
     if order.driver and data.get('driver_rating'):
         driver = order.driver
         avg_rating = OrderRating.objects.filter(
@@ -2205,7 +2199,7 @@ def order_rating_create_view(request):
 @permission_classes([IsShopOwner])
 def order_rating_view(request, order_id):
     """
-    Ø¹Ø±Ø¶ ØªÙ‚ÙŠÙŠÙ… Ø·Ù„Ø¨
+    عرض تقييم طلب
     GET /api/orders/{id}/rating/
     """
     try:
@@ -2223,7 +2217,7 @@ def order_rating_view(request, order_id):
 @permission_classes([IsCustomer])
 def payment_method_list_view(request):
     """
-    Ù‚Ø§Ø¦Ù…Ø© Ø·Ø±Ù‚ Ø§Ù„Ø¯ÙØ¹ ÙˆØ¥Ø¶Ø§ÙØ© Ø·Ø±ÙŠÙ‚Ø© Ø¬Ø¯ÙŠØ¯Ø©
+    قائمة طرق الدفع وإضافة طريقة جديدة
     GET /api/customer/payment-methods/
     POST /api/customer/payment-methods/
     """
@@ -2260,7 +2254,7 @@ def payment_method_list_view(request):
 @permission_classes([IsCustomer])
 def payment_method_delete_view(request, method_id):
     """
-    Ø­Ø°Ù Ø·Ø±ÙŠÙ‚Ø© Ø¯ÙØ¹
+    حذف طريقة دفع
     DELETE /api/customer/payment-methods/{id}/
     """
     customer_id = request.user.id
@@ -2279,11 +2273,11 @@ def payment_method_delete_view(request, method_id):
 @permission_classes([IsAuthenticated])
 def notification_list_view(request):
     """
-    Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª
+    قائمة الإشعارات
     GET /api/notifications/
     """
     user = request.user
-    # ØªØ­Ø¯ÙŠØ¯ Ù†ÙˆØ¹ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…
+    # تحديد نوع المستخدم
     notifications = Notification.objects.none()
     
     if isinstance(user, ShopOwner):
@@ -2295,7 +2289,7 @@ def notification_list_view(request):
     elif isinstance(user, Driver):
         notifications = Notification.objects.filter(driver=user)
     else:
-        # Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ù† customer_id ÙÙŠ JWT
+        # محاولة من customer_id في JWT
         try:
             customer = Customer.objects.get(id=user.id)
             notifications = Notification.objects.filter(customer=customer)
@@ -2314,7 +2308,7 @@ def notification_list_view(request):
 @permission_classes([IsAuthenticated])
 def notification_mark_read_view(request, notification_id):
     """
-    ØªØ­Ø¯ÙŠØ¯ Ø¥Ø´Ø¹Ø§Ø± ÙƒÙ…Ù‚Ø±ÙˆØ¡
+    تحديد إشعار كمقروء
     POST /api/notifications/{id}/read/
     """
     try:
@@ -2330,7 +2324,7 @@ def notification_mark_read_view(request, notification_id):
 @permission_classes([IsAuthenticated])
 def notification_mark_all_read_view(request):
     """
-    ØªØ­Ø¯ÙŠØ¯ Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª ÙƒÙ…Ù‚Ø±ÙˆØ¡Ø©
+    تحديد جميع الإشعارات كمقروءة
     POST /api/notifications/read-all/
     """
     user = request.user
@@ -2347,7 +2341,7 @@ def notification_mark_all_read_view(request):
 @permission_classes([IsCustomer])
 def cart_view(request, shop_id):
     """
-    Ø¹Ø±Ø¶ Ø³Ù„Ø© Ø§Ù„ØªØ³ÙˆÙ‚ Ù„Ù…Ø­Ù„ Ù…Ø¹ÙŠÙ†
+    عرض سلة التسوق لمحل معين
     GET /api/cart/{shop_id}/
     """
     customer_id = request.user.id
@@ -2365,7 +2359,7 @@ def cart_view(request, shop_id):
 @permission_classes([IsCustomer])
 def cart_add_item_view(request, shop_id):
     """
-    Ø¥Ø¶Ø§ÙØ© Ù…Ù†ØªØ¬ Ù„Ù„Ø³Ù„Ø©
+    إضافة منتج للسلة
     POST /api/cart/{shop_id}/add/
     Body: { "product_id": 1, "quantity": 2, "notes": "..." }
     """
@@ -2407,7 +2401,7 @@ def cart_add_item_view(request, shop_id):
 @permission_classes([IsCustomer])
 def cart_item_view(request, shop_id, item_id):
     """
-    ØªØ­Ø¯ÙŠØ« Ø£Ùˆ Ø­Ø°Ù Ø¹Ù†ØµØ± Ù…Ù† Ø§Ù„Ø³Ù„Ø©
+    تحديث أو حذف عنصر من السلة
     PUT /api/cart/{shop_id}/items/{item_id}/
     DELETE /api/cart/{shop_id}/items/{item_id}/
     """
@@ -2444,7 +2438,7 @@ def cart_item_view(request, shop_id, item_id):
 @permission_classes([IsCustomer])
 def cart_clear_view(request, shop_id):
     """
-    ØªÙØ±ÙŠØº Ø§Ù„Ø³Ù„Ø©
+    تفريغ السلة
     DELETE /api/cart/{shop_id}/clear/
     """
     customer_id = request.user.id
@@ -2462,11 +2456,11 @@ def cart_clear_view(request, shop_id):
 @permission_classes([IsDriver])
 def driver_location_update_view(request):
     """
-    ØªØ­Ø¯ÙŠØ« Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø³Ø§Ø¦Ù‚
+    تحديث موقع السائق
     PUT /api/driver/location/
     Body: { "latitude": 24.7136, "longitude": 46.6753 }
     """
-    # Ù†ÙØªØ±Ø¶ Ø£Ù† Ø§Ù„Ø³Ø§Ø¦Ù‚ Ù…Ø³Ø¬Ù„ Ø¯Ø®ÙˆÙ„
+    # نفترض أن السائق مسجل دخول
     driver = request.user
     if not isinstance(driver, Driver):
         try:
@@ -2497,7 +2491,7 @@ def driver_location_update_view(request):
 @permission_classes([IsAuthenticated])
 def order_tracking_view(request, order_id):
     """
-    ØªØªØ¨Ø¹ Ø§Ù„Ø·Ù„Ø¨ (Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø³Ø§Ø¦Ù‚)
+    تتبع الطلب (موقع السائق)
     GET /api/orders/{id}/track/
     """
     try:

@@ -473,7 +473,7 @@
                         <button type="button" class="choice-btn" onclick="customerChatChoose(3)" style="flex:1;">③ شكوى</button>
                     </div>
                     <div id="customerOrderForm" style="display:none;">
-                        <p class="info-box">العميل يملأ: الاسم + رقم الهاتف + العنوان + البنود فقط. بيانات المحل/الدليفري غير ظاهرة في هذه الخطوة.</p>
+                        <p class="info-box">العميل يملأ: الاسم + رقم الهاتف + العنوان + البنود، ثم يختار المحل قبل الإرسال. بيانات الدليفري غير ظاهرة في هذه الخطوة.</p>
                         <div class="form-group">
                             <label>الاسم (تلقائي من المسجل):</label>
                             <input type="text" id="customerOrderName" readonly placeholder="سيُملأ من البروفايل">
@@ -498,7 +498,7 @@
                             <label>Notes:</label>
                             <input type="text" id="customerOrderNotes" placeholder="Optional">
                         </div>
-                        <div id="customerShopInternal" style="display:none;">
+                        <div id="customerShopInternal" style="display:block;">
                             <div class="form-group">
                                 <label>Select Shop:</label>
                                 <select id="customerOrderShopSelect">
@@ -721,6 +721,7 @@
             document.getElementById('customerInquiryComplaintNote').style.display = (choice === 2 || choice === 3) ? 'block' : 'none';
             if (choice === 1) {
                 setupBandEnterHandlers();
+                loadCustomerShops();
             }
         }
 
@@ -753,6 +754,25 @@
             return (base || '').replace(/\/$/, '');
         }
 
+        function _normalizeBearerToken(rawToken) {
+            const token = String(rawToken || '').trim();
+            if (!token) return '';
+
+            const noBearer = token.replace(/^Bearer\s+/i, '').trim();
+            const jwtLike = noBearer.match(/[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+/);
+            if (jwtLike && jwtLike[0]) return jwtLike[0];
+
+            return noBearer.split(/\s+/)[0];
+        }
+
+        function _validateHeaderToken(token) {
+            if (!token) return 'أدخل JWT Token (عميل)';
+            if (/[^\u0000-\u00FF]/.test(token)) {
+                return 'JWT Token يحتوي على حروف غير صالحة. الصق التوكن فقط بدون أي نص عربي.';
+            }
+            return '';
+        }
+
         function loadCustomerShops() {
             const base = _customerOrderApiBase();
             const selectEl = document.getElementById('customerOrderShopSelect');
@@ -782,11 +802,14 @@
 
         function selectCustomerShop() {
             const base = _customerOrderApiBase();
-            const token = (document.getElementById('customerOrderToken') || {}).value;
+            const tokenInputEl = document.getElementById('customerOrderToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
             const shopOwnerId = (document.getElementById('customerOrderShopSelect') || {}).value;
             const shopNumber = ((document.getElementById('customerOrderShopNumber') || {}).value || '').trim();
 
-            if (!token) { alert('Enter JWT Token (customer)'); return; }
+            if (tokenErr) { alert(tokenErr); return; }
+            if (tokenInputEl) tokenInputEl.value = token;
             if (!shopOwnerId && !shopNumber) { alert('Select shop or enter shop number'); return; }
 
             const resultEl = document.getElementById('customerShopResult');
@@ -823,18 +846,19 @@
 
         function submitCustomerOrder() {
             const base = _customerOrderApiBase();
-            const token = (document.getElementById('customerOrderToken') || {}).value;
-            const phone = (document.getElementById('customerOrderPhone') || {}).value.trim();
+            const tokenInputEl = document.getElementById('customerOrderToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
             const address = (document.getElementById('customerOrderAddress') || {}).value.trim();
             const notes = (document.getElementById('customerOrderNotes') || {}).value.trim();
             const container = document.getElementById('customerOrderBands');
             const inputs = container ? container.querySelectorAll('input[data-band]') : [];
             const items = [];
             inputs.forEach(inp => { const v = inp.value.trim(); if (v) items.push(v); });
-            if (!phone) { alert('رقم الهاتف مطلوب'); return; }
             if (!address) { alert('العنوان مطلوب'); return; }
             if (items.length === 0) { alert('أضف بنداً واحداً على الأقل (تفاصيل الأوردر)'); return; }
-            if (!token) { alert('أدخل JWT Token (عميل)'); return; }
+            if (tokenErr) { alert(tokenErr); return; }
+            if (tokenInputEl) tokenInputEl.value = token;
             const resultEl = document.getElementById('customerOrderResult');
             resultEl.style.display = 'block';
             resultEl.className = 'status connecting';
@@ -842,7 +866,7 @@
             fetch(base + '/customer/orders/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ phone_number: phone, address, items, notes })
+                body: JSON.stringify({ address, items, notes })
             })
             .then(r => r.json())
             .then(data => {
@@ -850,6 +874,27 @@
                     resultEl.className = 'status connected';
                     resultEl.innerHTML = 'تم إرسال الطلب بنجاح. رقم الطلب: <strong>' + (data.data.order_number || data.data.id) + '</strong>. افتح تبويب "شات الطلب" وادخل معرف الطلب: <strong>' + data.data.id + '</strong> للدردشة مع المحل.';
                 } else {
+                    const directShopError = data && data.shop;
+                    const nestedShopError = data && data.errors && data.errors.shop;
+                    const shopError = Array.isArray(nestedShopError)
+                        ? nestedShopError[0]
+                        : (nestedShopError || directShopError);
+
+                    if (shopError) {
+                        const shopInternalEl = document.getElementById('customerShopInternal');
+                        const shopResultEl = document.getElementById('customerShopResult');
+                        if (shopInternalEl) shopInternalEl.style.display = 'block';
+                        loadCustomerShops();
+                        if (shopResultEl) {
+                            shopResultEl.style.display = 'block';
+                            shopResultEl.className = 'status disconnected';
+                            shopResultEl.textContent = String(shopError);
+                        }
+                        resultEl.className = 'status disconnected';
+                        resultEl.textContent = 'لازم تختار المحل الأول، ثم اضغط Choose Shop وبعدها أعد إرسال الطلب.';
+                        return;
+                    }
+
                     resultEl.className = 'status disconnected';
                     resultEl.textContent = (data.message || 'خطأ') + (data.errors ? ' ' + JSON.stringify(data.errors) : '');
                 }
@@ -1156,14 +1201,24 @@
                     throw new Error('لم يتم إدخال أي بنود مسعّرة');
                 }
 
+                const deliveryInput = prompt('اكتب تكلفة التوصيل:', '30');
+                if (deliveryInput === null) {
+                    throw new Error('تم إلغاء إنشاء الفاتورة');
+                }
+                const deliveryFee = Number(deliveryInput);
+                if (!Number.isFinite(deliveryFee) || deliveryFee < 0) {
+                    throw new Error('تكلفة التوصيل غير صالحة');
+                }
+                const finalTotal = total + deliveryFee;
+
                 return fetch(base + '/shop/orders/' + orderId + '/', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                     body: JSON.stringify({
                         status: 'pending_customer_confirm',
                         items: pricedItems,
-                        total_amount: Number(total.toFixed(2)),
-                        delivery_fee: 0
+                        total_amount: Number(finalTotal.toFixed(2)),
+                        delivery_fee: Number(deliveryFee.toFixed(2))
                     })
                 }).then(r => r.json().then(j => ({ ok: r.ok, json: j })));
             })

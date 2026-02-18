@@ -15,7 +15,7 @@ urlpatterns = [
     path('shop/shop-categories/', views.shop_category_list_view, name='shop_category_list'),
     path('shop/shop-categories/<int:category_id>/', views.shop_category_detail_view, name='shop_category_detail'),
     
-    # Customers (Ù„Ù„Ù…Ø­Ù„)
+    # Customers (للمحل)
     path('shop/customers/', views.customer_list_view, name='customer_list'),
     path('shop/customers/<int:customer_id>/', views.customer_detail_view, name='customer_detail'),
     
@@ -25,15 +25,15 @@ urlpatterns = [
     path('shop/staff/<str:staff_type>/<int:staff_id>/delete/', views.staff_delete_view, name='staff_delete'),
     path('shop/staff/<str:staff_type>/<int:staff_id>/block/', views.staff_block_view, name='staff_block'),
     
-    # Categories (ØªØµÙ†ÙŠÙØ§Øª Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª)
+    # Categories (تصنيفات المنتجات)
     path('shop/categories/', views.category_list_view, name='category_list'),
     path('shop/categories/<int:category_id>/', views.category_detail_view, name='category_detail'),
     
-    # Products (Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª)
+    # Products (قائمة المنتجات)
     path('shop/products/', views.product_list_view, name='product_list'),
     path('shop/products/<int:product_id>/', views.product_detail_view, name='product_detail'),
     
-    # Orders (Ù„Ù„Ù…Ø­Ù„)
+    # Orders (للمحل)
     path('shop/orders/', views.order_list_view, name='order_list'),
     path('shop/orders/<int:order_id>/', views.order_detail_view, name='order_detail'),
     path('shop/orders/<int:order_id>/rating/', views.order_rating_view, name='order_rating'),
@@ -57,7 +57,7 @@ urlpatterns = [
     path('customer/profile/', views.customer_profile_view, name='customer_profile'),
     path('customer/select-shop/', views.customer_select_shop_view, name='customer_select_shop'),
     
-    # ==================== Customer Orders (Ø·Ù„Ø¨ Ø£ÙˆØ±Ø¯Ø± - Ø§Ù„Ø¨Ù†Ø¯ 1ØŒ 2ØŒ 3ØŒ ...) ====================
+    # ==================== Customer Orders (طلب أوردر - البند 1، 2، 3، ...) ====================
     path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
     path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
     path('customer/orders/<int:order_id>/reject/', views.customer_order_reject_view, name='customer_order_reject'),
@@ -88,6 +88,6 @@ urlpatterns = [
     path('driver/location/', views.driver_location_update_view, name='driver_location_update'),
     
     # ==================== Chat ====================
-    # Ø§Ù„Ø´Ø§Øª ÙŠØªÙ… Ø¹Ø¨Ø± WebSocket ÙÙ‚Ø·:
+    # الشات يتم عبر WebSocket فقط:
     # ws://server/ws/chat/order/{order_id}/?token=JWT&chat_type=shop_customer
 ]
