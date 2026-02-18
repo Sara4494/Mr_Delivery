@@ -413,6 +413,11 @@
                         <input type="text" id="chatToken" placeholder="JWT Token">
                     </div>
 
+                    <div class="form-group">
+                        <label>API Base:</label>
+                        <input type="text" id="chatOrderApiBase" value="http://86.48.3.103/api" placeholder="http://86.48.3.103/api">
+                    </div>
+
                     <button onclick="connectChat()" id="chatConnectBtn">🔌 اتصال</button>
                     <button onclick="disconnectChat()" id="chatDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
 
@@ -434,6 +439,8 @@
                         <div class="quick-actions">
                             <button onclick="sendLocation()" class="location-btn" id="locationBtn" disabled>📍 إرسال موقع</button>
                             <button onclick="markChatRead()" class="btn-secondary" id="markReadBtn" disabled>✓ مقروء</button>
+                            <button onclick="shopCancelCurrentOrder()" id="shopCancelBtn" class="btn-danger" disabled>❌ إلغاء استلام الأوردر</button>
+                            <button onclick="shopSendInvoiceToCustomer()" id="shopInvoiceBtn" class="btn-success" disabled>🧾 إنشاء فاتورة</button>
                         </div>
 
                         <div class="form-group">
@@ -466,10 +473,14 @@
                         <button type="button" class="choice-btn" onclick="customerChatChoose(3)" style="flex:1;">③ شكوى</button>
                     </div>
                     <div id="customerOrderForm" style="display:none;">
-                        <p class="info-box">العميل يملأ النموذج ويبعثه للمحل. الاسم يُضاف تلقائياً من المسجل.</p>
+                        <p class="info-box">العميل يملأ: الاسم + رقم الهاتف + العنوان + البنود فقط. بيانات المحل/الدليفري غير ظاهرة في هذه الخطوة.</p>
                         <div class="form-group">
                             <label>الاسم (تلقائي من المسجل):</label>
                             <input type="text" id="customerOrderName" readonly placeholder="سيُملأ من البروفايل">
+                        </div>
+                        <div class="form-group">
+                            <label>رقم الهاتف:</label>
+                            <input type="text" id="customerOrderPhone" placeholder="مثال: 01012345678">
                         </div>
                         <div class="form-group">
                             <label>العنوان (يدوي):</label>
@@ -487,18 +498,20 @@
                             <label>Notes:</label>
                             <input type="text" id="customerOrderNotes" placeholder="Optional">
                         </div>
-                        <div class="form-group">
-                            <label>Select Shop:</label>
-                            <select id="customerOrderShopSelect">
-                                <option value="">(Load shops)</option>
-                            </select>
+                        <div id="customerShopInternal" style="display:none;">
+                            <div class="form-group">
+                                <label>Select Shop:</label>
+                                <select id="customerOrderShopSelect">
+                                    <option value="">(Load shops)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Or Shop Number (shop_number):</label>
+                                <input type="text" id="customerOrderShopNumber" placeholder="e.g. 12345">
+                            </div>
+                            <button type="button" class="btn-info" onclick="selectCustomerShop()">Choose Shop</button>
+                            <div id="customerShopResult" class="status" style="margin-top:12px; display:none;"></div>
                         </div>
-                        <div class="form-group">
-                            <label>Or Shop Number (shop_number):</label>
-                            <input type="text" id="customerOrderShopNumber" placeholder="e.g. 12345">
-                        </div>
-                        <button type="button" class="btn-info" onclick="selectCustomerShop()">Choose Shop</button>
-                        <div id="customerShopResult" class="status" style="margin-top:12px; display:none;"></div>
                         <div class="form-group">
                             <label>API Base:</label>
                             <input type="text" id="customerOrderApiBase" value="http://86.48.3.103/api" placeholder="http://86.48.3.103/api">
@@ -592,8 +605,21 @@
                         <input type="text" id="customerToken" placeholder="JWT Token">
                     </div>
 
+                    <div class="form-group">
+                        <label>API Base:</label>
+                        <input type="text" id="customerApiBase" value="http://86.48.3.103/api" placeholder="http://86.48.3.103/api">
+                    </div>
+
                     <button onclick="connectCustomer()" id="customerConnectBtn">🔌 اتصال</button>
                     <button onclick="disconnectCustomer()" id="customerDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
+                    <hr style="margin: 15px 0; border: 1px solid #e0e0e0;">
+                    <h3 style="margin-bottom: 10px; font-size: 14px;">🧾 الفاتورة</h3>
+                    <div class="form-group">
+                        <label>معرف الطلب (للتأكيد/الرفض):</label>
+                        <input type="number" id="customerInvoiceOrderId" value="1" placeholder="Order ID">
+                    </div>
+                    <button onclick="customerConfirmInvoice()" class="btn-success">✅ قبول الاستلام</button>
+                    <button onclick="customerRejectInvoice()" class="btn-danger">❌ رفض الاستلام</button>
                 </div>
 
                 <div class="panel">
@@ -677,6 +703,7 @@
         let shopWs = null;
         let customerWs = null;
         let driverWs = null;
+        let currentChatUserType = null;
 
         // ==================== Tab Switching ====================
         function showTab(tabName) {
@@ -694,7 +721,6 @@
             document.getElementById('customerInquiryComplaintNote').style.display = (choice === 2 || choice === 3) ? 'block' : 'none';
             if (choice === 1) {
                 setupBandEnterHandlers();
-                loadCustomerShops();
             }
         }
 
@@ -798,12 +824,14 @@
         function submitCustomerOrder() {
             const base = _customerOrderApiBase();
             const token = (document.getElementById('customerOrderToken') || {}).value;
+            const phone = (document.getElementById('customerOrderPhone') || {}).value.trim();
             const address = (document.getElementById('customerOrderAddress') || {}).value.trim();
             const notes = (document.getElementById('customerOrderNotes') || {}).value.trim();
             const container = document.getElementById('customerOrderBands');
             const inputs = container ? container.querySelectorAll('input[data-band]') : [];
             const items = [];
             inputs.forEach(inp => { const v = inp.value.trim(); if (v) items.push(v); });
+            if (!phone) { alert('رقم الهاتف مطلوب'); return; }
             if (!address) { alert('العنوان مطلوب'); return; }
             if (items.length === 0) { alert('أضف بنداً واحداً على الأقل (تفاصيل الأوردر)'); return; }
             if (!token) { alert('أدخل JWT Token (عميل)'); return; }
@@ -814,7 +842,7 @@
             fetch(base + '/customer/orders/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ address, items, notes })
+                body: JSON.stringify({ phone_number: phone, address, items, notes })
             })
             .then(r => r.json())
             .then(data => {
@@ -874,6 +902,7 @@
             const orderId = document.getElementById('chatOrderId').value;
             const token = document.getElementById('chatToken').value;
             const chatType = document.getElementById('chatType').value;
+            currentChatUserType = document.getElementById('chatUserType').value;
 
             if (!orderId || !token) {
                 alert('أدخل معرف الطلب و Token');
@@ -896,6 +925,9 @@
                     document.getElementById('chatSendBtn').disabled = false;
                     document.getElementById('locationBtn').disabled = false;
                     document.getElementById('markReadBtn').disabled = false;
+                    const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+                    document.getElementById('shopCancelBtn').disabled = !canManageOrder;
+                    document.getElementById('shopInvoiceBtn').disabled = !canManageOrder;
                     addMessage('chatMessages', 'system', 'النظام', 'تم الاتصال بنجاح!');
                 };
 
@@ -916,6 +948,8 @@
                     document.getElementById('chatSendBtn').disabled = true;
                     document.getElementById('locationBtn').disabled = true;
                     document.getElementById('markReadBtn').disabled = true;
+                    document.getElementById('shopCancelBtn').disabled = true;
+                    document.getElementById('shopInvoiceBtn').disabled = true;
                     
                     let reason = '';
                     if (event.code === 4401) reason = 'غير مصرح';
@@ -928,6 +962,8 @@
             } catch (e) {
                 updateStatus('chatStatus', 'disconnected', '❌ فشل');
                 document.getElementById('chatConnectBtn').disabled = false;
+                document.getElementById('shopCancelBtn').disabled = true;
+                document.getElementById('shopInvoiceBtn').disabled = true;
                 addMessage('chatMessages', 'error', 'خطأ', e.message);
             }
         }
@@ -1042,6 +1078,107 @@
             }
         }
 
+        function _chatOrderApiBase() {
+            const base = (document.getElementById('chatOrderApiBase') || {}).value || '/api';
+            return (base || '').replace(/\/$/, '');
+        }
+
+        function shopCancelCurrentOrder() {
+            const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+            if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
+
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = (document.getElementById('chatToken') || {}).value;
+            const base = _chatOrderApiBase();
+
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            fetch(base + '/shop/orders/' + orderId + '/', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ status: 'cancelled' })
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('chatMessages', 'system', 'النظام', 'تم إلغاء الاستلام. سيتم إرسال رسالة الاعتذار للعميل.');
+                } else {
+                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل الإلغاء');
+                }
+            })
+            .catch(err => addMessage('chatMessages', 'error', 'خطأ', 'Error: ' + err.message));
+        }
+
+        function shopSendInvoiceToCustomer() {
+            const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+            if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
+
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = (document.getElementById('chatToken') || {}).value;
+            const base = _chatOrderApiBase();
+
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            fetch(base + '/shop/orders/' + orderId + '/', {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok || !json || !json.data) {
+                    throw new Error((json && (json.message || json.detail)) || 'تعذر جلب الطلب');
+                }
+
+                const orderData = json.data;
+                const originalItems = Array.isArray(orderData.items) ? orderData.items : [];
+                if (originalItems.length === 0) {
+                    throw new Error('لا توجد بنود لتسعيرها في الطلب');
+                }
+
+                let total = 0;
+                const pricedItems = [];
+                for (let i = 0; i < originalItems.length; i++) {
+                    const item = String(originalItems[i] || '').trim();
+                    if (!item) continue;
+                    const entered = prompt('اكتب سعر: ' + item, '0');
+                    if (entered === null) {
+                        throw new Error('تم إلغاء إنشاء الفاتورة');
+                    }
+                    const price = Number(entered);
+                    if (!Number.isFinite(price) || price < 0) {
+                        throw new Error('سعر غير صالح للبند: ' + item);
+                    }
+                    total += price;
+                    pricedItems.push(item + ' - السعر: ' + price);
+                }
+
+                if (pricedItems.length === 0) {
+                    throw new Error('لم يتم إدخال أي بنود مسعّرة');
+                }
+
+                return fetch(base + '/shop/orders/' + orderId + '/', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({
+                        status: 'pending_customer_confirm',
+                        items: pricedItems,
+                        total_amount: Number(total.toFixed(2)),
+                        delivery_fee: 0
+                    })
+                }).then(r => r.json().then(j => ({ ok: r.ok, json: j })));
+            })
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('chatMessages', 'system', 'النظام', 'تم إرسال الفاتورة للعميل. العميل يقدر يقبل أو يرفض.');
+                } else {
+                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل إنشاء الفاتورة');
+                }
+            })
+            .catch(err => {
+                addMessage('chatMessages', 'error', 'خطأ', err.message || 'فشل إنشاء الفاتورة');
+            });
+        }
+
         // ==================== Shop WebSocket ====================
         function connectShop() {
             const server = document.getElementById('shopServer').value;
@@ -1103,6 +1240,53 @@
 
         function disconnectShop() {
             if (shopWs) { shopWs.close(); shopWs = null; }
+        }
+
+        function _customerApiBase() {
+            const base = (document.getElementById('customerApiBase') || {}).value || '/api';
+            return (base || '').replace(/\/$/, '');
+        }
+
+        function customerConfirmInvoice() {
+            const orderId = (document.getElementById('customerInvoiceOrderId') || {}).value;
+            const token = (document.getElementById('customerToken') || {}).value;
+            const base = _customerApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            fetch(base + '/customer/orders/' + orderId + '/confirm/', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('customerMessages', 'system', 'النظام', 'تم قبول الفاتورة والاستلام.');
+                } else {
+                    addMessage('customerMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل تأكيد الفاتورة');
+                }
+            })
+            .catch(err => addMessage('customerMessages', 'error', 'خطأ', 'Error: ' + err.message));
+        }
+
+        function customerRejectInvoice() {
+            const orderId = (document.getElementById('customerInvoiceOrderId') || {}).value;
+            const token = (document.getElementById('customerToken') || {}).value;
+            const base = _customerApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            fetch(base + '/customer/orders/' + orderId + '/reject/', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('customerMessages', 'system', 'النظام', 'تم رفض الفاتورة.');
+                } else {
+                    addMessage('customerMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل رفض الفاتورة');
+                }
+            })
+            .catch(err => addMessage('customerMessages', 'error', 'خطأ', 'Error: ' + err.message));
         }
 
         // ==================== Customer WebSocket ====================

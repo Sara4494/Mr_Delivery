@@ -3,6 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
+import json
 from django.db.models import Q, Count, Sum, F, Avg
 from django.utils import timezone
 from datetime import timedelta
@@ -1050,7 +1051,6 @@ def order_detail_view(request, order_id):
     elif request.method == 'PUT':
         # ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø·Ù„Ø¨
         old_driver = order.driver
-        old_status = order.status
         
         # Ù‚Ø¨ÙˆÙ„ Ø§Ù„Ø·Ù„Ø¨: ÙŠØ¬Ø¨ ØªØ¹Ø¨Ø¦Ø© Ø³Ø¹Ø± Ø§Ù„Ø·Ù„Ø¨ (Ø³Ø¹Ø± Ø§Ù„ØªÙˆØµÙŠÙ„ Ø§Ø®ØªÙŠØ§Ø±ÙŠ)
         new_status = request.data.get('status', order.status)
@@ -1107,17 +1107,17 @@ def order_detail_view(request, order_id):
         # ØªØ­Ø¯ÙŠØ« Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ø­Ù‚ÙˆÙ„
         for field in ['status', 'items', 'total_amount', 'delivery_fee', 'address', 'notes']:
             if field in request.data:
-                setattr(order, field, request.data[field])
+                field_value = request.data[field]
+                if field == 'items' and isinstance(field_value, list):
+                    field_value = json.dumps(field_value, ensure_ascii=False)
+                setattr(order, field, field_value)
         
         order.save()
         
         # Ø±Ø³Ø§Ø¦Ù„ ØªÙ„Ù‚Ø§Ø¦ÙŠØ© Ø¹Ù†Ø¯ Ø§Ù„Ø±ÙØ¶/Ø§Ù„Ø¥Ù„ØºØ§Ø¡/Ø§Ù„Ù‚Ø¨ÙˆÙ„ (Ø­Ø³Ø¨ Ø§Ù„ØµÙˆØ± ÙˆØ§Ù„Ù€ PDF)
         try:
             if new_status == 'cancelled':
-                if old_status == 'new':
-                    msg_content = t(request, 'store_reject_message')
-                else:
-                    msg_content = t(request, 'order_cancelled_successfully')
+                msg_content = 'نأسف لعدم استقبال اوردراتكم في الوقت الحالي يرجى المحاوله في وقت لاحق'
                 sender_type = 'employee' if getattr(request.user, 'user_type', None) == 'employee' else 'shop_owner'
                 sys_msg = ChatMessage.objects.create(
                     order=order,
@@ -1505,6 +1505,42 @@ def _get_customer_from_request(request):
         return None
 
 
+def _normalize_order_items(items):
+    normalized_items = []
+    for item in items or []:
+        item_text = str(item).strip()
+        if item_text:
+            normalized_items.append(item_text)
+    return normalized_items
+
+
+def _build_customer_order_request_message(customer, address, items, phone_number=None):
+    lines = ["فاتورة الطلب", f"العميل: {customer.name}"]
+    if phone_number:
+        lines.append(f"رقم الهاتف: {phone_number}")
+    if address:
+        lines.append(f"العنوان: {address}")
+    for item in _normalize_order_items(items):
+        lines.append(f"- {item}")
+    return "\n".join(lines)
+
+
+def _chat_message_payload(message):
+    return {
+        'id': message.id,
+        'sender_type': message.sender_type,
+        'sender_name': message.sender_name,
+        'message_type': message.message_type,
+        'content': message.content,
+        'is_read': message.is_read,
+        'created_at': message.created_at.isoformat(),
+        'audio_file_url': message.audio_file.url if message.audio_file else None,
+        'image_file_url': message.image_file.url if message.image_file else None,
+        'latitude': str(message.latitude) if message.latitude is not None else None,
+        'longitude': str(message.longitude) if message.longitude is not None else None,
+    }
+
+
 # ==================== Shop Categories (master data for shop type) ====================
 
 @api_view(['GET', 'POST'])
@@ -1797,7 +1833,37 @@ def customer_orders_list_create_view(request):
             context={'customer': customer, 'request': request}
         )
         if serializer.is_valid():
+            requested_phone = (serializer.validated_data.get('phone_number') or '').strip()
+            requested_phone = normalize_phone(requested_phone) if requested_phone else ''
+            phone_for_message = requested_phone or (customer.phone_number or '')
             order = serializer.save()
+
+            # First chat message in the order thread (request/invoice draft card content).
+            try:
+                request_message = _build_customer_order_request_message(
+                    customer=customer,
+                    phone_number=phone_for_message,
+                    address=order.address,
+                    items=serializer.validated_data.get('items', [])
+                )
+                first_msg = ChatMessage.objects.create(
+                    order=order,
+                    chat_type='shop_customer',
+                    sender_type='customer',
+                    sender_customer=customer,
+                    message_type='text',
+                    content=request_message,
+                )
+                order.unread_messages_count = order.messages.filter(
+                    chat_type='shop_customer',
+                    is_read=False,
+                    sender_type='customer'
+                ).count()
+                order.save(update_fields=['unread_messages_count'])
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(first_msg))
+            except Exception as e:
+                print(f"initial chat message broadcast error: {e}")
+
             response_serializer = OrderSerializer(order, context={'request': request})
             try:
                 notify_new_order(order.shop_owner_id, response_serializer.data)
@@ -1842,6 +1908,19 @@ def customer_order_confirm_view(request, order_id):
     
     order.status = 'confirmed'
     order.save()
+
+    try:
+        accepted_msg = ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='customer',
+            sender_customer=customer,
+            message_type='text',
+            content='تمت الموافقة على الفاتورة من العميل',
+        )
+        broadcast_chat_message_to_order(order.id, _chat_message_payload(accepted_msg))
+    except Exception as e:
+        print(f"confirm order chat message error: {e}")
     
     response_serializer = OrderSerializer(order, context={'request': request})
     try:
@@ -1857,6 +1936,65 @@ def customer_order_confirm_view(request, order_id):
     return success_response(
         data=response_serializer.data,
         message=t(request, 'order_confirmed_successfully'),
+        status_code=status.HTTP_200_OK
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsCustomer])
+def customer_order_reject_view(request, order_id):
+    """
+    Customer rejects priced invoice/order.
+    POST /api/customer/orders/{id}/reject/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    try:
+        order = Order.objects.get(id=order_id, customer=customer)
+    except Order.DoesNotExist:
+        return error_response(
+            message=t(request, 'order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    if order.status != 'pending_customer_confirm':
+        return error_response(
+            message=t(request, 'order_not_pending_confirm'),
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    order.status = 'cancelled'
+    order.save()
+
+    try:
+        rejected_msg = ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='customer',
+            sender_customer=customer,
+            message_type='text',
+            content='تم رفض الفاتورة من العميل',
+        )
+        broadcast_chat_message_to_order(order.id, _chat_message_payload(rejected_msg))
+    except Exception as e:
+        print(f"reject order chat message error: {e}")
+
+    response_serializer = OrderSerializer(order, context={'request': request})
+    try:
+        notify_order_update(
+            shop_owner_id=order.shop_owner_id,
+            customer_id=order.customer_id,
+            driver_id=order.driver_id,
+            order_data=response_serializer.data
+        )
+    except Exception as e:
+        print(f"WebSocket notification error: {e}")
+
+    return success_response(
+        data=response_serializer.data,
+        message='تم رفض الفاتورة والطلب',
         status_code=status.HTTP_200_OK
     )
 

@@ -60,6 +60,7 @@ urlpatterns = [
     # ==================== Customer Orders (Ø·Ù„Ø¨ Ø£ÙˆØ±Ø¯Ø± - Ø§Ù„Ø¨Ù†Ø¯ 1ØŒ 2ØŒ 3ØŒ ...) ====================
     path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
     path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
+    path('customer/orders/<int:order_id>/reject/', views.customer_order_reject_view, name='customer_order_reject'),
     
     # ==================== Customer Addresses ====================
     path('customer/addresses/', views.customer_address_list_view, name='customer_address_list'),

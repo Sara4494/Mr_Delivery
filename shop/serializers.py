@@ -358,6 +358,7 @@ class CustomerOrderCreateSerializer(serializers.Serializer):
     address = serializers.CharField(required=True)
     items = serializers.ListField(child=serializers.CharField(), min_length=1)
     notes = serializers.CharField(required=False, allow_blank=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True)
     
     def create(self, validated_data):
         import random
