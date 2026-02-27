@@ -134,11 +134,17 @@ def work_schedule_view(request):
     GET /api/shop/schedule/ - عرض مواعيد العمل
     PUT /api/shop/schedule/ - تحديث مواعيد العمل
     """
-    shop_owner = request.user
+    user = request.user
+    shop_owner = _resolve_shop_owner(user)
+    if not shop_owner:
+        return _forbidden(request, 'permission_only_shop_owner')
     
     schedule, created = WorkSchedule.objects.get_or_create(shop_owner=shop_owner)
     
     if request.method == 'GET':
+        if not (_is_shop_owner(user) or _is_cashier(user)):
+            return _forbidden(request, 'permission_only_shop_owner_or_cashier')
+
         serializer = WorkScheduleSerializer(schedule)
         return success_response(
             data=serializer.data,
@@ -147,6 +153,9 @@ def work_schedule_view(request):
         )
     
     elif request.method == 'PUT':
+        if not _is_shop_owner(user):
+            return _forbidden(request, 'permission_only_shop_owner_edit_content')
+
         serializer = WorkScheduleSerializer(schedule, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
