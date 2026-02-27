@@ -53,7 +53,7 @@ class Migration(migrations.Migration):
                 ('work_hours', models.CharField(default='9:00 صباحاً - 5:00 مساءً', max_length=50, verbose_name='ساعات العمل')),
                 ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='تاريخ الإنشاء')),
                 ('updated_at', models.DateTimeField(auto_now=True, verbose_name='تاريخ التحديث')),
-                ('shop_owner', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='work_schedule', to='user.shopowner', verbose_name='صاحب المحل')),
+                ('shop_owner', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='legacy_work_schedule', to='user.shopowner', verbose_name='صاحب المحل')),
             ],
             options={
                 'verbose_name': 'مواعيد العمل',
