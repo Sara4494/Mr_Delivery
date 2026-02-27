@@ -12,6 +12,7 @@ from .models import (
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
     Notification, Cart, CartItem
 )
+from gallery.models import WorkSchedule
 from .serializers import (
     ShopCategorySerializer,
     ShopStatusSerializer,
@@ -127,6 +128,35 @@ class CustomerPagination(PageNumberPagination):
 def _is_true_query_value(value):
     """تحويل قيمة query param إلى bool."""
     return str(value).lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _is_shop_owner_user(user):
+    user_type = getattr(user, 'user_type', None)
+    return user_type == 'shop_owner' or isinstance(user, ShopOwner)
+
+
+def _is_employee_user(user):
+    user_type = getattr(user, 'user_type', None)
+    return user_type == 'employee' or isinstance(user, Employee)
+
+
+def _is_cashier_user(user):
+    return _is_employee_user(user) and getattr(user, 'role', None) == 'cashier'
+
+
+def _resolve_owner_for_owner_or_cashier(user):
+    if _is_shop_owner_user(user):
+        return user
+    if _is_cashier_user(user):
+        return getattr(user, 'shop_owner', None)
+    return None
+
+
+def _owner_or_cashier_forbidden(request):
+    return error_response(
+        message=t(request, 'permission_only_shop_owner_or_cashier'),
+        status_code=status.HTTP_403_FORBIDDEN
+    )
 
 
 STAFF_TYPE_EMPLOYEE = 'employee'
@@ -284,6 +314,42 @@ def _build_work_schedule_response(schedule):
             'start_time': today_data.get('start_time'),
             'end_time': today_data.get('end_time'),
         },
+    }
+
+
+def _build_legacy_work_schedule_fields(schedule):
+    """
+    Build text fields for legacy gallery.WorkSchedule admin rows.
+    """
+    normalized_schedule = _normalize_work_schedule(schedule)
+    working_days = [
+        WORK_SCHEDULE_DAY_LABELS.get(day_key, day_key)
+        for day_key in WORK_SCHEDULE_DAYS
+        if normalized_schedule[day_key].get('is_working')
+    ]
+
+    if working_days:
+        work_days = '، '.join(working_days)
+    else:
+        work_days = 'إجازة طوال الأسبوع'
+
+    working_ranges = {
+        (day_data.get('start_time'), day_data.get('end_time'))
+        for day_data in normalized_schedule.values()
+        if day_data.get('is_working') and day_data.get('start_time') and day_data.get('end_time')
+    }
+
+    if not working_ranges:
+        work_hours = 'إجازة'
+    elif len(working_ranges) == 1:
+        start_time, end_time = next(iter(working_ranges))
+        work_hours = f'{start_time} - {end_time}'
+    else:
+        work_hours = 'مواعيد مختلفة حسب اليوم'
+
+    return {
+        'work_days': work_days,
+        'work_hours': work_hours,
     }
 
 
@@ -868,15 +934,17 @@ def driver_invitation_respond_view(request):
 
 # Shop Status APIs
 @api_view(['GET', 'PUT'])
-@permission_classes([IsShopOwner])
+@permission_classes([IsShopOwnerOrEmployee])
 def shop_status_view(request):
     """
     عرض وتحديث حالة المتجر
     GET /api/shop/status/ - عرض حالة المتجر
     PUT /api/shop/status/ - تحديث حالة المتجر
     """
-    shop_owner = request.user
-    
+    shop_owner = _resolve_owner_for_owner_or_cashier(request.user)
+    if not shop_owner:
+        return _owner_or_cashier_forbidden(request)
+
     status_obj, created = ShopStatus.objects.get_or_create(shop_owner=shop_owner)
     
     if request.method == 'GET':
@@ -904,15 +972,24 @@ def shop_status_view(request):
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsShopOwner])
+@permission_classes([IsShopOwnerOrEmployee])
 def shop_work_schedule_view(request):
     """
     عرض وتحديث مواعيد العمل الأسبوعية
     GET /api/shop/work-schedule/ - عرض المواعيد
     PUT /api/shop/work-schedule/ - تحديث المواعيد (true/false لكل يوم)
     """
-    shop_owner = request.user
+    shop_owner = _resolve_owner_for_owner_or_cashier(request.user)
+    if not shop_owner:
+        return _owner_or_cashier_forbidden(request)
+
     current_schedule = _normalize_work_schedule(shop_owner.work_schedule)
+
+    # Keep legacy WorkSchedule row available in Django admin.
+    WorkSchedule.objects.update_or_create(
+        shop_owner=shop_owner,
+        defaults=_build_legacy_work_schedule_fields(current_schedule)
+    )
 
     if request.method == 'GET':
         return success_response(
@@ -941,6 +1018,12 @@ def shop_work_schedule_view(request):
 
     shop_owner.work_schedule = merged_schedule
     shop_owner.save()
+
+    # Keep legacy WorkSchedule row in sync for Django admin dashboard visibility.
+    WorkSchedule.objects.update_or_create(
+        shop_owner=shop_owner,
+        defaults=_build_legacy_work_schedule_fields(merged_schedule)
+    )
 
     return success_response(
         data=_build_work_schedule_response(merged_schedule),
@@ -1580,39 +1663,129 @@ def shop_dashboard_statistics_view(request):
     GET /api/shop/dashboard/statistics/
     """
     shop_owner = request.user
-    
-    # إجمالي الإيرادات
-    total_revenue = Order.objects.filter(
-        shop_owner=shop_owner,
-        status='delivered'
+
+    period = (request.query_params.get('period') or 'all').strip().lower()
+    if period not in {'daily', 'weekly', 'monthly', 'all'}:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'period': 'Invalid period. Allowed values: daily, weekly, monthly, all.'},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    today = timezone.localdate()
+    current_start = None
+    previous_start = None
+    previous_end = None
+
+    if period == 'daily':
+        current_start = today
+        previous_start = today - timedelta(days=1)
+        previous_end = today - timedelta(days=1)
+    elif period == 'weekly':
+        current_start = today - timedelta(days=today.weekday())
+        previous_start = current_start - timedelta(days=7)
+        previous_end = current_start - timedelta(days=1)
+    elif period == 'monthly':
+        current_start = today.replace(day=1)
+        previous_end = current_start - timedelta(days=1)
+        previous_start = previous_end.replace(day=1)
+
+    orders_qs = Order.objects.filter(shop_owner=shop_owner)
+    invoices_qs = Invoice.objects.filter(shop_owner=shop_owner)
+
+    if current_start:
+        orders_qs = orders_qs.filter(created_at__date__gte=current_start)
+        invoices_qs = invoices_qs.filter(created_at__date__gte=current_start)
+
+    previous_orders_qs = Order.objects.none()
+    previous_invoices_qs = Invoice.objects.none()
+    if previous_start and previous_end:
+        previous_orders_qs = Order.objects.filter(
+            shop_owner=shop_owner,
+            created_at__date__gte=previous_start,
+            created_at__date__lte=previous_end,
+        )
+        previous_invoices_qs = Invoice.objects.filter(
+            shop_owner=shop_owner,
+            created_at__date__gte=previous_start,
+            created_at__date__lte=previous_end,
+        )
+
+    total_orders = orders_qs.count()
+    invoices_count = invoices_qs.count()
+    delivered_orders_count = orders_qs.filter(status='delivered').count()
+    cancelled_orders_count = orders_qs.filter(status='cancelled').count()
+    new_orders_count = orders_qs.filter(status='new').count()
+
+    total_revenue = orders_qs.filter(status='delivered').aggregate(total=Sum('total_amount'))['total'] or 0
+
+    # النقدية: ما تم تحصيله كاش من الطلبات المسلمة
+    total_cash_collected = orders_qs.filter(
+        status='delivered',
+        payment_method='cash'
     ).aggregate(total=Sum('total_amount'))['total'] or 0
-    
-    # إجمالي الطلبات
-    total_orders = Order.objects.filter(shop_owner=shop_owner).count()
-    
-    # الطلبات حسب الحالة
-    orders_by_status = Order.objects.filter(shop_owner=shop_owner).values('status').annotate(
-        count=Count('id')
-    )
-    
-    # عدد العملاء
+    cash_with_drivers = Driver.objects.filter(shop_owner=shop_owner).aggregate(
+        total=Sum('custody_amount')
+    )['total'] or 0
+    cash_in_treasury = total_cash_collected - cash_with_drivers
+    if cash_in_treasury < 0:
+        cash_in_treasury = 0
+    total_available_cash = cash_in_treasury + cash_with_drivers
+
+    orders_by_status = orders_qs.values('status').annotate(count=Count('id'))
     total_customers = Customer.objects.filter(shop_owner=shop_owner).count()
-    
-    # عدد السائقين
     total_drivers = Driver.objects.filter(shop_owner=shop_owner).count()
     available_drivers = Driver.objects.filter(shop_owner=shop_owner, status='available').count()
-    
-    # الطلبات الجديدة
-    new_orders_count = Order.objects.filter(shop_owner=shop_owner, status='new').count()
-    
+
+    previous_total_orders = previous_orders_qs.count()
+    previous_invoices_count = previous_invoices_qs.count()
+
+    def _growth_percentage(current_value, previous_value):
+        if previous_value <= 0:
+            return 100.0 if current_value > 0 else 0.0
+        return round(((current_value - previous_value) / previous_value) * 100, 1)
+
+    success_rate = round((delivered_orders_count / total_orders) * 100, 1) if total_orders else 0.0
+    delivered_percentage = round((delivered_orders_count / total_orders) * 100, 1) if total_orders else 0.0
+    cancelled_percentage = round((cancelled_orders_count / total_orders) * 100, 1) if total_orders else 0.0
+
     statistics = {
+        # legacy keys (kept for backward compatibility)
         'total_revenue': float(total_revenue),
         'total_orders': total_orders,
         'total_customers': total_customers,
         'total_drivers': total_drivers,
         'available_drivers': available_drivers,
         'new_orders_count': new_orders_count,
-        'orders_by_status': {item['status']: item['count'] for item in orders_by_status}
+        'orders_by_status': {item['status']: item['count'] for item in orders_by_status},
+
+        # reports/dashboard keys
+        'period': period,
+        'invoices_count': invoices_count,
+        'delivered_orders_count': delivered_orders_count,
+        'cancelled_orders_count': cancelled_orders_count,
+        'success_rate': success_rate,
+        'cash_summary': {
+            'total_available_cash': float(total_available_cash),
+            'cash_in_treasury': float(cash_in_treasury),
+            'cash_with_drivers': float(cash_with_drivers),
+            'total_cash_collected': float(total_cash_collected),
+        },
+        'delivery_status': {
+            'delivered': {
+                'count': delivered_orders_count,
+                'percentage': delivered_percentage,
+            },
+            'cancelled': {
+                'count': cancelled_orders_count,
+                'percentage': cancelled_percentage,
+            },
+        },
+        'trends': {
+            'orders_growth_percent': _growth_percentage(total_orders, previous_total_orders),
+            'invoices_growth_percent': _growth_percentage(invoices_count, previous_invoices_count),
+        },
+        'generated_at': timezone.now().isoformat(),
     }
     
     return success_response(
@@ -2932,3 +3105,5 @@ def order_tracking_view(request, order_id):
         },
         message=t(request, 'tracking_data_retrieved_successfully')
     )
+
+
