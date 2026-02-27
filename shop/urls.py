@@ -12,6 +12,7 @@ urlpatterns = [
 
     # Shop Status
     path('shop/status/', views.shop_status_view, name='shop_status'),
+    path('shop/work-schedule/', views.shop_work_schedule_view, name='shop_work_schedule'),
     path('shop/shop-categories/', views.shop_category_list_view, name='shop_category_list'),
     path('shop/shop-categories/<int:category_id>/', views.shop_category_detail_view, name='shop_category_detail'),
     

@@ -15,8 +15,7 @@ from .serializers import (
     ImageLikeSerializer
 )
 from user.models import ShopOwner
-from user.authentication import ShopOwnerJWTAuthentication
-from user.permissions import IsShopOwner
+from shop.models import Employee
 from user.utils import success_response, error_response, build_message_fields, t
 
 
@@ -48,8 +47,37 @@ class GalleryPagination(PageNumberPagination):
         return Response(response_data, status=status.HTTP_200_OK)
 
 
+def _is_shop_owner(user):
+    user_type = getattr(user, 'user_type', None)
+    return user_type == 'shop_owner' or isinstance(user, ShopOwner)
+
+
+def _is_employee(user):
+    user_type = getattr(user, 'user_type', None)
+    return user_type == 'employee' or isinstance(user, Employee)
+
+
+def _is_cashier(user):
+    return _is_employee(user) and getattr(user, 'role', None) == 'cashier'
+
+
+def _resolve_shop_owner(user):
+    if _is_shop_owner(user):
+        return user
+    if _is_employee(user):
+        return getattr(user, 'shop_owner', None)
+    return None
+
+
+def _forbidden(request, message_key):
+    return error_response(
+        message=t(request, message_key),
+        status_code=status.HTTP_403_FORBIDDEN
+    )
+
+
 @api_view(['GET', 'PUT', 'PATCH'])
-@permission_classes([IsAuthenticated, IsShopOwner])
+@permission_classes([IsAuthenticated])
 def shop_profile_view(request):
     """
     عرض وتحديث ملف صاحب المحل (البيانات + صورة البروفيل في endpoint واحد).
@@ -58,9 +86,15 @@ def shop_profile_view(request):
     PUT/PATCH /api/shop/profile/ - تحديث الملف الشخصي (owner_name, shop_name، و/أو profile_image)
     Body: application/json { "owner_name", "shop_name" } أو multipart/form-data مع profile_image (اختياري)
     """
-    shop_owner = request.user
+    user = request.user
+    shop_owner = _resolve_shop_owner(user)
+    if not shop_owner:
+        return _forbidden(request, 'permission_only_shop_owner_or_cashier')
 
     if request.method == 'GET':
+        if not (_is_shop_owner(user) or _is_cashier(user)):
+            return _forbidden(request, 'permission_only_shop_owner_or_cashier')
+
         serializer = ShopProfileSerializer(shop_owner, context={'request': request})
         return success_response(
             data=serializer.data,
@@ -69,6 +103,9 @@ def shop_profile_view(request):
         )
 
     elif request.method in ('PUT', 'PATCH'):
+        if not _is_shop_owner(user):
+            return _forbidden(request, 'permission_only_shop_owner_edit_content')
+
         data = request.data.copy()
         if request.FILES.get('profile_image'):
             data['profile_image'] = request.FILES['profile_image']
@@ -133,9 +170,15 @@ def gallery_list_view(request):
     GET /api/shop/gallery/ - عرض قائمة الصور (مع pagination و sorting)
     POST /api/shop/gallery/ - إضافة صورة جديدة
     """
-    shop_owner = request.user
+    user = request.user
+    shop_owner = _resolve_shop_owner(user)
+    if not shop_owner:
+        return _forbidden(request, 'permission_only_shop_owner_or_cashier')
     
     if request.method == 'GET':
+        if not (_is_shop_owner(user) or _is_cashier(user)):
+            return _forbidden(request, 'permission_only_shop_owner_or_cashier')
+
         # Filtering
         status_filter = request.query_params.get('status')
         search_query = request.query_params.get('search')
@@ -169,6 +212,9 @@ def gallery_list_view(request):
         )
     
     elif request.method == 'POST':
+        if not _is_shop_owner(user):
+            return _forbidden(request, 'permission_only_shop_owner')
+
         serializer = GalleryImageCreateSerializer(
             data=request.data,
             context={'shop_owner': shop_owner, 'request': request}
@@ -197,7 +243,10 @@ def gallery_detail_view(request, image_id):
     PUT /api/shop/gallery/{id}/ - تحديث صورة
     DELETE /api/shop/gallery/{id}/ - حذف صورة
     """
-    shop_owner = request.user
+    user = request.user
+    shop_owner = _resolve_shop_owner(user)
+    if not shop_owner:
+        return _forbidden(request, 'permission_only_shop_owner_or_cashier')
     
     try:
         image = GalleryImage.objects.get(id=image_id, shop_owner=shop_owner)
@@ -208,6 +257,9 @@ def gallery_detail_view(request, image_id):
         )
     
     if request.method == 'GET':
+        if not (_is_shop_owner(user) or _is_cashier(user)):
+            return _forbidden(request, 'permission_only_shop_owner_or_cashier')
+
         serializer = GalleryImageSerializer(image, context={'request': request})
         return success_response(
             data=serializer.data,
@@ -216,6 +268,27 @@ def gallery_detail_view(request, image_id):
         )
     
     elif request.method == 'PUT':
+        if _is_cashier(user):
+            allowed_keys = {'status'}
+            payload_keys = set(request.data.keys())
+            if not payload_keys.issubset(allowed_keys):
+                return _forbidden(request, 'cashier_can_only_publish_images')
+
+            if request.data.get('status') != 'published':
+                return _forbidden(request, 'cashier_can_only_publish_images')
+
+            image.status = 'published'
+            image.save()
+            response_serializer = GalleryImageSerializer(image, context={'request': request})
+            return success_response(
+                data=response_serializer.data,
+                message=t(request, 'image_updated_successfully'),
+                status_code=status.HTTP_200_OK
+            )
+
+        if not _is_shop_owner(user):
+            return _forbidden(request, 'permission_only_shop_owner')
+
         serializer = GalleryImageCreateSerializer(image, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -232,6 +305,9 @@ def gallery_detail_view(request, image_id):
         )
     
     elif request.method == 'DELETE':
+        if not _is_shop_owner(user):
+            return _forbidden(request, 'permission_only_shop_owner')
+
         image.delete()
         return success_response(
             message=t(request, 'image_deleted_successfully'),

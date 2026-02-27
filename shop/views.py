@@ -6,7 +6,7 @@ from rest_framework.pagination import PageNumberPagination
 import json
 from django.db.models import Q, Count, Sum, F, Avg
 from django.utils import timezone
-from datetime import timedelta
+from datetime import datetime, timedelta
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage, 
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
@@ -50,7 +50,13 @@ from .serializers import (
     ChatMessageSerializer,
 )
 from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
-from user.models import ShopCategory, ShopOwner
+from user.models import (
+    ShopCategory,
+    ShopOwner,
+    WORK_SCHEDULE_DAYS,
+    WORK_SCHEDULE_DAY_LABELS,
+    default_work_schedule,
+)
 from user.utils import success_response, error_response, build_message_fields, t
 from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 from .websocket_utils import (
@@ -126,6 +132,159 @@ def _is_true_query_value(value):
 STAFF_TYPE_EMPLOYEE = 'employee'
 STAFF_TYPE_DRIVER = 'driver'
 VALID_STAFF_TYPES = {STAFF_TYPE_EMPLOYEE, STAFF_TYPE_DRIVER}
+PY_WEEKDAY_TO_WORK_DAY = {
+    0: 'monday',
+    1: 'tuesday',
+    2: 'wednesday',
+    3: 'thursday',
+    4: 'friday',
+    5: 'saturday',
+    6: 'sunday',
+}
+
+
+def _parse_schedule_time(value):
+    if value in (None, ''):
+        return None
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed_time = datetime.strptime(value.strip(), '%H:%M')
+    except ValueError:
+        return None
+    return parsed_time.strftime('%H:%M')
+
+
+def _is_valid_schedule_range(start_time, end_time):
+    if not start_time or not end_time:
+        return False
+    return start_time < end_time
+
+
+def _normalize_work_schedule(raw_schedule):
+    normalized_schedule = default_work_schedule()
+    if not isinstance(raw_schedule, dict):
+        return normalized_schedule
+
+    for day in WORK_SCHEDULE_DAYS:
+        day_data = raw_schedule.get(day)
+        if not isinstance(day_data, dict):
+            continue
+
+        current_day = normalized_schedule[day]
+        is_working = day_data.get('is_working')
+        if isinstance(is_working, bool):
+            current_day['is_working'] = is_working
+
+        start_time = _parse_schedule_time(day_data.get('start_time'))
+        end_time = _parse_schedule_time(day_data.get('end_time'))
+
+        if current_day['is_working']:
+            if start_time:
+                current_day['start_time'] = start_time
+            if end_time:
+                current_day['end_time'] = end_time
+            if not _is_valid_schedule_range(current_day.get('start_time'), current_day.get('end_time')):
+                current_day['start_time'] = '09:00'
+                current_day['end_time'] = '17:00'
+        else:
+            current_day['start_time'] = None
+            current_day['end_time'] = None
+
+    return normalized_schedule
+
+
+def _merge_work_schedule(current_schedule, updates):
+    errors = {}
+    if not isinstance(updates, dict):
+        return None, {'schedule': ['schedule must be an object keyed by day.']}
+
+    merged_schedule = _normalize_work_schedule(current_schedule)
+
+    for day_key, day_update in updates.items():
+        if day_key not in WORK_SCHEDULE_DAYS:
+            errors.setdefault('schedule', []).append(f'Unsupported day: {day_key}.')
+            continue
+        if not isinstance(day_update, dict):
+            errors.setdefault(day_key, []).append('Each day must be an object.')
+            continue
+
+        day_data = merged_schedule[day_key]
+
+        if 'is_working' in day_update:
+            if isinstance(day_update['is_working'], bool):
+                day_data['is_working'] = day_update['is_working']
+            else:
+                errors.setdefault(day_key, []).append('is_working must be true or false.')
+
+        if 'start_time' in day_update:
+            if not day_data.get('is_working'):
+                day_data['start_time'] = None
+            else:
+                parsed_start = _parse_schedule_time(day_update['start_time'])
+                if day_update['start_time'] not in (None, '') and not parsed_start:
+                    errors.setdefault(day_key, []).append('start_time must be in HH:MM format.')
+                else:
+                    day_data['start_time'] = parsed_start
+
+        if 'end_time' in day_update:
+            if not day_data.get('is_working'):
+                day_data['end_time'] = None
+            else:
+                parsed_end = _parse_schedule_time(day_update['end_time'])
+                if day_update['end_time'] not in (None, '') and not parsed_end:
+                    errors.setdefault(day_key, []).append('end_time must be in HH:MM format.')
+                else:
+                    day_data['end_time'] = parsed_end
+
+    for day_key in WORK_SCHEDULE_DAYS:
+        day_data = merged_schedule[day_key]
+        if day_data.get('is_working'):
+            if not day_data.get('start_time') or not day_data.get('end_time'):
+                errors.setdefault(day_key, []).append('start_time and end_time are required when is_working is true.')
+                continue
+            if not _is_valid_schedule_range(day_data['start_time'], day_data['end_time']):
+                errors.setdefault(day_key, []).append('end_time must be later than start_time.')
+        else:
+            day_data['start_time'] = None
+            day_data['end_time'] = None
+
+    if errors:
+        return None, errors
+
+    return merged_schedule, None
+
+
+def _build_work_schedule_response(schedule):
+    normalized_schedule = _normalize_work_schedule(schedule)
+    days = []
+
+    for day_key in WORK_SCHEDULE_DAYS:
+        day_data = normalized_schedule[day_key]
+        days.append({
+            'day_key': day_key,
+            'day_name': WORK_SCHEDULE_DAY_LABELS.get(day_key, day_key),
+            'is_working': day_data.get('is_working', False),
+            'is_holiday': not day_data.get('is_working', False),
+            'start_time': day_data.get('start_time'),
+            'end_time': day_data.get('end_time'),
+        })
+
+    today_key = PY_WEEKDAY_TO_WORK_DAY.get(timezone.localdate().weekday(), 'monday')
+    today_data = normalized_schedule.get(today_key, {'is_working': False, 'start_time': None, 'end_time': None})
+
+    return {
+        'schedule': normalized_schedule,
+        'days': days,
+        'today': {
+            'day_key': today_key,
+            'day_name': WORK_SCHEDULE_DAY_LABELS.get(today_key, today_key),
+            'is_working': today_data.get('is_working', False),
+            'is_holiday': not today_data.get('is_working', False),
+            'start_time': today_data.get('start_time'),
+            'end_time': today_data.get('end_time'),
+        },
+    }
 
 
 def _normalize_staff_type(value, allow_all=False):
@@ -742,6 +901,52 @@ def shop_status_view(request):
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsShopOwner])
+def shop_work_schedule_view(request):
+    """
+    عرض وتحديث مواعيد العمل الأسبوعية
+    GET /api/shop/work-schedule/ - عرض المواعيد
+    PUT /api/shop/work-schedule/ - تحديث المواعيد (true/false لكل يوم)
+    """
+    shop_owner = request.user
+    current_schedule = _normalize_work_schedule(shop_owner.work_schedule)
+
+    if request.method == 'GET':
+        return success_response(
+            data=_build_work_schedule_response(current_schedule),
+            message=t(request, 'work_schedule_retrieved_successfully'),
+            status_code=status.HTTP_200_OK
+        )
+
+    updates = request.data.get('schedule', request.data)
+    if isinstance(updates, str):
+        try:
+            updates = json.loads(updates)
+        except ValueError:
+            return error_response(
+                message=t(request, 'invalid_data'),
+                errors={'schedule': ['Invalid JSON string.']},
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+    merged_schedule, errors = _merge_work_schedule(current_schedule, updates)
+    if errors:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    shop_owner.work_schedule = merged_schedule
+    shop_owner.save()
+
+    return success_response(
+        data=_build_work_schedule_response(merged_schedule),
+        message=t(request, 'work_schedule_updated_successfully'),
+        status_code=status.HTTP_200_OK
+    )
 
 
 # Customer APIs

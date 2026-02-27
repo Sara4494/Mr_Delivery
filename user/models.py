@@ -2,6 +2,39 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 
 
+WORK_SCHEDULE_DAYS = (
+    "saturday",
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+)
+
+WORK_SCHEDULE_DAY_LABELS = {
+    "saturday": "السبت",
+    "sunday": "الأحد",
+    "monday": "الاثنين",
+    "tuesday": "الثلاثاء",
+    "wednesday": "الأربعاء",
+    "thursday": "الخميس",
+    "friday": "الجمعة",
+}
+
+
+def default_work_schedule():
+    schedule = {}
+    for day in WORK_SCHEDULE_DAYS:
+        is_working = day != "friday"
+        schedule[day] = {
+            "is_working": is_working,
+            "start_time": "09:00" if is_working else None,
+            "end_time": "17:00" if is_working else None,
+        }
+    return schedule
+
+
 class ShopCategory(models.Model):
     """نموذج تصنيف المحل (مطعم، صيدلية، ...)."""
 
@@ -37,6 +70,7 @@ class ShopOwner(models.Model):
     password = models.CharField(max_length=128, verbose_name="كلمة المرور")
     profile_image = models.ImageField(upload_to="shop_profiles/", blank=True, null=True, verbose_name="صورة البروفيل")
     description = models.TextField(blank=True, null=True, verbose_name="وصف المحل")
+    work_schedule = models.JSONField(default=default_work_schedule, blank=True, verbose_name="مواعيد العمل الأسبوعية")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
     is_active = models.BooleanField(default=True, verbose_name="نشط")

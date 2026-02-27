@@ -1513,7 +1513,7 @@
                     ],
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"employee\",\n    \"shop_number\": \"12345\"\n}"
+                      "raw": "{\n    \"phone_number\": \"01000000001\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"driver\",\n    \"shop_number\": \"12345\"\n}"
                     },
                     "url": {
                       "raw": "{{base_url}}/api/auth/otp/send/",
@@ -1544,7 +1544,7 @@
                     ],
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"shop_number\": \"12345\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+                      "raw": "{\n    \"role\": \"driver\",\n    \"phone_number\": \"01000000001\",\n    \"shop_number\": \"12345\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
                     },
                     "url": {
                       "raw": "{{base_url}}/api/auth/password-reset/",
