@@ -59,7 +59,7 @@ class GalleryImageCreateSerializer(serializers.ModelSerializer):
 
 class ShopProfileSerializer(serializers.ModelSerializer):
     """Serializer لملف صاحب المحل"""
-    work_schedule = WorkScheduleSerializer(read_only=True)
+    work_schedule = WorkScheduleSerializer(source='legacy_work_schedule', read_only=True)
     profile_image_url = serializers.SerializerMethodField()
     total_images = serializers.SerializerMethodField()
     published_images = serializers.SerializerMethodField()

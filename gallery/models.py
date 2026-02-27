@@ -4,7 +4,7 @@ from user.models import ShopOwner
 
 class WorkSchedule(models.Model):
     """نموذج مواعيد عمل المحل"""
-    shop_owner = models.OneToOneField(ShopOwner, on_delete=models.CASCADE, related_name='work_schedule', verbose_name="صاحب المحل")
+    shop_owner = models.OneToOneField(ShopOwner, on_delete=models.CASCADE, related_name='legacy_work_schedule', verbose_name="صاحب المحل")
     work_days = models.CharField(max_length=100, default="الأحد - الخميس", verbose_name="أيام العمل")
     work_hours = models.CharField(max_length=50, default="9:00 صباحاً - 5:00 مساءً", verbose_name="ساعات العمل")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
