@@ -1724,9 +1724,8 @@ def shop_dashboard_statistics_view(request):
         status='delivered',
         payment_method='cash'
     ).aggregate(total=Sum('total_amount'))['total'] or 0
-    cash_with_drivers = Driver.objects.filter(shop_owner=shop_owner).aggregate(
-        total=Sum('custody_amount')
-    )['total'] or 0
+    # Field 'custody_amount' does not exist in Driver model.
+    cash_with_drivers = 0
     cash_in_treasury = total_cash_collected - cash_with_drivers
     if cash_in_treasury < 0:
         cash_in_treasury = 0
@@ -3105,5 +3104,3 @@ def order_tracking_view(request, order_id):
         },
         message=t(request, 'tracking_data_retrieved_successfully')
     )
-
-
