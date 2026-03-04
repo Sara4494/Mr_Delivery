@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage, 
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
-    Notification, Cart, CartItem
+    Notification, Cart, CartItem, ShopDriver
 )
 from user.models import ShopOwner, ShopCategory
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -126,8 +126,8 @@ class DriverSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Driver
-        fields = ['id', 'name', 'phone_number', 'profile_image', 'profile_image_url',
-                  'status', 'status_display', 'current_orders_count', 'rating', 'total_rides', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'phone_number', 'profile_image', 'profile_image_url', 
+                  'status', 'current_orders_count', 'rating', 'total_rides', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_profile_image_url(self, obj):
@@ -150,12 +150,19 @@ class DriverCreateSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """إنشاء سائق جديد"""
-        shop_owner = self.context['shop_owner']
+        # ملاحظة: في النظام الجديد، السائق يُنشأ مستقلاً ثم يُربط بالمحل
+        # هذا الكود يفترض أن الإنشاء يتم من داخل محل، لذا نربطه مباشرة
+        shop_owner = self.context.get('shop_owner')
         password = validated_data.pop('password', None)
-        driver = Driver.objects.create(shop_owner=shop_owner, **validated_data)
+        
+        driver = Driver.objects.create(**validated_data)
         if password:
             driver.set_password(password)
             driver.save()
+        
+        if shop_owner:
+            ShopDriver.objects.create(shop_owner=shop_owner, driver=driver, status='active')
+            
         return driver
 
 
@@ -664,7 +671,8 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
         token = RefreshToken()
         token['driver_id'] = driver.id
         token['phone_number'] = driver.phone_number
-        token['shop_owner_id'] = driver.shop_owner.id
+        # السائق قد يعمل في عدة محلات، لا نضع shop_owner_id واحد في التوكن
+        # يمكن إرجاع قائمة المحلات في الاستجابة بدلاً من ذلك
         token['user_type'] = 'driver'
         return token
 
@@ -674,23 +682,11 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
         """
         phone_number = attrs.get('phone_number')
         password = attrs.get('password')
-        shop_number = attrs.get('shop_number')
 
         queryset = Driver.objects.filter(phone_number=phone_number).order_by('-updated_at')
         if not queryset.exists():
             raise serializers.ValidationError({
                 'phone_number': 'رقم الهاتف غير صحيح'
-            })
-
-        if shop_number:
-            queryset = queryset.filter(shop_owner__shop_number=shop_number)
-            if not queryset.exists():
-                raise serializers.ValidationError({
-                    'shop_number': 'رقم المحل غير صحيح لهذا السائق'
-                })
-        elif queryset.count() > 1:
-            raise serializers.ValidationError({
-                'shop_number': 'يرجى إدخال shop_number لتحديد المحل'
             })
 
         driver = None
@@ -705,6 +701,9 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
             })
 
         refresh = self.get_token(driver)
+        
+        # جلب المحلات النشطة للسائق
+        active_shops = driver.shops.filter(shop_drivers__status='active').values('id', 'shop_name', 'shop_number')
 
         return {
             'refresh': str(refresh),
@@ -715,32 +714,65 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
                 'phone_number': driver.phone_number,
                 'status': driver.status,
                 'status_display': driver.get_status_display(),
-                'shop_owner_id': driver.shop_owner.id,
+                'active_shops': list(active_shops),
             }
         }
 
 class DriverInvitationRespondSerializer(serializers.Serializer):
     """
     Serializer احترافي لمعالجة استجابة السائق لدعوة الانضمام (قبول/رفض).
-    يتحقق من صحة البيانات ووجود السائق قبل المعالجة.
+    يتحقق من صحة البيانات، وجود السائق، ووجود دعوة معلقة من المتجر المحدد.
     """
     phone_number = serializers.CharField(required=True)
+    shop_id = serializers.IntegerField(required=True, help_text="ID المتجر صاحب الدعوة")
     otp = serializers.CharField(required=True, write_only=True)
     action = serializers.ChoiceField(choices=['accept', 'reject'], required=True)
 
     def validate(self, attrs):
         phone_number = attrs.get('phone_number')
+        shop_id = attrs.get('shop_id')
         
-        # التحقق من وجود السائق
+        # 1. التحقق من وجود السائق
         try:
             driver = Driver.objects.get(phone_number=phone_number)
         except Driver.DoesNotExist:
             raise serializers.ValidationError({
                 'phone_number': 'رقم الهاتف غير صحيح أو السائق غير موجود.'
             })
+        
+        # 2. التحقق من وجود دعوة معلقة (Pending) لهذا السائق في هذا المتجر
+        try:
+            shop_driver = ShopDriver.objects.get(
+                driver=driver, 
+                shop_owner_id=shop_id
+            )
+        except ShopDriver.DoesNotExist:
+            raise serializers.ValidationError({
+                'shop_id': 'لا توجد علاقة أو دعوة بين هذا السائق وهذا المتجر.'
+            })
+            
+        if shop_driver.status != 'pending':
+            raise serializers.ValidationError({
+                'status': f'لا يمكن الرد على الدعوة. الحالة الحالية: {shop_driver.get_status_display()}'
+            })
             
         attrs['driver'] = driver
+        attrs['shop_driver'] = shop_driver
         return attrs
+        
+    def save(self, **kwargs):
+        shop_driver = self.validated_data['shop_driver']
+        action = self.validated_data['action']
+        
+        if action == 'accept':
+            shop_driver.status = 'active'
+            shop_driver.save()
+        elif action == 'reject':
+            shop_driver.status = 'rejected'
+            shop_driver.save()
+            # أو يمكن حذف السجل نهائياً: shop_driver.delete()
+            
+        return shop_driver
 
 # Customer Login Serializer
 class CustomerTokenObtainPairSerializer(serializers.Serializer):

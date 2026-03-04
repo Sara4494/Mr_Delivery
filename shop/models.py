@@ -174,18 +174,19 @@ class Employee(models.Model):
 class Driver(models.Model):
     """نموذج السائق"""
     STATUS_CHOICES = [
-        ('pending', 'طلب انضمام'),
         ('available', 'متاح'),
         ('busy', 'مشغول'),
         ('offline', 'غير متصل'),
     ]
     
-    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='drivers', verbose_name="صاحب المحل")
+    # تم تغيير العلاقة لدعم تعدد المتاجر، السائق يمكنه العمل في أكثر من محل
+    shops = models.ManyToManyField(ShopOwner, through='ShopDriver', related_name='drivers', verbose_name="المتاجر")
+    
     name = models.CharField(max_length=100, verbose_name="اسم السائق")
-    phone_number = models.CharField(max_length=20, verbose_name="رقم الهاتف")
+    phone_number = models.CharField(max_length=20, unique=True, verbose_name="رقم الهاتف")
     password = models.CharField(max_length=128, verbose_name="كلمة المرور", blank=True, null=True)  # إضافة password للسائق
     profile_image = models.ImageField(upload_to='driver_profiles/', blank=True, null=True, verbose_name="صورة السائق")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available', verbose_name="الحالة")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='offline', verbose_name="الحالة التشغيلية")
     current_orders_count = models.IntegerField(default=0, verbose_name="عدد الطلبات الحالية")
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0, verbose_name="التقييم")
     total_rides = models.IntegerField(default=0, verbose_name="إجمالي الرحلات")
@@ -199,11 +200,7 @@ class Driver(models.Model):
     class Meta:
         verbose_name = "سائق"
         verbose_name_plural = "السائقين"
-        unique_together = ['shop_owner', 'phone_number']  # إضافة unique constraint
         ordering = ['-updated_at']
-        indexes = [
-            models.Index(fields=['shop_owner', 'status']),
-        ]
 
     def set_password(self, raw_password):
         """تشفير كلمة المرور"""
@@ -232,6 +229,26 @@ class Driver(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.get_status_display()}"
+
+
+class ShopDriver(models.Model):
+    """جدول وسيط لربط السائق بالمتجر وإدارة حالة الدعوة"""
+    STATUS_CHOICES = [
+        ('pending', 'بانتظار الموافقة'),
+        ('active', 'نشط'),
+        ('blocked', 'محظور'),
+        ('rejected', 'مرفوض'),
+    ]
+    
+    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='shop_drivers', verbose_name="المحل")
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='driver_shops', verbose_name="السائق")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="حالة الارتباط")
+    joined_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الانضمام")
+
+    class Meta:
+        unique_together = ['shop_owner', 'driver']
+        verbose_name = "سائق في محل"
+        verbose_name_plural = "سائقين المحلات"
 
 
 class Order(models.Model):
