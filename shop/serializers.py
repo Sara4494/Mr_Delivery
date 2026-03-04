@@ -317,7 +317,7 @@ class OrderCreateSerializer(serializers.Serializer):
             return value
         shop_owner = self.context['shop_owner']
         try:
-            Driver.objects.get(id=value, shop_owner=shop_owner)
+            Driver.objects.get(id=value, shops=shop_owner)
         except Driver.DoesNotExist:
             raise serializers.ValidationError('السائق غير موجود')
         return value
@@ -335,7 +335,7 @@ class OrderCreateSerializer(serializers.Serializer):
             employee = Employee.objects.get(id=employee_id, shop_owner=shop_owner)
         driver = None
         if driver_id:
-            driver = Driver.objects.get(id=driver_id, shop_owner=shop_owner)
+            driver = Driver.objects.get(id=driver_id, shops=shop_owner)
         
         # إنشاء رقم طلب تلقائي
         import random
