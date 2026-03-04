@@ -230,6 +230,11 @@ class Driver(models.Model):
     def __str__(self):
         return f"{self.name} - {self.get_status_display()}"
 
+    @property
+    def shop_owner(self):
+        """للتوافق مع لوحة التحكم (Admin): إرجاع أول متجر مرتبط"""
+        return self.shops.first()
+
 
 class ShopDriver(models.Model):
     """جدول وسيط لربط السائق بالمتجر وإدارة حالة الدعوة"""
