@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 import json
+from django.db import IntegrityError
 from django.db.models import Q, Count, Sum, F, Avg
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -719,7 +720,18 @@ def staff_view(request):
             success_message = 'employee_added_successfully'
 
         if serializer.is_valid():
-            staff_member = serializer.save()
+            try:
+                staff_member = serializer.save()
+            except IntegrityError:
+                return error_response(
+                    message=t(request, 'invalid_data'),
+                    errors={
+                        'phone_number': [
+                            t(request, 'phone_number_is_already_used_for_this_shop')
+                        ]
+                    },
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
             return success_response(
                 data=_serialize_staff_member(staff_member, staff_type, request),
                 message=t(request, success_message),

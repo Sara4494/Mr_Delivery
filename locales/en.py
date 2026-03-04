@@ -116,6 +116,7 @@ MESSAGES = {
     'phone_number_is_already_registered': 'Phone number is already registered',
     'phone_number_is_already_registered_and_verified': 'Phone number is already registered and verified',
     'phone_number_is_already_registered_use_login': 'Phone number is already registered. Use login',
+    'phone_number_is_already_used_for_this_shop': 'This phone number is already used for this shop.',
     'phone_number_is_not_registered_please_register_first': 'Phone number is not registered. Please register first',
     'phone_number_is_required': 'Phone number is required',
     'phone_number_or_password_is_incorrect': 'Phone number or password is incorrect',

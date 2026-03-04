@@ -5,6 +5,7 @@ from .models import (
     Notification, Cart, CartItem, ShopDriver
 )
 from user.models import ShopOwner, ShopCategory
+from user.utils import t
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
@@ -575,6 +576,16 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = ['name', 'phone_number', 'password', 'role', 'profile_image']
+
+    def validate_phone_number(self, value):
+        """منع إنشاء موظف بنفس رقم الهاتف داخل نفس المحل."""
+        shop_owner = self.context.get('shop_owner')
+        if shop_owner and Employee.objects.filter(shop_owner=shop_owner, phone_number=value).exists():
+            request = self.context.get('request')
+            raise serializers.ValidationError(
+                t(request, 'phone_number_is_already_used_for_this_shop')
+            )
+        return value
     
     def create(self, validated_data):
         """إنشاء موظف جديد"""

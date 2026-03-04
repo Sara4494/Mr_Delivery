@@ -116,6 +116,7 @@ MESSAGES = {
     'phone_number_is_already_registered': 'رقم الهاتف مسجل مسبقاً',
     'phone_number_is_already_registered_and_verified': 'رقم الهاتف مسجل ومفعل بالفعل',
     'phone_number_is_already_registered_use_login': 'رقم الهاتف مسجل مسبقاً. استخدم تسجيل الدخول',
+    'phone_number_is_already_used_for_this_shop': 'رقم الهاتف مستخدم بالفعل لهذا المحل.',
     'phone_number_is_not_registered_please_register_first': 'رقم الهاتف غير مسجل. يرجى التسجيل أولاً',
     'phone_number_is_required': 'رقم الهاتف مطلوب',
     'phone_number_or_password_is_incorrect': 'رقم الهاتف أو كلمة المرور غير صحيحة',
