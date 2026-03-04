@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage, 
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
-    Notification, Cart, CartItem
+    Notification, Cart, CartItem, ShopDriver
 )
 
 
@@ -33,16 +33,22 @@ class CustomerAddressAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at',)
 
 
+class ShopDriverInline(admin.TabularInline):
+    model = ShopDriver
+    extra = 1
+
+
 @admin.register(Driver)
 class DriverAdmin(admin.ModelAdmin):
     """إدارة السائقين"""
     list_display = ('name', 'phone_number', 'shop_owner', 'status', 'rating', 'total_rides', 'current_orders_count')
     list_filter = ('status', 'created_at')
-    search_fields = ('name', 'phone_number', 'shop_owner__shop_name')
+    search_fields = ('name', 'phone_number', 'shops__shop_name')
     readonly_fields = ('created_at', 'updated_at', 'location_updated_at')
+    inlines = [ShopDriverInline]
     fieldsets = (
         ('معلومات أساسية', {
-            'fields': ('shop_owner', 'name', 'phone_number', 'profile_image', 'status')
+            'fields': ('name', 'phone_number', 'profile_image', 'status')
         }),
         ('الإحصائيات', {
             'fields': ('rating', 'total_rides', 'current_orders_count')
