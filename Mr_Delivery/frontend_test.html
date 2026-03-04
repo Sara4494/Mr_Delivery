@@ -1,0 +1,1885 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>اختبار WebSocket - Mr Delivery</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 26px;
+            margin-bottom: 8px;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f0f0f0;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            background: #e8e8e8;
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 20px;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .panel h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 13px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            margin-top: 5px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+            color: #333;
+        }
+
+        .btn-info {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 12px;
+            font-weight: 500;
+            text-align: center;
+            font-size: 13px;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .messages {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            height: 450px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.shop_owner, .message.employee {
+            background: #e3f2fd;
+            border-right: 4px solid #2196f3;
+        }
+
+        .message.customer {
+            background: #f3e5f5;
+            border-right: 4px solid #9c27b0;
+        }
+
+        .message.driver {
+            background: #e8f5e9;
+            border-right: 4px solid #4caf50;
+        }
+
+        .message.system {
+            background: #fff3e0;
+            border-right: 4px solid #ff9800;
+        }
+
+        .message.error {
+            background: #ffebee;
+            border-right: 4px solid #f44336;
+        }
+
+        .message.location {
+            background: #e0f7fa;
+            border-right: 4px solid #00bcd4;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .message-sender {
+            color: #333;
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .message-content {
+            color: #555;
+            line-height: 1.5;
+            font-size: 13px;
+        }
+
+        .typing-indicator {
+            color: #999;
+            font-style: italic;
+            padding: 8px;
+            font-size: 12px;
+        }
+
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .chat-input-area {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .quick-actions button {
+            width: auto;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .location-btn {
+            background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .badge-customer { background: #f3e5f5; color: #9c27b0; }
+        .badge-shop { background: #e3f2fd; color: #2196f3; }
+        .badge-driver { background: #e8f5e9; color: #4caf50; }
+
+        @media (max-width: 900px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 12px;
+            color: #0066cc;
+        }
+
+        .connection-url {
+            background: #f5f5f5;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            word-break: break-all;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 اختبار WebSocket - Mr Delivery</h1>
+            <p>اختبار الاتصال المباشر للشات وتحديثات الطلبات</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-tab="chat" onclick="showTab('chat')">💬 شات الطلب</button>
+            <button class="tab" data-tab="customerChat" onclick="showTab('customerChat')">📝 شات العميل / طلب أوردر</button>
+            <button class="tab" data-tab="shop" onclick="showTab('shop')">🏪 طلبات المحل</button>
+            <button class="tab" data-tab="customer" onclick="showTab('customer')">👤 طلبات العميل</button>
+            <button class="tab" data-tab="driver" onclick="showTab('driver')">🚗 السائق</button>
+        </div>
+
+        <!-- Chat Tab -->
+        <div id="chatTab" class="tab-content active">
+            <div class="content">
+                <div class="panel">
+                    <h2>⚙️ إعدادات الشات</h2>
+                    
+                    <div id="chatStatus" class="status disconnected">❌ غير متصل</div>
+
+                    <div class="form-group">
+                        <label>الخادم:</label>
+                        <select id="chatServer">
+                            <option value="ws://86.48.3.103">محلي (86.48.3.103)</option>
+                            <option value="ws://86.48.3.103">VPS (86.48.3.103)</option>
+                            <option value="wss://mrdelivery.pythonanywhere.com">PythonAnywhere (wss)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>نوع المستخدم:</label>
+                        <select id="chatUserType">
+                            <option value="shop_owner">👔 صاحب المحل</option>
+                            <option value="employee">👨‍💼 موظف</option>
+                            <option value="customer">👤 عميل</option>
+                            <option value="driver">🚗 سائق</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>نوع المحادثة:</label>
+                        <select id="chatType">
+                            <option value="shop_customer">🏪 محل ↔ عميل</option>
+                            <option value="driver_customer">🚗 سائق ↔ عميل</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>معرف الطلب:</label>
+                        <input type="number" id="chatOrderId" value="1" placeholder="Order ID">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Access Token:</label>
+                        <input type="text" id="chatToken" placeholder="JWT Token">
+                    </div>
+
+                    <div class="form-group">
+                        <label>API Base:</label>
+                        <input type="text" id="chatOrderApiBase" value="http://86.48.3.103/api" placeholder="http://86.48.3.103/api">
+                    </div>
+
+                    <button onclick="connectChat()" id="chatConnectBtn">🔌 اتصال</button>
+                    <button onclick="disconnectChat()" id="chatDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
+
+                    <div class="connection-url" id="chatUrl"></div>
+                </div>
+
+                <div class="panel">
+                    <h2>💬 المحادثة</h2>
+                    
+                    <div id="chatMessages" class="messages">
+                        <div class="message system">
+                            <div class="message-content">جاهز للاتصال...</div>
+                        </div>
+                    </div>
+
+                    <div id="chatTyping" class="typing-indicator" style="display: none;"></div>
+
+                    <div class="chat-input-area">
+                        <div class="quick-actions">
+                            <button onclick="sendLocation()" class="location-btn" id="locationBtn" disabled>📍 إرسال موقع</button>
+                            <button onclick="markChatRead()" class="btn-secondary" id="markReadBtn" disabled>✓ مقروء</button>
+                            <button onclick="document.getElementById('chatImageInput').click()" class="btn-info" id="chatImageBtn" disabled>🖼️ صورة</button>
+                            <button onclick="document.getElementById('chatAudioInput').click()" class="btn-secondary" id="chatAudioBtn" disabled>🎵 ملف صوتي</button>
+                            <button onclick="toggleAudioRecording()" class="btn-warning" id="chatRecordBtn" disabled>⏺️ تسجيل</button>
+                            <button onclick="shopCancelCurrentOrder()" id="shopCancelBtn" class="btn-danger" disabled>❌ إلغاء الفاتورة</button>
+                            <button onclick="shopSendInvoiceToCustomer(false)" id="shopInvoiceBtn" class="btn-success" disabled>🧾 إنشاء الفاتورة</button>
+                            <button onclick="shopEditInvoice()" id="shopEditInvoiceBtn" class="btn-info" disabled>✏️ تعديل الفاتورة</button>
+                            <button onclick="shopAssignOrderToDriver()" id="shopAssignDriverBtn" class="btn-success" disabled>🚚 تحويل الأوردر للدليفري</button>
+                        </div>
+                        <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
+                        <input type="file" id="chatAudioInput" accept="audio/*" style="display:none;">
+
+                        <div class="form-group">
+                            <label>نوع الرسالة:</label>
+                            <select id="chatMsgType">
+                                <option value="text">📝 نص</option>
+                                <option value="location">📍 موقع</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <textarea id="chatContent" placeholder="اكتب رسالتك..." rows="2"></textarea>
+                        </div>
+
+                        <button onclick="sendChatMessage()" id="chatSendBtn" disabled>📤 إرسال</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer Chat / Order Tab (شات العميل: اختيار 1 طلب أوردر، 2 استفسار، 3 شكوى + نموذج البند 1، 2، 3، ...) -->
+        <div id="customerChatTab" class="tab-content">
+            <div class="content">
+                <div class="panel">
+                    <h2>📝 شات العميل</h2>
+                    <p class="info-box">غير متاح الكتابة أولاً — عند الدخول اختر 1 أو 2 أو 3 فقط.</p>
+                    <div id="customerChatChoice" class="actions">
+                        <button type="button" class="choice-btn" onclick="customerChatChoose(1)" style="flex:1;">① طلب أوردر</button>
+                        <button type="button" class="choice-btn" onclick="customerChatChoose(2)" style="flex:1;">② استفسار</button>
+                        <button type="button" class="choice-btn" onclick="customerChatChoose(3)" style="flex:1;">③ شكوى</button>
+                    </div>
+                    <div id="customerOrderForm" style="display:none;">
+                        <p class="info-box">العميل يملأ: الاسم + رقم الهاتف + العنوان + البنود، ثم يختار المحل قبل الإرسال. بيانات الدليفري غير ظاهرة في هذه الخطوة.</p>
+                        <div class="form-group">
+                            <label>الاسم (تلقائي من المسجل):</label>
+                            <input type="text" id="customerOrderName" readonly placeholder="سيُملأ من البروفايل">
+                        </div>
+                        <div class="form-group">
+                            <label>رقم الهاتف:</label>
+                            <input type="text" id="customerOrderPhone" placeholder="مثال: 01012345678">
+                        </div>
+                        <div class="form-group">
+                            <label>العنوان (يدوي):</label>
+                            <input type="text" id="customerOrderAddress" placeholder="اكتب العنوان">
+                        </div>
+                        <div class="form-group">
+                            <label>تفاصيل الأوردر (بند 1، بند 2، بند 3 — اضغط Enter في آخر بند لإضافة بند جديد):</label>
+                            <div id="customerOrderBands">
+                                <input type="text" id="band1" placeholder="بند 1" data-band="1">
+                                <input type="text" id="band2" placeholder="بند 2" data-band="2" style="margin-top:8px;">
+                                <input type="text" id="band3" placeholder="بند 3" data-band="3" style="margin-top:8px;">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Notes:</label>
+                            <input type="text" id="customerOrderNotes" placeholder="Optional">
+                        </div>
+                        <div id="customerShopInternal" style="display:block;">
+                            <div class="form-group">
+                                <label>Select Shop:</label>
+                                <select id="customerOrderShopSelect">
+                                    <option value="">(Load shops)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Or Shop Number (shop_number):</label>
+                                <input type="text" id="customerOrderShopNumber" placeholder="e.g. 12345">
+                            </div>
+                            <button type="button" class="btn-info" onclick="selectCustomerShop()">Choose Shop</button>
+                            <div id="customerShopResult" class="status" style="margin-top:12px; display:none;"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>API Base:</label>
+                            <input type="text" id="customerOrderApiBase" value="http://86.48.3.103/api" placeholder="http://86.48.3.103/api">
+                        </div>
+                        <div class="form-group">
+                            <label>JWT Token (عميل):</label>
+                            <input type="text" id="customerOrderToken" placeholder="JWT Token">
+                        </div>
+                        <button type="button" onclick="submitCustomerOrder()">إرسال الطلب للمحل</button>
+                        <div id="customerOrderResult" class="status" style="margin-top:12px; display:none;"></div>
+                    </div>
+                    <div id="customerInquiryComplaintNote" style="display:none;" class="info-box">
+                        لو اختار استفسار أو شكوى يفتح الشات عادي ويتكلم مع المحل (بدون فاتورة).
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Shop Orders Tab -->
+        <div id="shopTab" class="tab-content">
+            <div class="content">
+                <div class="panel">
+                    <h2>🏪 اتصال المحل</h2>
+                    
+                    <div id="shopStatus" class="status disconnected">❌ غير متصل</div>
+
+                    <div class="info-box">
+                        يستقبل: طلبات جديدة، تحديثات الطلبات، رسائل جديدة
+                    </div>
+
+                    <div class="form-group">
+                        <label>الخادم:</label>
+                        <select id="shopServer">
+                            <option value="ws://86.48.3.103">محلي (86.48.3.103)</option>
+                            <option value="ws://86.48.3.103:8000">VPS</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>معرف صاحب المحل:</label>
+                        <input type="number" id="shopOwnerId" value="1" placeholder="Shop Owner ID">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Access Token:</label>
+                        <input type="text" id="shopToken" placeholder="JWT Token">
+                    </div>
+
+                    <button onclick="connectShop()" id="shopConnectBtn">🔌 اتصال</button>
+                    <button onclick="disconnectShop()" id="shopDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
+                </div>
+
+                <div class="panel">
+                    <h2>📋 الأحداث</h2>
+                    <div id="shopMessages" class="messages">
+                        <div class="message system">
+                            <div class="message-content">جاهز لاستقبال أحداث المحل...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer Orders Tab -->
+        <div id="customerTab" class="tab-content">
+            <div class="content">
+                <div class="panel">
+                    <h2>👤 اتصال العميل</h2>
+                    
+                    <div id="customerStatus" class="status disconnected">❌ غير متصل</div>
+
+                    <div class="info-box">
+                        يستقبل: تحديثات الطلب، موقع السائق، رسائل جديدة
+                    </div>
+
+                    <div class="form-group">
+                        <label>الخادم:</label>
+                        <select id="customerServer">
+                            <option value="ws://86.48.3.103">محلي (86.48.3.103)</option>
+                            <option value="ws://86.48.3.103:8000">VPS</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>معرف العميل:</label>
+                        <input type="number" id="customerId" value="1" placeholder="Customer ID">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Access Token:</label>
+                        <input type="text" id="customerToken" placeholder="JWT Token">
+                    </div>
+
+                    <div class="form-group">
+                        <label>API Base:</label>
+                        <input type="text" id="customerApiBase" value="http://86.48.3.103/api" placeholder="http://86.48.3.103/api">
+                    </div>
+
+                    <button onclick="connectCustomer()" id="customerConnectBtn">🔌 اتصال</button>
+                    <button onclick="disconnectCustomer()" id="customerDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
+                    <hr style="margin: 15px 0; border: 1px solid #e0e0e0;">
+                    <h3 style="margin-bottom: 10px; font-size: 14px;">🧾 الفاتورة</h3>
+                    <div class="form-group">
+                        <label>معرف الطلب (للتأكيد/الرفض):</label>
+                        <input type="number" id="customerInvoiceOrderId" value="1" placeholder="Order ID">
+                    </div>
+                    <button onclick="customerConfirmInvoice()" class="btn-success">✅ قبول الاستلام</button>
+                    <button onclick="customerRejectInvoice()" class="btn-danger">❌ رفض الاستلام</button>
+                </div>
+
+                <div class="panel">
+                    <h2>📋 الأحداث</h2>
+                    <div id="customerMessages" class="messages">
+                        <div class="message system">
+                            <div class="message-content">جاهز لاستقبال تحديثات الطلبات...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Driver Tab -->
+        <div id="driverTab" class="tab-content">
+            <div class="content">
+                <div class="panel">
+                    <h2>🚗 اتصال السائق</h2>
+                    
+                    <div id="driverStatus" class="status disconnected">❌ غير متصل</div>
+
+                    <div class="info-box">
+                        يستقبل: طلبات توصيل، تحديثات، رسائل<br>
+                        يرسل: تحديث الموقع
+                    </div>
+
+                    <div class="form-group">
+                        <label>الخادم:</label>
+                        <select id="driverServer">
+                            <option value="ws://86.48.3.103">محلي (86.48.3.103)</option>
+                            <option value="ws://86.48.3.103:8000">VPS</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>معرف السائق:</label>
+                        <input type="number" id="driverId" value="1" placeholder="Driver ID">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Access Token:</label>
+                        <input type="text" id="driverToken" placeholder="JWT Token">
+                    </div>
+
+                    <button onclick="connectDriver()" id="driverConnectBtn">🔌 اتصال</button>
+                    <button onclick="disconnectDriver()" id="driverDisconnectBtn" disabled class="btn-danger">❌ قطع</button>
+
+                    <hr style="margin: 15px 0; border: 1px solid #e0e0e0;">
+
+                    <h3 style="margin-bottom: 10px; font-size: 14px;">📍 تحديث الموقع</h3>
+                    
+                    <div class="form-group">
+                        <label>خط العرض:</label>
+                        <input type="text" id="driverLat" value="24.7136" placeholder="Latitude">
+                    </div>
+
+                    <div class="form-group">
+                        <label>خط الطول:</label>
+                        <input type="text" id="driverLng" value="46.6753" placeholder="Longitude">
+                    </div>
+
+                    <button onclick="updateDriverLocation()" id="driverLocationBtn" disabled class="btn-info">📍 تحديث الموقع</button>
+                    <button onclick="getMyLocation()" class="btn-warning">🎯 موقعي الحالي</button>
+                </div>
+
+                <div class="panel">
+                    <h2>📋 الأحداث</h2>
+                    <div id="driverMessages" class="messages">
+                        <div class="message system">
+                            <div class="message-content">جاهز لاستقبال طلبات التوصيل...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket connections
+        let chatWs = null;
+        let shopWs = null;
+        let customerWs = null;
+        let driverWs = null;
+        let currentChatUserType = null;
+        let currentChatTokenUserType = null;
+        let chatMediaRecorder = null;
+        let chatRecordingStream = null;
+        let chatAudioChunks = [];
+
+        // ==================== Tab Switching ====================
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            const btn = document.querySelector('.tab[data-tab="' + tabName + '"]');
+            if (btn) btn.classList.add('active');
+            const tabEl = document.getElementById(tabName + 'Tab');
+            if (tabEl) tabEl.classList.add('active');
+        }
+
+        // ==================== شات العميل: اختيار 1 طلب أوردر، 2 استفسار، 3 شكوى ====================
+        function customerChatChoose(choice) {
+            document.getElementById('customerOrderForm').style.display = (choice === 1) ? 'block' : 'none';
+            document.getElementById('customerInquiryComplaintNote').style.display = (choice === 2 || choice === 3) ? 'block' : 'none';
+            if (choice === 1) {
+                setupBandEnterHandlers();
+                loadCustomerShops();
+            }
+        }
+
+        let bandCount = 3;
+        function setupBandEnterHandlers() {
+            const container = document.getElementById('customerOrderBands');
+            if (!container || container._bandHandlers) return;
+            container._bandHandlers = true;
+            container.addEventListener('keydown', function(e) {
+                if (e.key !== 'Enter') return;
+                const inputs = container.querySelectorAll('input[data-band]');
+                const target = e.target;
+                if (!target.matches('input[data-band]')) return;
+                e.preventDefault();
+                const last = inputs[inputs.length - 1];
+                if (target !== last) return;
+                bandCount++;
+                const newInput = document.createElement('input');
+                newInput.type = 'text';
+                newInput.placeholder = 'بند ' + bandCount;
+                newInput.dataset.band = String(bandCount);
+                newInput.style.marginTop = '8px';
+                container.appendChild(newInput);
+                newInput.focus();
+            });
+        }
+
+        function _customerOrderApiBase() {
+            const base = (document.getElementById('customerOrderApiBase') || {}).value || '/api';
+            return (base || '').replace(/\/$/, '');
+        }
+
+        function _normalizeBearerToken(rawToken) {
+            const token = String(rawToken || '').trim();
+            if (!token) return '';
+
+            const noBearer = token.replace(/^Bearer\s+/i, '').trim();
+            const jwtLike = noBearer.match(/[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+/);
+            if (jwtLike && jwtLike[0]) return jwtLike[0];
+
+            return noBearer.split(/\s+/)[0];
+        }
+
+        function _validateHeaderToken(token) {
+            if (!token) return 'أدخل JWT Token';
+            if (/[^\u0000-\u00FF]/.test(token)) {
+                return 'JWT Token يحتوي على حروف غير صالحة. الصق التوكن فقط بدون أي نص عربي.';
+            }
+            return '';
+        }
+
+        function _decodeJwtPayload(token) {
+            try {
+                const parts = String(token || '').split('.');
+                if (parts.length < 2) return null;
+                const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+                return JSON.parse(atob(padded));
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function _extractTokenUserType(token) {
+            const payload = _decodeJwtPayload(token);
+            if (!payload || typeof payload !== 'object') return '';
+            if (payload.user_type) return String(payload.user_type);
+            if (payload.employee_id) return 'employee';
+            if (payload.customer_id) return 'customer';
+            if (payload.driver_id) return 'driver';
+            if (payload.shop_owner_id || payload.user_id) return 'shop_owner';
+            return '';
+        }
+
+        function _isShopManagerUserType(userType) {
+            return userType === 'shop_owner' || userType === 'employee';
+        }
+
+        function _syncChatUserTypeFromToken(token, announceMismatch) {
+            const selectedUserType = ((document.getElementById('chatUserType') || {}).value || '').trim();
+            const tokenUserType = _extractTokenUserType(token);
+            currentChatTokenUserType = tokenUserType || null;
+
+            if (tokenUserType) {
+                currentChatUserType = tokenUserType;
+                const userTypeEl = document.getElementById('chatUserType');
+                if (userTypeEl && userTypeEl.value !== tokenUserType) {
+                    userTypeEl.value = tokenUserType;
+                }
+                if (announceMismatch && selectedUserType && selectedUserType !== tokenUserType) {
+                    addMessage('chatMessages', 'system', 'النظام',
+                        `نوع المستخدم في التوكن هو: ${tokenUserType}. تم ضبط الاختيار تلقائياً.`);
+                }
+            } else {
+                currentChatUserType = selectedUserType || null;
+            }
+            return currentChatUserType;
+        }
+
+        function loadCustomerShops() {
+            const base = _customerOrderApiBase();
+            const selectEl = document.getElementById('customerOrderShopSelect');
+            if (!selectEl) return;
+
+            selectEl.innerHTML = '<option value=\"\">(Load shops)</option>';
+
+            fetch(base + '/shops/', { method: 'GET' })
+                .then(r => r.json())
+                .then(data => {
+                    const shops = (data && data.data) || [];
+                    selectEl.innerHTML = '<option value=\"\">(Select)</option>';
+                    shops.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = String(s.id);
+                        opt.textContent = (s.shop_name || 'Shop') + ' (' + (s.shop_number || s.id) + ')';
+                        selectEl.appendChild(opt);
+                    });
+
+                    const saved = localStorage.getItem('mr_delivery_shop_owner_id');
+                    if (saved) selectEl.value = saved;
+                })
+                .catch(() => {
+                    selectEl.innerHTML = '<option value=\"\">(Failed to load)</option>';
+                });
+        }
+
+        function selectCustomerShop() {
+            const base = _customerOrderApiBase();
+            const tokenInputEl = document.getElementById('customerOrderToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
+            const shopOwnerId = (document.getElementById('customerOrderShopSelect') || {}).value;
+            const shopNumber = ((document.getElementById('customerOrderShopNumber') || {}).value || '').trim();
+
+            if (tokenErr) { alert(tokenErr); return; }
+            if (tokenInputEl) tokenInputEl.value = token;
+            if (!shopOwnerId && !shopNumber) { alert('Select shop or enter shop number'); return; }
+
+            const resultEl = document.getElementById('customerShopResult');
+            if (!resultEl) return;
+            resultEl.style.display = 'block';
+            resultEl.className = 'status connecting';
+            resultEl.textContent = 'Choosing shop...';
+
+            const payload = shopOwnerId ? { shop_owner_id: Number(shopOwnerId) } : { shop_number: shopNumber };
+
+            fetch(base + '/customer/select-shop/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (ok && json && json.data && json.data.shop_owner_id) {
+                    resultEl.className = 'status connected';
+                    resultEl.textContent = 'Selected: ' + (json.data.shop_name || '') + ' (' + (json.data.shop_number || json.data.shop_owner_id) + ')';
+                    localStorage.setItem('mr_delivery_shop_owner_id', String(json.data.shop_owner_id));
+                    const selectEl = document.getElementById('customerOrderShopSelect');
+                    if (selectEl) selectEl.value = String(json.data.shop_owner_id);
+                } else {
+                    resultEl.className = 'status disconnected';
+                    resultEl.textContent = (json && (json.message || json.detail)) ? (json.message || json.detail) : 'Failed';
+                }
+            })
+            .catch(err => {
+                resultEl.className = 'status disconnected';
+                resultEl.textContent = 'Error: ' + err.message;
+            });
+        }
+
+        function submitCustomerOrder() {
+            const base = _customerOrderApiBase();
+            const tokenInputEl = document.getElementById('customerOrderToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
+            const address = (document.getElementById('customerOrderAddress') || {}).value.trim();
+            const notes = (document.getElementById('customerOrderNotes') || {}).value.trim();
+            const container = document.getElementById('customerOrderBands');
+            const inputs = container ? container.querySelectorAll('input[data-band]') : [];
+            const items = [];
+            inputs.forEach(inp => { const v = inp.value.trim(); if (v) items.push(v); });
+            if (!address) { alert('العنوان مطلوب'); return; }
+            if (items.length === 0) { alert('أضف بنداً واحداً على الأقل (تفاصيل الأوردر)'); return; }
+            if (tokenErr) { alert(tokenErr); return; }
+            if (tokenInputEl) tokenInputEl.value = token;
+            const resultEl = document.getElementById('customerOrderResult');
+            resultEl.style.display = 'block';
+            resultEl.className = 'status connecting';
+            resultEl.textContent = 'جاري إرسال الطلب...';
+            fetch(base + '/customer/orders/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ address, items, notes })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.data && data.data.id) {
+                    resultEl.className = 'status connected';
+                    resultEl.innerHTML = 'تم إرسال الطلب بنجاح. رقم الطلب: <strong>' + (data.data.order_number || data.data.id) + '</strong>. افتح تبويب "شات الطلب" وادخل معرف الطلب: <strong>' + data.data.id + '</strong> للدردشة مع المحل.';
+                } else {
+                    const directShopError = data && data.shop;
+                    const nestedShopError = data && data.errors && data.errors.shop;
+                    const shopError = Array.isArray(nestedShopError)
+                        ? nestedShopError[0]
+                        : (nestedShopError || directShopError);
+
+                    if (shopError) {
+                        const shopInternalEl = document.getElementById('customerShopInternal');
+                        const shopResultEl = document.getElementById('customerShopResult');
+                        if (shopInternalEl) shopInternalEl.style.display = 'block';
+                        loadCustomerShops();
+                        if (shopResultEl) {
+                            shopResultEl.style.display = 'block';
+                            shopResultEl.className = 'status disconnected';
+                            shopResultEl.textContent = String(shopError);
+                        }
+                        resultEl.className = 'status disconnected';
+                        resultEl.textContent = 'لازم تختار المحل الأول، ثم اضغط Choose Shop وبعدها أعد إرسال الطلب.';
+                        return;
+                    }
+
+                    resultEl.className = 'status disconnected';
+                    resultEl.textContent = (data.message || 'خطأ') + (data.errors ? ' ' + JSON.stringify(data.errors) : '');
+                }
+            })
+            .catch(err => {
+                resultEl.className = 'status disconnected';
+                resultEl.textContent = 'خطأ: ' + err.message;
+            });
+        }
+
+        // ==================== Utility Functions ====================
+        function updateStatus(elementId, status, message) {
+            const el = document.getElementById(elementId);
+            el.className = `status ${status}`;
+            el.textContent = message;
+        }
+
+        function addMessage(containerId, type, sender, content, time = null) {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            
+            const timeStr = time || new Date().toLocaleTimeString('ar-SA');
+            
+            div.innerHTML = `
+                <div class="message-header">
+                    <span class="message-sender">${sender}</span>
+                    <span class="message-time">${timeStr}</span>
+                </div>
+                <div class="message-content">${content}</div>
+            `;
+            
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function getSenderName(senderType) {
+            const names = {
+                'shop_owner': '👔 صاحب المحل',
+                'employee': '👨‍💼 موظف',
+                'customer': '👤 عميل',
+                'driver': '🚗 سائق'
+            };
+            return names[senderType] || senderType;
+        }
+
+        // ==================== Chat WebSocket ====================
+        function connectChat() {
+            const server = document.getElementById('chatServer').value;
+            const orderId = document.getElementById('chatOrderId').value;
+            const tokenInputEl = document.getElementById('chatToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const chatType = document.getElementById('chatType').value;
+            currentChatUserType = document.getElementById('chatUserType').value;
+            const tokenErr = _validateHeaderToken(token);
+            if (!orderId || !token) {
+                alert('أدخل معرف الطلب و Token');
+                return;
+            }
+            if (tokenErr) {
+                alert(tokenErr);
+                return;
+            }
+            if (tokenInputEl) tokenInputEl.value = token;
+            _syncChatUserTypeFromToken(token, true);
+
+            const url = `${server}/ws/chat/order/${orderId}/?token=${token}&chat_type=${chatType}`;
+            document.getElementById('chatUrl').textContent = url;
+
+            updateStatus('chatStatus', 'connecting', '🔄 جاري الاتصال...');
+            document.getElementById('chatConnectBtn').disabled = true;
+
+            try {
+                chatWs = new WebSocket(url);
+
+                chatWs.onopen = () => {
+                    updateStatus('chatStatus', 'connected', '✅ متصل');
+                    document.getElementById('chatConnectBtn').disabled = true;
+                    document.getElementById('chatDisconnectBtn').disabled = false;
+                    document.getElementById('chatSendBtn').disabled = false;
+                    document.getElementById('locationBtn').disabled = false;
+                    document.getElementById('markReadBtn').disabled = false;
+                    document.getElementById('chatImageBtn').disabled = false;
+                    document.getElementById('chatAudioBtn').disabled = false;
+                    document.getElementById('chatRecordBtn').disabled = false;
+                    const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+                    document.getElementById('shopCancelBtn').disabled = !canManageOrder;
+                    document.getElementById('shopInvoiceBtn').disabled = !canManageOrder;
+                    document.getElementById('shopEditInvoiceBtn').disabled = !canManageOrder;
+                    document.getElementById('shopAssignDriverBtn').disabled = !canManageOrder;
+                    addMessage('chatMessages', 'system', 'النظام', 'تم الاتصال بنجاح!');
+                };
+
+                chatWs.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleChatMessage(data);
+                };
+
+                chatWs.onerror = (error) => {
+                    addMessage('chatMessages', 'error', 'خطأ', 'حدث خطأ في الاتصال');
+                    updateStatus('chatStatus', 'disconnected', '❌ خطأ');
+                };
+
+                chatWs.onclose = (event) => {
+                    updateStatus('chatStatus', 'disconnected', '❌ غير متصل');
+                    document.getElementById('chatConnectBtn').disabled = false;
+                    document.getElementById('chatDisconnectBtn').disabled = true;
+                    document.getElementById('chatSendBtn').disabled = true;
+                    document.getElementById('locationBtn').disabled = true;
+                    document.getElementById('markReadBtn').disabled = true;
+                    document.getElementById('chatImageBtn').disabled = true;
+                    document.getElementById('chatAudioBtn').disabled = true;
+                    document.getElementById('chatRecordBtn').disabled = true;
+                    document.getElementById('shopCancelBtn').disabled = true;
+                    document.getElementById('shopInvoiceBtn').disabled = true;
+                    document.getElementById('shopEditInvoiceBtn').disabled = true;
+                    document.getElementById('shopAssignDriverBtn').disabled = true;
+                    
+                    let reason = '';
+                    if (event.code === 4401) reason = 'غير مصرح';
+                    else if (event.code === 4403) reason = 'ممنوع الوصول';
+                    else reason = event.reason || 'غير معروف';
+                    
+                    addMessage('chatMessages', 'system', 'النظام', `تم الإغلاق: ${event.code} - ${reason}`);
+                };
+
+            } catch (e) {
+                updateStatus('chatStatus', 'disconnected', '❌ فشل');
+                document.getElementById('chatConnectBtn').disabled = false;
+                document.getElementById('chatDisconnectBtn').disabled = true;
+                document.getElementById('chatSendBtn').disabled = true;
+                document.getElementById('locationBtn').disabled = true;
+                document.getElementById('markReadBtn').disabled = true;
+                document.getElementById('chatImageBtn').disabled = true;
+                document.getElementById('chatAudioBtn').disabled = true;
+                document.getElementById('chatRecordBtn').disabled = true;
+                document.getElementById('shopCancelBtn').disabled = true;
+                document.getElementById('shopInvoiceBtn').disabled = true;
+                document.getElementById('shopEditInvoiceBtn').disabled = true;
+                document.getElementById('shopAssignDriverBtn').disabled = true;
+                addMessage('chatMessages', 'error', 'خطأ', e.message);
+            }
+        }
+
+        function _buildChatContent(msg) {
+            let content = msg.content || '';
+            if (msg.message_type === 'location' && msg.latitude) {
+                content = `📍 Location: <a href="https://maps.google.com/?q=${msg.latitude},${msg.longitude}" target="_blank">${msg.latitude}, ${msg.longitude}</a>`;
+            }
+            if (msg.image_file_url) {
+                const imageUrl = _chatMediaUrl(msg.image_file_url);
+                content += `<br><img src="${imageUrl}" style="max-width: 150px; margin-top: 5px; border-radius: 5px;">`;
+            }
+            if (msg.audio_file_url) {
+                const audioUrl = _chatMediaUrl(msg.audio_file_url);
+                content += `<br><audio controls src="${audioUrl}" style="margin-top: 6px; max-width: 220px;"></audio>`;
+            }
+            return content;
+        }
+
+        function handleChatMessage(data) {
+            switch(data.type) {
+                case 'connection':
+                    addMessage('chatMessages', 'system', 'System',
+                        `${data.message} | chat: ${data.chat_type} | user: ${data.user_type}`);
+                    break;
+
+                case 'previous_messages':
+                    addMessage('chatMessages', 'system', 'System', `📜 ${data.messages.length} previous messages`);
+                    data.messages.forEach(msg => {
+                        addMessage(
+                            'chatMessages',
+                            msg.sender_type,
+                            `${getSenderName(msg.sender_type)} (${msg.sender_name || ''})`,
+                            _buildChatContent(msg),
+                            new Date(msg.created_at).toLocaleTimeString('ar-SA')
+                        );
+                    });
+                    break;
+
+                case 'chat_message':
+                    const msg = data.data;
+                    addMessage(
+                        'chatMessages',
+                        msg.sender_type,
+                        `${getSenderName(msg.sender_type)} (${msg.sender_name || ''})`,
+                        _buildChatContent(msg)
+                    );
+                    break;
+
+                case 'typing':
+                    const typingEl = document.getElementById('chatTyping');
+                    if (data.is_typing) {
+                        typingEl.style.display = 'block';
+                        typingEl.textContent = `${data.user_name || getSenderName(data.user_type)} is typing...`;
+                    } else {
+                        typingEl.style.display = 'none';
+                    }
+                    break;
+
+                case 'messages_read':
+                    addMessage('chatMessages', 'system', 'System', `✓ Messages read by ${getSenderName(data.reader_type)}`);
+                    break;
+
+                case 'error':
+                    addMessage('chatMessages', 'error', 'Error', data.message);
+                    break;
+
+                default:
+                    console.log('Unknown message:', data);
+            }
+        }
+
+        function sendChatMessage() {
+            if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+
+            const content = document.getElementById('chatContent').value.trim();
+            const msgType = document.getElementById('chatMsgType').value;
+
+            if (!content && msgType === 'text') {
+                alert('أدخل محتوى الرسالة');
+                return;
+            }
+
+            chatWs.send(JSON.stringify({
+                type: 'chat_message',
+                message_type: msgType,
+                content: content
+            }));
+
+            document.getElementById('chatContent').value = '';
+        }
+
+        function sendLocation() {
+            if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    chatWs.send(JSON.stringify({
+                        type: 'location',
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude,
+                        content: 'موقعي الحالي'
+                    }));
+                    addMessage('chatMessages', 'system', 'النظام', 'تم إرسال الموقع');
+                }, (err) => {
+                    alert('فشل الحصول على الموقع: ' + err.message);
+                });
+            } else {
+                alert('المتصفح لا يدعم الموقع');
+            }
+        }
+
+        function markChatRead() {
+            if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+            chatWs.send(JSON.stringify({ type: 'mark_read' }));
+        }
+
+        function disconnectChat() {
+            if (chatWs) {
+                chatWs.close(1000, 'manual close');
+                chatWs = null;
+            }
+            if (chatMediaRecorder && chatMediaRecorder.state === 'recording') {
+                chatMediaRecorder.stop();
+            }
+            if (chatRecordingStream) {
+                chatRecordingStream.getTracks().forEach(t => t.stop());
+                chatRecordingStream = null;
+            }
+            const recordBtn = document.getElementById('chatRecordBtn');
+            if (recordBtn) recordBtn.textContent = '⏺️ Record';
+        }
+
+        function _chatOrderApiBase() {
+            const base = (document.getElementById('chatOrderApiBase') || {}).value || '/api';
+            return (base || '').replace(/\/$/, '');
+        }
+
+        function _chatMediaUrl(url) {
+            if (!url) return '';
+            if (/^https?:\/\//i.test(url)) return url;
+            const base = _chatOrderApiBase();
+            const origin = base.replace(/\/api$/i, '');
+            if (url.startsWith('/')) return origin + url;
+            return origin + '/' + url;
+        }
+
+        function _chatAuthToken() {
+            const tokenInputEl = document.getElementById('chatToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
+            if (tokenErr) {
+                alert(tokenErr);
+                return '';
+            }
+            if (tokenInputEl) tokenInputEl.value = token;
+            return token;
+        }
+
+        function uploadChatMedia(file, kind) {
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = _chatAuthToken();
+            const base = _chatOrderApiBase();
+            const chatType = (document.getElementById('chatType') || {}).value || 'shop_customer';
+            const caption = ((document.getElementById('chatContent') || {}).value || '').trim();
+
+            if (!orderId || !token) return;
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('chat_type', chatType);
+            formData.append('message_type', kind);
+            if (caption) formData.append('content', caption);
+            if (kind === 'image') formData.append('image_file', file);
+            if (kind === 'audio') formData.append('audio_file', file);
+
+            fetch(base + '/chat/order/' + orderId + '/send-media/', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token },
+                body: formData
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok) {
+                    const msg = (json && (json.message || json.detail)) || 'Failed to upload media';
+                    addMessage('chatMessages', 'error', 'Error', msg);
+                    return;
+                }
+                document.getElementById('chatContent').value = '';
+            })
+            .catch(err => addMessage('chatMessages', 'error', 'Error', err.message || 'Failed to upload media'));
+        }
+
+        function toggleAudioRecording() {
+            const btn = document.getElementById('chatRecordBtn');
+            if (!navigator.mediaDevices || !window.MediaRecorder) {
+                addMessage('chatMessages', 'error', 'Error', 'Recording is not supported in this browser');
+                return;
+            }
+
+            if (chatMediaRecorder && chatMediaRecorder.state === 'recording') {
+                chatMediaRecorder.stop();
+                return;
+            }
+
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    chatRecordingStream = stream;
+                    chatAudioChunks = [];
+                    chatMediaRecorder = new MediaRecorder(stream);
+
+                    chatMediaRecorder.ondataavailable = (event) => {
+                        if (event.data && event.data.size > 0) {
+                            chatAudioChunks.push(event.data);
+                        }
+                    };
+
+                    chatMediaRecorder.onstop = () => {
+                        const blobType = (chatAudioChunks[0] && chatAudioChunks[0].type) || 'audio/webm';
+                        const audioBlob = new Blob(chatAudioChunks, { type: blobType });
+                        const ext = blobType.includes('ogg') ? 'ogg' : 'webm';
+                        const audioFile = new File([audioBlob], `record_${Date.now()}.${ext}`, { type: blobType });
+                        uploadChatMedia(audioFile, 'audio');
+                        if (chatRecordingStream) {
+                            chatRecordingStream.getTracks().forEach(t => t.stop());
+                        }
+                        chatRecordingStream = null;
+                        chatAudioChunks = [];
+                        if (btn) btn.textContent = '⏺️ Record';
+                    };
+
+                    chatMediaRecorder.start();
+                    if (btn) btn.textContent = '⏹️ Stop & Send';
+                })
+                .catch(err => addMessage('chatMessages', 'error', 'Error', 'Microphone error: ' + err.message));
+        }
+
+
+        function _parsePricedItemLine(itemText) {
+            const text = String(itemText || '').trim();
+            const match = text.match(/^(.*?)(?:\s*-\s*السعر:\s*([0-9]+(?:\.[0-9]+)?))?$/);
+            if (!match) return { name: text, price: 0 };
+            return {
+                name: String(match[1] || '').trim(),
+                price: Number(match[2] || 0)
+            };
+        }
+
+        function _buildPricedItemsFromPrompt(orderData) {
+            const rawItems = Array.isArray(orderData.items) ? orderData.items : [];
+            if (!rawItems.length) throw new Error('لا توجد بنود لتسعيرها في الطلب.');
+
+            const parsed = rawItems
+                .map(_parsePricedItemLine)
+                .filter(x => x.name);
+            if (!parsed.length) throw new Error('لا توجد بنود صالحة في الفاتورة.');
+
+            const pricedItems = [];
+            let total = 0;
+            for (let i = 0; i < parsed.length; i++) {
+                const item = parsed[i];
+                const defaultPrice = Number.isFinite(item.price) ? item.price : 0;
+                const entered = prompt('اكتب سعر: ' + item.name, String(defaultPrice));
+                if (entered === null) throw new Error('تم إلغاء العملية.');
+                const price = Number(entered);
+                if (!Number.isFinite(price) || price < 0) {
+                    throw new Error('سعر غير صالح للبند: ' + item.name);
+                }
+                total += price;
+                pricedItems.push(item.name + ' - السعر: ' + Number(price.toFixed(2)));
+            }
+
+            const existingDeliveryFee = Number(orderData.delivery_fee || 0);
+            const deliveryInput = prompt('اكتب تكلفة التوصيل:', String(Number.isFinite(existingDeliveryFee) ? existingDeliveryFee : 0));
+            if (deliveryInput === null) throw new Error('تم إلغاء العملية.');
+            const deliveryFee = Number(deliveryInput);
+            if (!Number.isFinite(deliveryFee) || deliveryFee < 0) {
+                throw new Error('تكلفة التوصيل غير صالحة.');
+            }
+
+            return {
+                items: pricedItems,
+                totalAmount: Number((total + deliveryFee).toFixed(2)),
+                deliveryFee: Number(deliveryFee.toFixed(2))
+            };
+        }
+
+        function shopCancelCurrentOrder() {
+            const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+            if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
+
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = _chatAuthToken();
+            const base = _chatOrderApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            _syncChatUserTypeFromToken(token, false);
+            if (!_isShopManagerUserType(currentChatUserType)) {
+                alert('هذا الإجراء متاح فقط للكاشير/صاحب المحل حسب نوع التوكن.');
+                return;
+            }
+
+            fetch(base + '/shop/orders/' + orderId + '/', {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok || !json || !json.data) {
+                    throw new Error((json && (json.message || json.detail)) || 'تعذر جلب الطلب.');
+                }
+                const orderData = json.data;
+                if (orderData.status === 'confirmed' || orderData.status === 'preparing' || orderData.status === 'on_way' || orderData.status === 'delivered') {
+                    throw new Error('لا يمكن إلغاء الفاتورة بعد تأكيد العميل.');
+                }
+                if (orderData.status !== 'pending_customer_confirm') {
+                    throw new Error('لا توجد فاتورة معلقة للإلغاء حالياً.');
+                }
+                return fetch(base + '/shop/orders/' + orderId + '/', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ status: 'cancelled' })
+                }).then(r => r.json().then(j => ({ ok: r.ok, json: j })));
+            })
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('chatMessages', 'system', 'النظام', 'تم إلغاء الفاتورة.');
+                } else {
+                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل إلغاء الفاتورة.');
+                }
+            })
+            .catch(err => addMessage('chatMessages', 'error', 'خطأ', err.message || 'فشل إلغاء الفاتورة.'));
+        }
+
+        function shopSendInvoiceToCustomer(isEdit) {
+            const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+            if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
+
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = _chatAuthToken();
+            const base = _chatOrderApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+            _syncChatUserTypeFromToken(token, false);
+            if (!_isShopManagerUserType(currentChatUserType)) {
+                alert('هذا الإجراء متاح فقط للكاشير/صاحب المحل حسب نوع التوكن.');
+                return;
+            }
+
+            fetch(base + '/shop/orders/' + orderId + '/', {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok || !json || !json.data) {
+                    throw new Error((json && (json.message || json.detail)) || 'تعذر جلب الطلب.');
+                }
+                const orderData = json.data;
+
+                if (orderData.status === 'cancelled' || orderData.status === 'delivered') {
+                    throw new Error('لا يمكن تعديل الفاتورة بعد إلغاء الطلب أو بعد إتمامه.');
+                }
+
+                const priced = _buildPricedItemsFromPrompt(orderData);
+                return fetch(base + '/shop/orders/' + orderId + '/', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({
+                        status: 'pending_customer_confirm',
+                        items: priced.items,
+                        total_amount: priced.totalAmount,
+                        delivery_fee: priced.deliveryFee
+                    })
+                }).then(r => r.json().then(j => ({ ok: r.ok, json: j })));
+            })
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('chatMessages', 'system', 'النظام', isEdit
+                        ? 'تم تعديل الفاتورة وإعادة إرسالها للعميل.'
+                        : 'تم إرسال الفاتورة للعميل. العميل يقدر يقبل أو يرفض.');
+                } else {
+                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل حفظ الفاتورة.');
+                }
+            })
+            .catch(err => addMessage('chatMessages', 'error', 'خطأ', err.message || 'فشل حفظ الفاتورة.'));
+        }
+
+        function shopEditInvoice() {
+            shopSendInvoiceToCustomer(true);
+        }
+
+        function shopAssignOrderToDriver() {
+            const canManageOrder = currentChatUserType === 'shop_owner' || currentChatUserType === 'employee';
+            if (!canManageOrder) { alert('متاح فقط للكاشير/صاحب المحل'); return; }
+
+            const orderId = (document.getElementById('chatOrderId') || {}).value;
+            const token = _chatAuthToken();
+            const base = _chatOrderApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+
+            _syncChatUserTypeFromToken(token, false);
+            if (!_isShopManagerUserType(currentChatUserType)) {
+                alert('هذا الإجراء متاح فقط للكاشير/صاحب المحل حسب نوع التوكن.');
+                return;
+            }
+
+            let currentOrder = null;
+            fetch(base + '/shop/orders/' + orderId + '/', {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok || !json || !json.data) {
+                    throw new Error((json && (json.message || json.detail)) || 'تعذر جلب الطلب.');
+                }
+                currentOrder = json.data;
+                if (currentOrder.status !== 'confirmed' && currentOrder.status !== 'preparing' && currentOrder.status !== 'on_way') {
+                    throw new Error('لا يمكن تحويل الأوردر للدليفري قبل تأكيد العميل على الفاتورة.');
+                }
+                return fetch(base + '/shop/staff/?staff_type=driver', {
+                    method: 'GET',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                }).then(r => r.json().then(j => ({ ok: r.ok, json: j })));
+            })
+            .then(({ ok, json }) => {
+                const list = ok ? ((((json || {}).data || {}).results) || []).filter(d => !d.is_blocked) : [];
+                let chosen = null;
+                if (list.length) {
+                    const menu = list.map((d, idx) =>
+                        `${idx + 1}) ${d.name} - الحالة: ${d.status_display || d.status} - الطلبات الحالية: ${d.current_orders_count || 0}`
+                    ).join('\n');
+                    const selected = prompt('اختار رقم الدليفري:\n' + menu, '1');
+                    if (selected === null) throw new Error('تم إلغاء التحويل للدليفري.');
+                    const index = Number(selected) - 1;
+                    if (!Number.isInteger(index) || index < 0 || index >= list.length) {
+                        throw new Error('اختيار غير صالح.');
+                    }
+                    chosen = list[index];
+                } else {
+                    const manualId = prompt('ادخل معرف الدليفري (driver_id):', '');
+                    if (manualId === null) throw new Error('تم إلغاء التحويل للدليفري.');
+                    const numericId = Number(manualId);
+                    if (!Number.isInteger(numericId) || numericId <= 0) {
+                        throw new Error('معرف الدليفري غير صالح.');
+                    }
+                    chosen = { id: numericId, name: `ID ${numericId}` };
+                }
+
+                const nextStatus = currentOrder && currentOrder.status === 'confirmed' ? 'preparing' : (currentOrder ? currentOrder.status : 'preparing');
+
+                return fetch(base + '/shop/orders/' + orderId + '/', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({
+                        driver_id: chosen.id,
+                        status: nextStatus
+                    })
+                }).then(r => r.json().then(j => ({ ok: r.ok, json: j, chosen })));
+            })
+            .then(({ ok, json, chosen }) => {
+                if (ok) {
+                    addMessage('chatMessages', 'system', 'النظام', `تم تحويل الأوردر للدليفري: ${chosen.name}.`);
+                } else {
+                    addMessage('chatMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل تحويل الأوردر للدليفري.');
+                }
+            })
+            .catch(err => addMessage('chatMessages', 'error', 'خطأ', err.message || 'فشل تحويل الأوردر للدليفري.'));
+        }
+
+        // ==================== Shop WebSocket ====================
+        function connectShop() {
+            const server = document.getElementById('shopServer').value;
+            const shopOwnerId = document.getElementById('shopOwnerId').value;
+            const token = document.getElementById('shopToken').value;
+
+            if (!shopOwnerId || !token) {
+                alert('أدخل البيانات المطلوبة');
+                return;
+            }
+
+            const url = `${server}/ws/orders/shop/${shopOwnerId}/?token=${token}`;
+            updateStatus('shopStatus', 'connecting', '🔄 جاري الاتصال...');
+            document.getElementById('shopConnectBtn').disabled = true;
+
+            try {
+                shopWs = new WebSocket(url);
+
+                shopWs.onopen = () => {
+                    updateStatus('shopStatus', 'connected', '✅ متصل');
+                    document.getElementById('shopConnectBtn').disabled = true;
+                    document.getElementById('shopDisconnectBtn').disabled = false;
+                    addMessage('shopMessages', 'system', 'النظام', 'تم الاتصال - جاهز لاستقبال الطلبات');
+                };
+
+                shopWs.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleShopMessage(data);
+                };
+
+                shopWs.onclose = (event) => {
+                    updateStatus('shopStatus', 'disconnected', '❌ غير متصل');
+                    document.getElementById('shopConnectBtn').disabled = false;
+                    document.getElementById('shopDisconnectBtn').disabled = true;
+                };
+
+            } catch (e) {
+                updateStatus('shopStatus', 'disconnected', '❌ فشل');
+                document.getElementById('shopConnectBtn').disabled = false;
+            }
+        }
+
+        function handleShopMessage(data) {
+            switch(data.type) {
+                case 'connection':
+                    addMessage('shopMessages', 'system', 'النظام', data.message);
+                    break;
+                case 'new_order':
+                    addMessage('shopMessages', 'system', '🆕 طلب جديد', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'order_update':
+                    addMessage('shopMessages', 'system', '📝 تحديث طلب', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'new_message':
+                    addMessage('shopMessages', 'customer', '💬 رسالة جديدة', JSON.stringify(data.data, null, 2));
+                    break;
+            }
+        }
+
+        function disconnectShop() {
+            if (shopWs) { shopWs.close(); shopWs = null; }
+        }
+
+        function _customerApiBase() {
+            const base = (document.getElementById('customerApiBase') || {}).value || '/api';
+            return (base || '').replace(/\/$/, '');
+        }
+
+        function customerConfirmInvoice() {
+            const orderId = (document.getElementById('customerInvoiceOrderId') || {}).value;
+            const tokenInputEl = document.getElementById('customerToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
+            const base = _customerApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+            if (tokenErr) { alert(tokenErr); return; }
+            if (tokenInputEl) tokenInputEl.value = token;
+
+            fetch(base + '/customer/orders/' + orderId + '/confirm/', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('customerMessages', 'system', 'النظام', 'تم قبول الفاتورة والاستلام.');
+                } else {
+                    addMessage('customerMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل تأكيد الفاتورة');
+                }
+            })
+            .catch(err => addMessage('customerMessages', 'error', 'خطأ', 'Error: ' + err.message));
+        }
+
+        function customerRejectInvoice() {
+            const orderId = (document.getElementById('customerInvoiceOrderId') || {}).value;
+            const tokenInputEl = document.getElementById('customerToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
+            const base = _customerApiBase();
+            if (!orderId || !token) { alert('أدخل معرف الطلب و Token'); return; }
+            if (tokenErr) { alert(tokenErr); return; }
+            if (tokenInputEl) tokenInputEl.value = token;
+
+            fetch(base + '/customer/orders/' + orderId + '/reject/', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (ok) {
+                    addMessage('customerMessages', 'system', 'النظام', 'تم رفض الفاتورة.');
+                } else {
+                    addMessage('customerMessages', 'error', 'خطأ', (json && (json.message || json.detail)) || 'فشل رفض الفاتورة');
+                }
+            })
+            .catch(err => addMessage('customerMessages', 'error', 'خطأ', 'Error: ' + err.message));
+        }
+
+        // ==================== Customer WebSocket ====================
+        function connectCustomer() {
+            const server = document.getElementById('customerServer').value;
+            const customerId = document.getElementById('customerId').value;
+            const tokenInputEl = document.getElementById('customerToken');
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            const tokenErr = _validateHeaderToken(token);
+
+            if (!customerId || !token) {
+                alert('أدخل البيانات المطلوبة');
+                return;
+            }
+            if (tokenErr) {
+                alert(tokenErr);
+                return;
+            }
+            if (tokenInputEl) tokenInputEl.value = token;
+
+            const url = `${server}/ws/orders/customer/${customerId}/?token=${token}`;
+            updateStatus('customerStatus', 'connecting', '🔄 جاري الاتصال...');
+            document.getElementById('customerConnectBtn').disabled = true;
+
+            try {
+                customerWs = new WebSocket(url);
+
+                customerWs.onopen = () => {
+                    updateStatus('customerStatus', 'connected', '✅ متصل');
+                    document.getElementById('customerConnectBtn').disabled = true;
+                    document.getElementById('customerDisconnectBtn').disabled = false;
+                    addMessage('customerMessages', 'system', 'النظام', 'تم الاتصال - جاهز لاستقبال التحديثات');
+                };
+
+                customerWs.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleCustomerMessage(data);
+                };
+
+                customerWs.onclose = (event) => {
+                    updateStatus('customerStatus', 'disconnected', '❌ غير متصل');
+                    document.getElementById('customerConnectBtn').disabled = false;
+                    document.getElementById('customerDisconnectBtn').disabled = true;
+                };
+
+            } catch (e) {
+                updateStatus('customerStatus', 'disconnected', '❌ فشل');
+                document.getElementById('customerConnectBtn').disabled = false;
+            }
+        }
+
+        function handleCustomerMessage(data) {
+            switch(data.type) {
+                case 'connection':
+                    addMessage('customerMessages', 'system', 'النظام', data.message);
+                    break;
+                case 'order_update':
+                    addMessage('customerMessages', 'system', '📝 تحديث طلب', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'driver_location':
+                    const loc = data.data;
+                    addMessage('customerMessages', 'driver', '📍 موقع السائق', 
+                        `<a href="https://maps.google.com/?q=${loc.latitude},${loc.longitude}" target="_blank">${loc.latitude}, ${loc.longitude}</a>`);
+                    break;
+                case 'new_message':
+                    addMessage('customerMessages', 'shop_owner', '💬 رسالة جديدة', JSON.stringify(data.data, null, 2));
+                    break;
+            }
+        }
+
+        function disconnectCustomer() {
+            if (customerWs) { customerWs.close(); customerWs = null; }
+        }
+
+        // ==================== Driver WebSocket ====================
+        function connectDriver() {
+            const server = document.getElementById('driverServer').value;
+            const driverId = document.getElementById('driverId').value;
+            const token = document.getElementById('driverToken').value;
+
+            if (!driverId || !token) {
+                alert('أدخل البيانات المطلوبة');
+                return;
+            }
+
+            const url = `${server}/ws/driver/${driverId}/?token=${token}`;
+            updateStatus('driverStatus', 'connecting', '🔄 جاري الاتصال...');
+            document.getElementById('driverConnectBtn').disabled = true;
+
+            try {
+                driverWs = new WebSocket(url);
+
+                driverWs.onopen = () => {
+                    updateStatus('driverStatus', 'connected', '✅ متصل');
+                    document.getElementById('driverConnectBtn').disabled = true;
+                    document.getElementById('driverDisconnectBtn').disabled = false;
+                    document.getElementById('driverLocationBtn').disabled = false;
+                    addMessage('driverMessages', 'system', 'النظام', 'تم الاتصال - جاهز لاستقبال طلبات التوصيل');
+                };
+
+                driverWs.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleDriverMessage(data);
+                };
+
+                driverWs.onclose = (event) => {
+                    updateStatus('driverStatus', 'disconnected', '❌ غير متصل');
+                    document.getElementById('driverConnectBtn').disabled = false;
+                    document.getElementById('driverDisconnectBtn').disabled = true;
+                    document.getElementById('driverLocationBtn').disabled = true;
+                };
+
+            } catch (e) {
+                updateStatus('driverStatus', 'disconnected', '❌ فشل');
+                document.getElementById('driverConnectBtn').disabled = false;
+            }
+        }
+
+        function handleDriverMessage(data) {
+            switch(data.type) {
+                case 'connection':
+                    addMessage('driverMessages', 'system', 'النظام', data.message);
+                    break;
+                case 'new_order':
+                    addMessage('driverMessages', 'system', '🆕 طلب توصيل جديد', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'order_update':
+                    addMessage('driverMessages', 'system', '📝 تحديث طلب', JSON.stringify(data.data, null, 2));
+                    break;
+                case 'new_message':
+                    addMessage('driverMessages', 'customer', '💬 رسالة من عميل', JSON.stringify(data.data, null, 2));
+                    break;
+            }
+        }
+
+        function updateDriverLocation() {
+            if (!driverWs || driverWs.readyState !== WebSocket.OPEN) return;
+
+            const lat = document.getElementById('driverLat').value;
+            const lng = document.getElementById('driverLng').value;
+
+            driverWs.send(JSON.stringify({
+                type: 'location_update',
+                latitude: lat,
+                longitude: lng
+            }));
+
+            addMessage('driverMessages', 'system', 'النظام', `تم إرسال الموقع: ${lat}, ${lng}`);
+        }
+
+        function getMyLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    document.getElementById('driverLat').value = pos.coords.latitude;
+                    document.getElementById('driverLng').value = pos.coords.longitude;
+                }, (err) => {
+                    alert('فشل الحصول على الموقع: ' + err.message);
+                });
+            }
+        }
+
+        function disconnectDriver() {
+            if (driverWs) { driverWs.close(); driverWs = null; }
+        }
+
+        // ==================== Event Listeners ====================
+        document.getElementById('chatContent').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChatMessage();
+            }
+        });
+
+        // Typing indicator
+        let typingTimeout;
+        document.getElementById('chatContent').addEventListener('input', () => {
+            if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+
+            chatWs.send(JSON.stringify({ type: 'typing', is_typing: true }));
+
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+                    chatWs.send(JSON.stringify({ type: 'typing', is_typing: false }));
+                }
+            }, 2000);
+        });
+
+        document.getElementById('chatImageInput').addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (file) uploadChatMedia(file, 'image');
+            e.target.value = '';
+        });
+
+        document.getElementById('chatAudioInput').addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (file) uploadChatMedia(file, 'audio');
+            e.target.value = '';
+        });
+    </script>
+</body>
+</html>
