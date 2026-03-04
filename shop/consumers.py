@@ -15,6 +15,11 @@ def _with_localized_message(payload, message):
     }
 
 
+
+
+
+
+
 class ChatConsumer(AsyncWebsocketConsumer):
     """
     WebSocket Consumer للشات - يدعم جميع الأطراف:

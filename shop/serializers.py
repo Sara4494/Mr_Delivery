@@ -654,7 +654,8 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
     """Custom Token Serializer للسائق"""
     phone_number = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
-    
+    shop_number = serializers.CharField(required=False, allow_blank=True)
+
     @classmethod
     def get_token(cls, driver):
         """
@@ -666,28 +667,45 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
         token['shop_owner_id'] = driver.shop_owner.id
         token['user_type'] = 'driver'
         return token
-    
+
     def validate(self, attrs):
         """
         التحقق من بيانات تسجيل الدخول وإرجاع token
         """
         phone_number = attrs.get('phone_number')
         password = attrs.get('password')
-        
-        try:
-            driver = Driver.objects.get(phone_number=phone_number)
-        except Driver.DoesNotExist:
+        shop_number = attrs.get('shop_number')
+
+        queryset = Driver.objects.filter(phone_number=phone_number).order_by('-updated_at')
+        if not queryset.exists():
             raise serializers.ValidationError({
                 'phone_number': 'رقم الهاتف غير صحيح'
             })
-        
-        if not driver.password or not driver.check_password(password):
+
+        if shop_number:
+            queryset = queryset.filter(shop_owner__shop_number=shop_number)
+            if not queryset.exists():
+                raise serializers.ValidationError({
+                    'shop_number': 'رقم المحل غير صحيح لهذا السائق'
+                })
+        elif queryset.count() > 1:
+            raise serializers.ValidationError({
+                'shop_number': 'يرجى إدخال shop_number لتحديد المحل'
+            })
+
+        driver = None
+        for candidate in queryset:
+            if candidate.password and candidate.check_password(password):
+                driver = candidate
+                break
+
+        if not driver:
             raise serializers.ValidationError({
                 'password': 'كلمة المرور غير صحيحة أو غير معينة'
             })
-        
+
         refresh = self.get_token(driver)
-        
+
         return {
             'refresh': str(refresh),
             'access': str(refresh.access_token),
@@ -701,6 +719,28 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
             }
         }
 
+class DriverInvitationRespondSerializer(serializers.Serializer):
+    """
+    Serializer احترافي لمعالجة استجابة السائق لدعوة الانضمام (قبول/رفض).
+    يتحقق من صحة البيانات ووجود السائق قبل المعالجة.
+    """
+    phone_number = serializers.CharField(required=True)
+    otp = serializers.CharField(required=True, write_only=True)
+    action = serializers.ChoiceField(choices=['accept', 'reject'], required=True)
+
+    def validate(self, attrs):
+        phone_number = attrs.get('phone_number')
+        
+        # التحقق من وجود السائق
+        try:
+            driver = Driver.objects.get(phone_number=phone_number)
+        except Driver.DoesNotExist:
+            raise serializers.ValidationError({
+                'phone_number': 'رقم الهاتف غير صحيح أو السائق غير موجود.'
+            })
+            
+        attrs['driver'] = driver
+        return attrs
 
 # Customer Login Serializer
 class CustomerTokenObtainPairSerializer(serializers.Serializer):

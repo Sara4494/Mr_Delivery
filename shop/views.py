@@ -533,6 +533,21 @@ def _invite_driver(request, shop_owner, payload):
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
+    # Driver must already have an account before invitation.
+    existing_account = (
+        Driver.objects
+        .filter(phone_number__in=phone_candidates)
+        .exclude(password__isnull=True)
+        .exclude(password='')
+        .order_by('-updated_at')
+        .first()
+    )
+    if not existing_account:
+        return error_response(
+            message='Driver account not found. Driver must register first.',
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
     driver = Driver.objects.filter(shop_owner=shop_owner, phone_number__in=phone_candidates).first()
     if driver and driver.status != 'pending':
         return error_response(
@@ -541,17 +556,20 @@ def _invite_driver(request, shop_owner, payload):
         )
 
     if driver is None:
-        invite_name = payload.get('name') or f'Driver {normalized_phone[-4:]}'
+        invite_name = existing_account.name or f'Driver {normalized_phone[-4:]}'
         driver = Driver.objects.create(
             shop_owner=shop_owner,
             name=invite_name,
             phone_number=normalized_phone,
             status='pending',
-            password=''
+            password=existing_account.password,
+            profile_image=existing_account.profile_image
         )
     else:
-        if payload.get('name'):
-            driver.name = payload.get('name')
+        driver.name = existing_account.name or driver.name
+        driver.password = existing_account.password
+        if existing_account.profile_image:
+            driver.profile_image = existing_account.profile_image
         driver.phone_number = normalized_phone
         driver.status = 'pending'
         driver.save()
@@ -580,7 +598,10 @@ def staff_view(request):
     """
     Endpoint موحد للموظفين والسائقين.
     GET /api/shop/staff/ -> القائمة (staff_type=all|employee|driver) أو تفاصيل عنصر واحد (staff_id)
-    POST /api/shop/staff/ -> إضافة موظف/سائق جديد (staff_type مطلوب)
+    POST /api/shop/staff/ -> إضافة موظف/سائق جديد
+      - Invite driver by phone only: { "phone_number": "..." }  # staff_type optional
+      - Create employee: staff_type=employee
+      - Create driver via explicit type: staff_type=driver
     PUT /api/shop/staff/ -> تحديث موظف/سائق (staff_type + staff_id)
     """
     shop_owner = request.user
@@ -681,11 +702,13 @@ def staff_view(request):
         )
 
     if request.method == 'POST':
+        payload = _clean_staff_payload(request)
         staff_type = _normalize_staff_type(request.data.get('staff_type'))
         if not staff_type:
+            if payload.get('phone_number'):
+                return _invite_driver(request, shop_owner, payload)
             return _staff_type_validation_error(request)
 
-        payload = _clean_staff_payload(request)
         if staff_type == STAFF_TYPE_DRIVER:
             return _invite_driver(request, shop_owner, payload)
 
@@ -835,23 +858,19 @@ def driver_invitation_respond_view(request):
     POST /api/driver/invitation/respond/
     Body: {
       "phone_number": "01000000001",
-      "shop_number": "12345",
       "otp": "123456",
-      "action": "accept|reject",
-      "name": "Driver Name",            # required for accept when missing
-      "password": "password123"         # required for accept when no password yet
+      "action": "accept|reject"
     }
     """
     phone_number = request.data.get('phone_number')
-    shop_number = request.data.get('shop_number')
+    raw_shop_number = request.data.get('shop_number')
+    shop_number = str(raw_shop_number).strip() if raw_shop_number is not None else ''
     otp_code = request.data.get('otp')
     action = str(request.data.get('action', '')).strip().lower()
 
     errors = {}
     if not phone_number:
         errors['phone_number'] = ['phone_number is required.']
-    if not shop_number:
-        errors['shop_number'] = ['shop_number is required.']
     if not otp_code:
         errors['otp'] = ['otp is required.']
     if action not in {'accept', 'reject'}:
@@ -864,29 +883,40 @@ def driver_invitation_respond_view(request):
         )
 
     normalized_phone = normalize_phone(phone_number)
+    if not normalized_phone:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'phone_number': ['Invalid phone number.']},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
     if not otp_verify(normalized_phone, otp_code):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED
         )
 
-    shop_owner = ShopOwner.objects.filter(shop_number=shop_number).first()
-    if not shop_owner:
-        return error_response(
-            message=t(request, 'shop_number_or_password_is_incorrect'),
-            status_code=status.HTTP_404_NOT_FOUND
-        )
-
-    driver = Driver.objects.filter(
-        shop_owner=shop_owner,
+    pending_drivers = Driver.objects.filter(
         phone_number__in=_driver_phone_variants(normalized_phone),
         status='pending'
-    ).first()
+    ).select_related('shop_owner').order_by('-updated_at')
+
+    if shop_number:
+        shop_owner = ShopOwner.objects.filter(shop_number=shop_number).first()
+        if not shop_owner:
+            return error_response(
+                message=t(request, 'shop_number_or_password_is_incorrect'),
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        pending_drivers = pending_drivers.filter(shop_owner=shop_owner)
+
+    driver = pending_drivers.first()
     if not driver:
         return error_response(
             message='No pending driver invitation found.',
             status_code=status.HTTP_404_NOT_FOUND
         )
+    shop_owner = driver.shop_owner
 
     if action == 'reject':
         driver.delete()
@@ -900,19 +930,12 @@ def driver_invitation_respond_view(request):
             status_code=status.HTTP_200_OK
         )
 
-    password = request.data.get('password')
-    name = request.data.get('name')
-    if not driver.password and (not password or len(str(password)) < 6):
+    if not driver.password:
         return error_response(
-            message=t(request, 'invalid_data'),
-            errors={'password': ['password is required and must be at least 6 characters.']},
+            message='Driver account not ready. Please contact support.',
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
-    if name:
-        driver.name = name
-    if password:
-        driver.set_password(password)
     driver.phone_number = normalized_phone
     driver.status = 'available'
     driver.save()

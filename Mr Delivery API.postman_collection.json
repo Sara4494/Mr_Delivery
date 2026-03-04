@@ -1266,6 +1266,37 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "Driver Invitation Response (Accept/Reject)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone_number\": \"01000000001\",\n  \"otp\": \"123456\",\n  \"action\": \"accept\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/invitation/respond/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "invitation",
+                    "respond",
+                    ""
+                  ]
+                },
+                "description": "required: phone_number, otp, action."
+              },
+              "response": []
             }
           ]
         },
@@ -2054,6 +2085,41 @@
               "response": []
             },
             {
+              "name": "Invite Driver By Phone",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone_number\": \"01000000001\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shop/staff/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "staff",
+                    ""
+                  ]
+                },
+                "description": "Required fields: phone_number فقط. shop sends invitation to an existing driver account."
+              },
+              "response": []
+            },
+            {
               "name": "Create Employee (Unified)",
               "request": {
                 "method": "POST",
@@ -2228,7 +2294,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"phone_number\": \"01000000001\",\n  \"shop_number\": \"12345\",\n  \"otp\": \"123456\",\n  \"action\": \"accept\",\n  \"name\": \"Driver Ahmed\",\n  \"password\": \"password123\"\n}"
+                  "raw": "{\n  \"phone_number\": \"01000000001\",\n  \"otp\": \"123456\",\n  \"action\": \"accept\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/driver/invitation/respond/",
@@ -2243,7 +2309,7 @@
                     ""
                   ]
                 },
-                "description": "Driver accepts invitation using OTP."
+                "description": "Fields: phone_number + otp + action (required)."
               },
               "response": []
             }
