@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage, 
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
-    Notification, Cart, CartItem
+    Notification, Cart, CartItem, ShopDriver
 )
 from gallery.models import WorkSchedule
 from .serializers import (
@@ -475,7 +475,7 @@ def _get_staff_member(shop_owner, staff_type, staff_id):
             return None, 'employee_not_found'
 
     try:
-        return Driver.objects.get(id=staff_id, shop_owner=shop_owner), None
+        return Driver.objects.get(id=staff_id, shops=shop_owner), None
     except Driver.DoesNotExist:
         return None, 'driver_not_found'
 
@@ -548,31 +548,28 @@ def _invite_driver(request, shop_owner, payload):
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
-    driver = Driver.objects.filter(shop_owner=shop_owner, phone_number__in=phone_candidates).first()
-    if driver and driver.status != 'pending':
-        return error_response(
-            message='Driver already exists and is not pending invitation.',
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
+    relation, created = ShopDriver.objects.get_or_create(
+        shop_owner=shop_owner,
+        driver=existing_account,
+        defaults={'status': 'pending'}
+    )
+    if not created:
+        if relation.status == 'active':
+            return error_response(
+                message='Driver is already active in this shop.',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        if relation.status == 'blocked':
+            return error_response(
+                message='Driver is blocked in this shop.',
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        relation.status = 'pending'
+        relation.save(update_fields=['status'])
 
-    if driver is None:
-        invite_name = existing_account.name or f'Driver {normalized_phone[-4:]}'
-        driver = Driver.objects.create(
-            shop_owner=shop_owner,
-            name=invite_name,
-            phone_number=normalized_phone,
-            status='pending',
-            password=existing_account.password,
-            profile_image=existing_account.profile_image
-        )
-    else:
-        driver.name = existing_account.name or driver.name
-        driver.password = existing_account.password
-        if existing_account.profile_image:
-            driver.profile_image = existing_account.profile_image
-        driver.phone_number = normalized_phone
-        driver.status = 'pending'
-        driver.save()
+    if existing_account.phone_number != normalized_phone:
+        existing_account.phone_number = normalized_phone
+        existing_account.save(update_fields=['phone_number'])
 
     send_ok, send_msg = otp_send(normalized_phone)
     if not send_ok:
@@ -581,10 +578,11 @@ def _invite_driver(request, shop_owner, payload):
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
-    response_data = _serialize_staff_member(driver, STAFF_TYPE_DRIVER, request)
+    response_data = _serialize_staff_member(existing_account, STAFF_TYPE_DRIVER, request)
     response_data['invitation_sent'] = True
     response_data['invitation_channel'] = 'whatsapp_otp'
     response_data['invitation_note'] = 'Driver should respond using /api/driver/invitation/respond/'
+    response_data['shop_link_status'] = relation.status
     return success_response(
         data=response_data,
         message='Driver invitation sent successfully.',
@@ -644,6 +642,7 @@ def staff_view(request):
 
         staff_items = []
         requested_types = VALID_STAFF_TYPES if staff_type == 'all' else {staff_type}
+        driver_base_queryset = Driver.objects.filter(shops=shop_owner).distinct()
 
         if STAFF_TYPE_EMPLOYEE in requested_types:
             employee_queryset = Employee.objects.filter(shop_owner=shop_owner).order_by('-updated_at')
@@ -657,7 +656,7 @@ def staff_view(request):
                 staff_items.append((employee.updated_at, _serialize_staff_member(employee, STAFF_TYPE_EMPLOYEE, request)))
 
         if STAFF_TYPE_DRIVER in requested_types:
-            driver_queryset = Driver.objects.filter(shop_owner=shop_owner).order_by('-updated_at')
+            driver_queryset = driver_base_queryset.order_by('-updated_at')
             status_filter = request.query_params.get('status')
             if status_filter:
                 driver_queryset = driver_queryset.filter(status=status_filter)
@@ -672,10 +671,10 @@ def staff_view(request):
             'total_employees': Employee.objects.filter(shop_owner=shop_owner).count(),
             'active_employees': Employee.objects.filter(shop_owner=shop_owner, is_active=True).count(),
             'blocked_employees': Employee.objects.filter(shop_owner=shop_owner, is_active=False).count(),
-            'total_drivers': Driver.objects.filter(shop_owner=shop_owner).count(),
-            'available_drivers': Driver.objects.filter(shop_owner=shop_owner, status='available').count(),
-            'active_drivers': Driver.objects.filter(shop_owner=shop_owner, status__in=['available', 'busy']).count(),
-            'blocked_drivers': Driver.objects.filter(shop_owner=shop_owner, status='offline').count(),
+            'total_drivers': driver_base_queryset.count(),
+            'available_drivers': driver_base_queryset.filter(status='available').count(),
+            'active_drivers': driver_base_queryset.filter(status__in=['available', 'busy']).count(),
+            'blocked_drivers': driver_base_queryset.filter(status='offline').count(),
         }
 
         if staff_type == STAFF_TYPE_EMPLOYEE:
@@ -896,30 +895,37 @@ def driver_invitation_respond_view(request):
             status_code=status.HTTP_401_UNAUTHORIZED
         )
 
-    pending_drivers = Driver.objects.filter(
-        phone_number__in=_driver_phone_variants(normalized_phone),
-        status='pending'
-    ).select_related('shop_owner').order_by('-updated_at')
-
-    if shop_number:
-        shop_owner = ShopOwner.objects.filter(shop_number=shop_number).first()
-        if not shop_owner:
-            return error_response(
-                message=t(request, 'shop_number_or_password_is_incorrect'),
-                status_code=status.HTTP_404_NOT_FOUND
-            )
-        pending_drivers = pending_drivers.filter(shop_owner=shop_owner)
-
-    driver = pending_drivers.first()
+    driver = Driver.objects.filter(phone_number__in=_driver_phone_variants(normalized_phone)).first()
     if not driver:
         return error_response(
             message='No pending driver invitation found.',
             status_code=status.HTTP_404_NOT_FOUND
         )
-    shop_owner = driver.shop_owner
+
+    pending_links = ShopDriver.objects.filter(
+        driver=driver,
+        status='pending',
+    ).select_related('shop_owner').order_by('-joined_at', '-id')
+
+    if shop_number:
+        if not ShopOwner.objects.filter(shop_number=shop_number).exists():
+            return error_response(
+                message=t(request, 'shop_number_or_password_is_incorrect'),
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+        pending_links = pending_links.filter(shop_owner__shop_number=shop_number)
+
+    shop_driver = pending_links.first()
+    if not shop_driver:
+        return error_response(
+            message='No pending driver invitation found.',
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+    shop_owner = shop_driver.shop_owner
 
     if action == 'reject':
-        driver.delete()
+        shop_driver.status = 'rejected'
+        shop_driver.save(update_fields=['status'])
         return success_response(
             data={
                 'action': 'reject',
@@ -936,9 +942,18 @@ def driver_invitation_respond_view(request):
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
-    driver.phone_number = normalized_phone
-    driver.status = 'available'
-    driver.save()
+    driver_update_fields = []
+    if driver.phone_number != normalized_phone:
+        driver.phone_number = normalized_phone
+        driver_update_fields.append('phone_number')
+    if driver.status == 'offline':
+        driver.status = 'available'
+        driver_update_fields.append('status')
+    if driver_update_fields:
+        driver.save(update_fields=driver_update_fields)
+
+    shop_driver.status = 'active'
+    shop_driver.save(update_fields=['status'])
 
     return success_response(
         data={
@@ -1458,7 +1473,7 @@ def order_detail_view(request, order_id):
             driver_id = request.data['driver_id']
             if driver_id:
                 try:
-                    driver = Driver.objects.get(id=driver_id, shop_owner=shop_owner)
+                    driver = Driver.objects.get(id=driver_id, shops=shop_owner)
                     order.driver = driver
                 except Driver.DoesNotExist:
                     return error_response(
@@ -1756,8 +1771,8 @@ def shop_dashboard_statistics_view(request):
 
     orders_by_status = orders_qs.values('status').annotate(count=Count('id'))
     total_customers = Customer.objects.filter(shop_owner=shop_owner).count()
-    total_drivers = Driver.objects.filter(shop_owner=shop_owner).count()
-    available_drivers = Driver.objects.filter(shop_owner=shop_owner, status='available').count()
+    total_drivers = Driver.objects.filter(shops=shop_owner).distinct().count()
+    available_drivers = Driver.objects.filter(shops=shop_owner, status='available').distinct().count()
 
     previous_total_orders = previous_orders_qs.count()
     previous_invoices_count = previous_invoices_qs.count()

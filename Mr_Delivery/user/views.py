@@ -272,10 +272,14 @@ def unified_login_view(request):
             
             # إنشاء التوكن
             refresh = RefreshToken()
+            active_shop_ids = list(
+                driver.shops.filter(shop_drivers__status='active').values_list('id', flat=True)
+            )
+            primary_shop_id = active_shop_ids[0] if active_shop_ids else None
             refresh['driver_id'] = driver.id
             refresh['phone_number'] = driver.phone_number
             refresh['user_type'] = 'driver'
-            refresh['shop_owner_id'] = driver.shop_owner_id
+            refresh['shop_owner_id'] = primary_shop_id
             
             return success_response(
                 data={
@@ -286,7 +290,8 @@ def unified_login_view(request):
                         'name': driver.name,
                         'phone_number': driver.phone_number,
                         'status': driver.status,
-                        'shop_owner_id': driver.shop_owner_id,
+                        'shop_owner_id': primary_shop_id,
+                        'active_shop_ids': active_shop_ids,
                     },
                     'role': 'driver'
                 },
@@ -368,7 +373,7 @@ def _find_user_for_reset(role, phone_number, shop_number=None):
             return None, "رقم المحل مطلوب للسائقين"
         try:
             shop = ShopOwner.objects.get(shop_number=shop_number)
-            user = _phone_match(Driver.objects.filter(shop_owner=shop))
+            user = _phone_match(Driver.objects.filter(shops=shop).distinct())
             return (user, None) if user else (None, "رقم الهاتف غير مسجل في هذا المحل")
         except ShopOwner.DoesNotExist:
             return None, "رقم المحل غير صحيح"
