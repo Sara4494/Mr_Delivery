@@ -43,6 +43,10 @@ python manage.py migrate --noinput
 echo "📁 جمع static files..."
 python manage.py collectstatic --noinput
 
+# تصحيح الصلاحيات للمستخدم www-data
+echo "🔒 تصحيح الصلاحيات..."
+chown -R www-data:www-data $PROJECT_DIR
+
 # إعادة تشغيل Supervisor
 echo "🔄 إعادة تشغيل Supervisor..."
 sudo supervisorctl restart mr_delivery_daphne
