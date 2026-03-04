@@ -127,7 +127,7 @@ class DriverSerializer(serializers.ModelSerializer):
     class Meta:
         model = Driver
         fields = ['id', 'name', 'phone_number', 'profile_image', 'profile_image_url', 
-                  'status', 'current_orders_count', 'rating', 'total_rides', 'created_at', 'updated_at']
+                  'status', 'status_display', 'current_orders_count', 'rating', 'total_rides', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_profile_image_url(self, obj):

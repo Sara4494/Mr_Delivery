@@ -256,26 +256,6 @@ class ShopDriver(models.Model):
         verbose_name_plural = "سائقين المحلات"
 
 
-class ShopDriver(models.Model):
-    """جدول وسيط لربط السائق بالمتجر وإدارة حالة الدعوة"""
-    STATUS_CHOICES = [
-        ('pending', 'بانتظار الموافقة'),
-        ('active', 'نشط'),
-        ('blocked', 'محظور'),
-        ('rejected', 'مرفوض'),
-    ]
-    
-    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='shop_drivers', verbose_name="المحل")
-    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='driver_shops', verbose_name="السائق")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="حالة الارتباط")
-    joined_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الانضمام")
-
-    class Meta:
-        unique_together = ['shop_owner', 'driver']
-        verbose_name = "سائق في محل"
-        verbose_name_plural = "سائقين المحلات"
-
-
 class Order(models.Model):
     """نموذج الطلب"""
     STATUS_CHOICES = [
