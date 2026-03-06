@@ -2093,6 +2093,18 @@ def _resolve_user_type(user):
     return None
 
 
+def _can_user_access_order(order, user, user_type):
+    if user_type == 'shop_owner':
+        return order.shop_owner_id == getattr(user, 'id', None)
+    if user_type == 'employee':
+        return order.shop_owner_id == getattr(user, 'shop_owner_id', None)
+    if user_type == 'customer':
+        return order.customer_id == getattr(user, 'id', None)
+    if user_type == 'driver':
+        return order.driver_id == getattr(user, 'id', None)
+    return False
+
+
 def _sender_kwargs_for_user(user, user_type):
     sender_kwargs = {'sender_type': user_type}
     if user_type == 'customer':
@@ -3372,7 +3384,7 @@ def order_rating_view(request, order_id):
     GET /api/orders/{id}/rating/
     """
     try:
-        rating = OrderRating.objects.get(order_id=order_id)
+        rating = OrderRating.objects.get(order_id=order_id, order__shop_owner=request.user)
     except OrderRating.DoesNotExist:
         return error_response(message=t(request, 'no_rating_found_for_this_order'), status_code=status.HTTP_404_NOT_FOUND)
     
@@ -3667,6 +3679,13 @@ def order_tracking_view(request, order_id):
         order = Order.objects.get(id=order_id)
     except Order.DoesNotExist:
         return error_response(message=t(request, 'order_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    user_type = _resolve_user_type(request.user)
+    if not _can_user_access_order(order, request.user, user_type):
+        return error_response(
+            message=t(request, 'permission_only_shop_staff'),
+            status_code=status.HTTP_403_FORBIDDEN
+        )
     
     if order.status not in ['on_way', 'preparing']:
         return error_response(message=t(request, 'order_is_not_trackable_at_the_moment'), status_code=status.HTTP_400_BAD_REQUEST)

@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q, Count, Sum
@@ -76,8 +76,23 @@ def _forbidden(request, message_key):
     )
 
 
+class IsShopOwnerOrCashier(BasePermission):
+    """
+    Allow only shop owner or cashier employee to access private shop gallery/profile endpoints.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not getattr(user, 'is_authenticated', False):
+            return False
+        if _is_shop_owner(user) or _is_cashier(user):
+            return True
+        self.message = t(request, 'permission_only_shop_owner_or_cashier')
+        return False
+
+
 @api_view(['GET', 'PUT', 'PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwnerOrCashier])
 def shop_profile_view(request):
     """
     عرض وتحديث ملف صاحب المحل (البيانات + صورة البروفيل في endpoint واحد).
@@ -127,7 +142,7 @@ def shop_profile_view(request):
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwnerOrCashier])
 def work_schedule_view(request):
     """
     عرض وتحديث مواعيد العمل
@@ -172,7 +187,7 @@ def work_schedule_view(request):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwnerOrCashier])
 def gallery_list_view(request):
     """
     عرض قائمة الصور وإضافة صورة جديدة
@@ -244,7 +259,7 @@ def gallery_list_view(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwnerOrCashier])
 def gallery_detail_view(request, image_id):
     """
     عرض، تحديث، أو حذف صورة محددة
@@ -325,7 +340,7 @@ def gallery_detail_view(request, image_id):
 
 
 @api_view(['POST', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwnerOrCashier])
 def image_like_view(request, image_id):
     """
     إعجاب أو إلغاء إعجاب بصورة
@@ -381,13 +396,15 @@ def image_like_view(request, image_id):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsShopOwnerOrCashier])
 def shop_statistics_view(request):
     """
     إحصائيات المحل
     GET /api/shop/statistics/ - عرض إحصائيات المحل
     """
-    shop_owner = request.user
+    shop_owner = _resolve_shop_owner(request.user)
+    if not shop_owner:
+        return _forbidden(request, 'permission_only_shop_owner_or_cashier')
     
     total_images = shop_owner.gallery_images.count()
     published_images = shop_owner.gallery_images.filter(status='published').count()
