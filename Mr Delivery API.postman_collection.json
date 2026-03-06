@@ -152,15 +152,23 @@
                     {
                       "listen": "test",
                       "script": {
+                        "type": "text/javascript",
                         "exec": [
                           "if (pm.response.code === 200) {",
-                          "    var jsonData = pm.response.json();",
-                          "    if (jsonData.success && jsonData.data) {",
-                          "        pm.environment.set(\"customer_token\", jsonData.data.access);",
-                          "    }",
+                          "  var jsonData = pm.response.json();",
+                          "  var role = '';",
+                          "  try {",
+                          "    var body = pm.request.body && pm.request.body.raw ? JSON.parse(pm.request.body.raw) : {};",
+                          "    role = (body.role || '').toLowerCase();",
+                          "  } catch (e) {}",
+                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
+                          "    if (role === 'customer') pm.environment.set('customer_token', jsonData.data.access);",
+                          "    if (role === 'shop_owner') pm.environment.set('access_token', jsonData.data.access);",
+                          "    if (role === 'employee') pm.environment.set('employee_token', jsonData.data.access);",
+                          "    if (role === 'driver') pm.environment.set('driver_token', jsonData.data.access);",
+                          "  }",
                           "}"
-                        ],
-                        "type": "text/javascript"
+                        ]
                       }
                     }
                   ],
@@ -282,7 +290,23 @@
                       ]
                     }
                   },
-                  "response": []
+                  "response": [],
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "  var jsonData = pm.response.json();",
+                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
+                          "    pm.environment.set('customer_token', jsonData.data.access);",
+                          "  }",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
                 }
               ]
             }
@@ -1224,7 +1248,23 @@
                   ]
                 }
               },
-              "response": []
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "  var jsonData = pm.response.json();",
+                      "  if (jsonData && jsonData.data && jsonData.data.access) {",
+                      "    pm.environment.set('access_token', jsonData.data.access);",
+                      "  }",
+                      "}"
+                    ]
+                  }
+                }
+              ]
             }
           ]
         },
@@ -1362,7 +1402,7 @@
           "name": "Shop Profile",
           "item": [
             {
-              "name": "عرض الملف الشخصي",
+              "name": "عرض الملف الشخصي (Owner/Cashier Only)",
               "request": {
                 "method": "GET",
                 "header": [
@@ -1383,12 +1423,13 @@
                     "profile",
                     ""
                   ]
-                }
+                },
+                "description": "Owner/Cashier only endpoint. Customer token must return 403."
               },
               "response": []
             },
             {
-              "name": "تحديث الملف الشخصي (بيانات + صورة - الأونر فقط)",
+              "name": "تحديث الملف الشخصي (بيانات + صورة - الأونر فقط) (Owner/Cashier Only)",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -1439,7 +1480,7 @@
                     ""
                   ]
                 },
-                "description": "تحديث الملف الشخصي في endpoint واحد: owner_name، shop_name، و/أو profile_image. الأونر فقط يقدر يعدّل. يمكن إرسال application/json بدل formdata لتحديث النصوص فقط."
+                "description": "Owner/Cashier only endpoint. Customer token must return 403."
               },
               "response": []
             },
@@ -2091,8 +2132,7 @@
                           "if (pm.response.code === 200) {",
                           "  var jsonData = pm.response.json();",
                           "  if (jsonData && jsonData.data && jsonData.data.access) {",
-                          "    pm.environment.set(\"employee_token\", jsonData.data.access);",
-                          "    pm.environment.set(\"access_token\", jsonData.data.access);",
+                          "    pm.environment.set('employee_token', jsonData.data.access);",
                           "  }",
                           "}"
                         ]
@@ -2128,7 +2168,23 @@
                     },
                     "description": "After blocking employee from /api/shop/staff/employee/{id}/block/, expect blocked-account message."
                   },
-                  "response": []
+                  "response": [],
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "  var jsonData = pm.response.json();",
+                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
+                          "    pm.environment.set('employee_token', jsonData.data.access);",
+                          "  }",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
                 }
               ]
             }

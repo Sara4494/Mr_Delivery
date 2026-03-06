@@ -21,41 +21,50 @@ class ShopOwnerJWTAuthentication(JWTAuthentication):
         # ===== Customer =====
         if user_type == 'customer' or validated_token.get('customer_id'):
             customer_id = validated_token.get('customer_id')
-            if customer_id:
-                try:
-                    from shop.models import Customer
-                    customer = Customer.objects.get(id=customer_id)
-                    customer.user_type = 'customer'
-                    return customer
-                except Customer.DoesNotExist:
-                    raise AuthenticationFailed('العميل غير موجود')
+            if not customer_id:
+                raise InvalidToken('Customer token missing customer_id')
+            try:
+                from shop.models import Customer
+                customer = Customer.objects.get(id=customer_id)
+                customer.user_type = 'customer'
+                return customer
+            except Customer.DoesNotExist:
+                raise AuthenticationFailed('العميل غير موجود')
         
         # ===== Employee =====
         if user_type == 'employee' or validated_token.get('employee_id'):
             employee_id = validated_token.get('employee_id')
-            if employee_id:
-                try:
-                    from shop.models import Employee
-                    employee = Employee.objects.get(id=employee_id, is_active=True)
-                    employee.user_type = 'employee'
-                    return employee
-                except Employee.DoesNotExist:
-                    raise AuthenticationFailed('الموظف غير موجود أو غير نشط')
+            if not employee_id:
+                raise InvalidToken('Employee token missing employee_id')
+            try:
+                from shop.models import Employee
+                employee = Employee.objects.get(id=employee_id, is_active=True)
+                employee.user_type = 'employee'
+                return employee
+            except Employee.DoesNotExist:
+                raise AuthenticationFailed('الموظف غير موجود أو غير نشط')
         
         # ===== Driver =====
         if user_type == 'driver' or validated_token.get('driver_id'):
             driver_id = validated_token.get('driver_id')
-            if driver_id:
-                try:
-                    from shop.models import Driver
-                    driver = Driver.objects.get(id=driver_id)
-                    driver.user_type = 'driver'
-                    return driver
-                except Driver.DoesNotExist:
-                    raise AuthenticationFailed('السائق غير موجود')
+            if not driver_id:
+                raise InvalidToken('Driver token missing driver_id')
+            try:
+                from shop.models import Driver
+                driver = Driver.objects.get(id=driver_id)
+                driver.user_type = 'driver'
+                return driver
+            except Driver.DoesNotExist:
+                raise AuthenticationFailed('السائق غير موجود')
         
-        # ===== ShopOwner (Default) =====
-        shop_owner_id = validated_token.get('shop_owner_id') or validated_token.get('user_id')
+        # ===== ShopOwner =====
+        # Security note:
+        # Never fallback to generic `user_id` unless token explicitly declares user_type=shop_owner.
+        # This prevents cross-role token confusion (e.g. customer token accidentally mapped to shop owner).
+        shop_owner_id = validated_token.get('shop_owner_id')
+        if not shop_owner_id and user_type == 'shop_owner':
+            shop_owner_id = validated_token.get('user_id')
+
         if shop_owner_id:
             try:
                 shop_owner = ShopOwner.objects.get(id=shop_owner_id, is_active=True)
