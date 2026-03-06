@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, re_path
 from . import views
 
 app_name = 'shop'
@@ -11,7 +11,8 @@ urlpatterns = [
     path('shops/<int:shop_id>/profile/', views.public_shop_profile_view, name='public_shop_profile'),
     path('shops/<int:shop_id>/schedule/', views.public_shop_schedule_view, name='public_shop_schedule'),
     path('shops/<int:shop_id>/gallery/', views.public_shop_gallery_view, name='public_shop_gallery'),
-    path('shops/gallery/<int:image_id>/like/', views.public_gallery_like_view, name='public_gallery_like'),
+    # Support both with/without trailing slash to avoid APPEND_SLASH POST runtime errors.
+    re_path(r'^shops/gallery/(?P<image_id>\d+)/like/?$', views.public_gallery_like_view, name='public_gallery_like'),
 
     # Shop Status
     path('shop/status/', views.shop_status_view, name='shop_status'),

@@ -6,7 +6,7 @@ MESSAGES = {
     'account_created_successfully': 'تم إنشاء الحساب بنجاح',
     'account_created_successfully_complete_otp_verification': 'تم إنشاء الحساب بنجاح. أكمل التحقق عبر OTP',
     'account_is_already_verified_use_login': 'الحساب مُفعّل بالفعل. استخدم تسجيل الدخول',
-    'employee_account_is_blocked': 'تم حظر هذا الموظف',
+    'employee_account_is_blocked': 'تم حظرك',
     'account_is_inactive': 'الحساب غير نشط',
     'account_is_not_verified_complete_otp_verification': 'الحساب غير مفعل. أكمل التحقق عبر OTP',
     'account_is_not_verified_complete_otp_verification_for_registration': 'الحساب غير مفعل. أكمل التحقق عبر OTP للتسجيل',

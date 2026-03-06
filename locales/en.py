@@ -6,7 +6,7 @@ MESSAGES = {
     'account_created_successfully': 'Account created successfully',
     'account_created_successfully_complete_otp_verification': 'Account created successfully. Complete OTP verification',
     'account_is_already_verified_use_login': 'Account is already verified. Use login',
-    'employee_account_is_blocked': 'This employee account has been blocked',
+    'employee_account_is_blocked': 'You have been blocked',
     'account_is_inactive': 'Account is inactive',
     'account_is_not_verified_complete_otp_verification': 'Account is not verified. Complete OTP verification',
     'account_is_not_verified_complete_otp_verification_for_registration': 'Account is not verified. Complete OTP verification for registration',
