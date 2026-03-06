@@ -226,6 +226,7 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
         'rest_framework.parsers.FormParser',
     ],
+    'EXCEPTION_HANDLER': 'user.exceptions.custom_exception_handler',
 }
 
 # OTP: رمز ثابت حتى الاشتراك في خدمة إرسال (واتساب/UltraMsg)

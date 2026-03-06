@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "5b412539-3a10-441c-8d62-88fa82bab17d",
+    "_postman_id": "87ba7613-3031-45a9-a2dc-0fa7396fa8f5",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery - APIs للمحلات والمعارض",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-5b412539-3a10-441c-8d62-88fa82bab17d?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-87ba7613-3031-45a9-a2dc-0fa7396fa8f5?source=collection_link"
   },
   "item": [
     {
@@ -331,46 +331,129 @@
               "response": []
             },
             {
-              "name": "المنتجات حسب تصنيف المحل",
+              "name": "Search Shops",
               "request": {
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/products/by-shop-category/?shop_category_id=1",
+                  "raw": "{{base_url}}/api/shops/?search=&shop_category_id=&open_now=false&page=1&page_size=20",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops"
+                  ],
+                  "query": [
+                    {
+                      "key": "search",
+                      "value": "",
+                      "description": "Search by shop name or description"
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "open_now",
+                      "value": "false"
+                    },
+                    {
+                      "key": "with_gallery",
+                      "value": "true",
+                      "disabled": true
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "20"
+                    }
+                  ]
+                },
+                "description": "Customer search screen for shops."
+              },
+              "response": []
+            },
+            {
+              "name": "Shop Profile (Customer)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/shops/1/profile/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shops",
-                    "products",
-                    "by-shop-category",
-                    ""
+                    "1",
+                    "profile"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Shop Schedule (Customer)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/shops/1/schedule/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    "1",
+                    "schedule"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Shop Gallery Posts",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/shops/1/gallery/?sort_by=-uploaded_at&page=1&page_size=12",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    "1",
+                    "gallery"
                   ],
                   "query": [
                     {
-                      "key": "shop_category_id",
-                      "value": "1",
-                      "description": "Required if shop_category_name is not provided."
-                    },
-                    {
-                      "key": "shop_category_name",
-                      "value": "",
-                      "description": "Alternative to shop_category_id.",
-                      "disabled": true
-                    },
-                    {
-                      "key": "category_id",
-                      "value": "",
-                      "disabled": true
-                    },
-                    {
-                      "key": "has_offer",
-                      "value": "true",
-                      "disabled": true
-                    },
-                    {
                       "key": "search",
+                      "value": "",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sort_by",
+                      "value": "-uploaded_at"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "12"
+                    },
+                    {
+                      "key": "user_identifier",
                       "value": "",
                       "disabled": true
                     }
@@ -380,22 +463,26 @@
               "response": []
             },
             {
-              "name": "العروض العامة",
+              "name": "Portfolio Feed",
               "request": {
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/offers/",
+                  "raw": "{{base_url}}/api/shops/portfolio/?sort_by=-uploaded_at&page=1&page_size=12",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shops",
-                    "offers",
-                    ""
+                    "portfolio"
                   ],
                   "query": [
+                    {
+                      "key": "search",
+                      "value": "",
+                      "disabled": true
+                    },
                     {
                       "key": "shop_id",
                       "value": "",
@@ -407,15 +494,92 @@
                       "disabled": true
                     },
                     {
-                      "key": "category_id",
-                      "value": "",
-                      "disabled": true
+                      "key": "sort_by",
+                      "value": "-uploaded_at"
                     },
                     {
-                      "key": "search",
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "12"
+                    },
+                    {
+                      "key": "user_identifier",
                       "value": "",
                       "disabled": true
                     }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Like Gallery Post",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_identifier\": \"guest-device-001\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shops/gallery/1/like/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    "gallery",
+                    "1",
+                    "like"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Unlike Gallery Post",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_identifier\": \"guest-device-001\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shops/gallery/1/like/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    "gallery",
+                    "1",
+                    "like"
                   ]
                 }
               },
@@ -433,7 +597,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{customer_token}}",
                     "type": "text"
                   },
                   {
@@ -869,164 +1033,6 @@
           ]
         },
         {
-          "name": "سلة التسوق (Cart)",
-          "item": [
-            {
-              "name": "عرض السلة",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{customer_token}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/cart/1/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "cart",
-                    "1",
-                    ""
-                  ]
-                },
-                "description": "عرض سلة محل معين (غيّر 1 إلى shop_id)"
-              },
-              "response": []
-            },
-            {
-              "name": "إضافة منتج للسلة",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{customer_token}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"product_id\": 1,\n    \"quantity\": 2,\n    \"notes\": \"بدون بصل\"\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/cart/1/add/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "cart",
-                    "1",
-                    "add",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "تحديث عنصر في السلة",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{customer_token}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"quantity\": 3\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/cart/1/items/1/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "cart",
-                    "1",
-                    "items",
-                    "1",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "حذف عنصر من السلة",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{customer_token}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/cart/1/items/1/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "cart",
-                    "1",
-                    "items",
-                    "1",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "تفريغ السلة",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{customer_token}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/cart/1/clear/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "cart",
-                    "1",
-                    "clear",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            }
-          ]
-        },
-        {
           "name": "الإشعارات (Notifications)",
           "item": [
             {
@@ -1154,15 +1160,6 @@
       "name": "Shops",
       "item": [
         {
-          "name": "Owner Auth",
-          "item": [
-            {
-              "name": "🏪 صاحب المحل",
-              "item": []
-            }
-          ]
-        },
-        {
           "name": "🔄 Token",
           "item": [
             {
@@ -1212,7 +1209,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"shop_number\": \"{{shop_number}}\",\n    \"password\": \"password123\"\n}"
+                  "raw": "{\n    \"shop_number\": \"01024305307\",\n    \"password\": \"Hh@123456\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/shop/login/",
@@ -1234,10 +1231,6 @@
         {
           "name": "Driver Auth",
           "item": [
-            {
-              "name": "🚚 السائق",
-              "item": []
-            },
             {
               "name": "تسجيل دخول - سائق",
               "request": {
@@ -1447,6 +1440,60 @@
                   ]
                 },
                 "description": "تحديث الملف الشخصي في endpoint واحد: owner_name، shop_name، و/أو profile_image. الأونر فقط يقدر يعدّل. يمكن إرسال application/json بدل formdata لتحديث النصوص فقط."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Shop Profile (Cashier Token)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{employee_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "profile",
+                    ""
+                  ]
+                },
+                "description": "Returns shop profile plus viewer_profile with cashier name, role, and image."
+              },
+              "response": []
+            },
+            {
+              "name": "Session Expired Test (Invalid Token)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer expired.token.here",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "profile",
+                    ""
+                  ]
+                },
+                "description": "Expected message: Session expired, please login again."
               },
               "response": []
             }
@@ -1981,10 +2028,6 @@
               "name": "Auth",
               "item": [
                 {
-                  "name": "👨‍💼 الموظف",
-                  "item": []
-                },
-                {
                   "name": "تسجيل دخول - موظف",
                   "request": {
                     "method": "POST",
@@ -2010,6 +2053,53 @@
                         ""
                       ]
                     }
+                  },
+                  "response": [],
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "  var jsonData = pm.response.json();",
+                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
+                          "    pm.environment.set(\"employee_token\", jsonData.data.access);",
+                          "    pm.environment.set(\"access_token\", jsonData.data.access);",
+                          "  }",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Employee Login (Blocked Account Test)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"phone_number\": \"01000000000\",\n  \"password\": \"password123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/employee/login/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "employee",
+                        "login",
+                        ""
+                      ]
+                    },
+                    "description": "After blocking employee from /api/shop/staff/employee/{id}/block/, expect blocked-account message."
                   },
                   "response": []
                 }
@@ -2101,7 +2191,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"phone_number\": \"01000000001\"\n}"
+                  "raw": "{\n  \"phone_number\": \"01024305308\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/shop/staff/",
@@ -2135,8 +2225,45 @@
                   }
                 ],
                 "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"staff_type\": \"employee\",\n  \"name\": \"???? ??????\",\n  \"phone_number\": \"01000000000\",\n  \"password\": \"password123\",\n  \"role\": \"cashier\"\n}"
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "staff_type",
+                      "value": "employee",
+                      "type": "text",
+                      "uuid": "bd3a2c93-7480-4955-aff4-44b85b3bac50"
+                    },
+                    {
+                      "key": "name",
+                      "value": "test",
+                      "type": "text",
+                      "uuid": "c57856f0-8947-417d-b83c-9e29ac14fb80"
+                    },
+                    {
+                      "key": "phone_number",
+                      "value": "01027153917",
+                      "type": "text",
+                      "uuid": "0e8b68b0-baa2-48f1-9042-e11d260ab3e5"
+                    },
+                    {
+                      "key": "password",
+                      "value": "12345678",
+                      "type": "text",
+                      "uuid": "77fc3b07-f217-4099-b0cf-d1eee46513ff"
+                    },
+                    {
+                      "key": "role",
+                      "value": "cashier",
+                      "type": "text",
+                      "uuid": "09ec6382-ea1d-4dd1-9374-cb35e572919c"
+                    },
+                    {
+                      "key": "profile_image",
+                      "type": "file",
+                      "uuid": "934c7cac-6c2e-456f-9fd1-4afa1cc32a4e",
+                      "src": "postman-cloud:///1ef9e1cf-31e5-4920-ae33-dc0a1254fd79"
+                    }
+                  ]
                 },
                 "url": {
                   "raw": "{{base_url}}/api/shop/staff/",
@@ -2170,7 +2297,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"staff_type\": \"employee\",\n  \"staff_id\": 1,\n  \"name\": \"??? ????\"\n}"
+                  "raw": "{\n  \"staff_type\": \"employee\",\n  \"staff_id\": 1,\n  \"name\": \"Employee Name\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/shop/staff/",
@@ -2587,168 +2714,6 @@
                     "api",
                     "shop",
                     "categories",
-                    "1",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            }
-          ]
-        },
-        {
-          "name": "🛍️ المنتجات (Products)",
-          "item": [
-            {
-              "name": "قائمة المنتجات",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/shop/products/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "shop",
-                    "products",
-                    ""
-                  ],
-                  "query": [
-                    {
-                      "key": "available",
-                      "value": "true",
-                      "description": "true لإرجاع المتاح فقط",
-                      "disabled": true
-                    }
-                  ]
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "إضافة منتج",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"name\": \"بيتزا\",\n    \"description\": \"وصف المنتج\",\n    \"price\": \"75.00\",\n    \"display_order\": 1,\n    \"is_available\": true\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/shop/products/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "shop",
-                    "products",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "تفاصيل منتج",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/shop/products/1/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "shop",
-                    "products",
-                    "1",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "تحديث منتج",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n    \"price\": \"80.00\",\n    \"is_available\": true\n}"
-                },
-                "url": {
-                  "raw": "{{base_url}}/api/shop/products/1/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "shop",
-                    "products",
-                    "1",
-                    ""
-                  ]
-                }
-              },
-              "response": []
-            },
-            {
-              "name": "حذف منتج",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/api/shop/products/1/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "shop",
-                    "products",
                     "1",
                     ""
                   ]

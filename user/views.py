@@ -220,8 +220,8 @@ def unified_login_view(request):
                 )
             if not employee.is_active:
                 return error_response(
-                    message=t(request, 'account_is_inactive'),
-                    status_code=status.HTTP_401_UNAUTHORIZED
+                    message=t(request, 'employee_account_is_blocked'),
+                    status_code=status.HTTP_403_FORBIDDEN
                 )
             
             # إنشاء التوكن

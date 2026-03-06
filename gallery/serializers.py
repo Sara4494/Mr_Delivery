@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from .models import GalleryImage, WorkSchedule, ImageLike
 from user.models import ShopOwner, WORK_SCHEDULE_DAY_LABELS
+from shop.models import Employee
 
 
 PY_WEEKDAY_TO_WORK_DAY = {
@@ -77,12 +78,13 @@ class ShopProfileSerializer(serializers.ModelSerializer):
     total_images = serializers.SerializerMethodField()
     published_images = serializers.SerializerMethodField()
     total_likes = serializers.SerializerMethodField()
+    viewer_profile = serializers.SerializerMethodField()
 
     class Meta:
         model = ShopOwner
         fields = ['id', 'owner_name', 'shop_name', 'shop_number', 'phone_number', 'description', 'profile_image', 'profile_image_url',
                   'work_schedule', 'total_images', 'published_images',
-                  'total_likes', 'created_at', 'updated_at', 'is_active']
+                  'total_likes', 'viewer_profile', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_work_schedule(self, obj):
@@ -135,6 +137,40 @@ class ShopProfileSerializer(serializers.ModelSerializer):
     def get_total_likes(self, obj):
         """إجمالي الإعجابات"""
         return sum(img.likes_count for img in obj.gallery_images.filter(status='published'))
+
+    def get_viewer_profile(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not getattr(user, 'is_authenticated', False):
+            return None
+
+        if isinstance(user, Employee) or getattr(user, 'user_type', None) == 'employee':
+            profile_image_url = None
+            if getattr(user, 'profile_image', None):
+                if request:
+                    profile_image_url = request.build_absolute_uri(user.profile_image.url)
+                else:
+                    profile_image_url = user.profile_image.url
+            return {
+                'type': 'cashier' if user.role == 'cashier' else 'employee',
+                'id': user.id,
+                'name': user.name,
+                'role': user.role,
+                'role_display': user.get_role_display(),
+                'profile_image_url': profile_image_url,
+            }
+
+        if isinstance(user, ShopOwner) or getattr(user, 'user_type', None) == 'shop_owner':
+            return {
+                'type': 'shop_owner',
+                'id': obj.id,
+                'name': obj.owner_name,
+                'role': 'shop_owner',
+                'role_display': 'صاحب المحل',
+                'profile_image_url': self.get_profile_image_url(obj),
+            }
+
+        return None
 
 
 class ShopProfileUpdateSerializer(serializers.ModelSerializer):

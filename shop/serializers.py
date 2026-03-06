@@ -636,19 +636,25 @@ class EmployeeTokenObtainPairSerializer(serializers.Serializer):
         """
         التحقق من بيانات تسجيل الدخول وإرجاع token
         """
+        request = self.context.get('request')
         phone_number = attrs.get('phone_number')
         password = attrs.get('password')
         
         try:
-            employee = Employee.objects.get(phone_number=phone_number, is_active=True)
+            employee = Employee.objects.get(phone_number=phone_number)
         except Employee.DoesNotExist:
             raise serializers.ValidationError({
-                'phone_number': 'رقم الهاتف غير صحيح أو الحساب غير نشط'
+                'phone_number': t(request, 'phone_number_or_password_is_incorrect')
+            })
+
+        if not employee.is_active:
+            raise serializers.ValidationError({
+                'detail': t(request, 'employee_account_is_blocked')
             })
         
         if not employee.check_password(password):
             raise serializers.ValidationError({
-                'password': 'كلمة المرور غير صحيحة'
+                'password': t(request, 'phone_number_or_password_is_incorrect')
             })
         
         refresh = self.get_token(employee)

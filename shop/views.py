@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 import json
 from django.db import IntegrityError
-from django.db.models import Q, Count, Sum, F, Avg
+from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import (
@@ -13,7 +13,7 @@ from .models import (
     Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
     Notification, Cart, CartItem, ShopDriver
 )
-from gallery.models import WorkSchedule
+from gallery.models import WorkSchedule, GalleryImage, ImageLike
 from .serializers import (
     ShopCategorySerializer,
     ShopStatusSerializer,
@@ -123,6 +123,54 @@ class CustomerPagination(PageNumberPagination):
             }
         }
         
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+class PublicShopsPagination(PageNumberPagination):
+    """Pagination for customer-facing public shops list."""
+
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def get_paginated_response(self, data):
+        response_data = {
+            "status": status.HTTP_200_OK,
+            **build_message_fields(
+                t(getattr(self, "request", None), "shops_retrieved_successfully"),
+                request=getattr(self, "request", None)
+            ),
+            "data": {
+                'count': self.page.paginator.count,
+                'next': self.get_next_link(),
+                'previous': self.get_previous_link(),
+                'results': data
+            }
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+class PublicGalleryPagination(PageNumberPagination):
+    """Pagination for customer-facing portfolio feed."""
+
+    page_size = 12
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def get_paginated_response(self, data):
+        response_data = {
+            "status": status.HTTP_200_OK,
+            **build_message_fields(
+                t(getattr(self, "request", None), "images_retrieved_successfully"),
+                request=getattr(self, "request", None)
+            ),
+            "data": {
+                'count': self.page.paginator.count,
+                'next': self.get_next_link(),
+                'previous': self.get_previous_link(),
+                'results': data
+            }
+        }
         return Response(response_data, status=status.HTTP_200_OK)
 
 
@@ -1856,16 +1904,19 @@ def employee_login_view(request):
         "password": "كلمة المرور"
     }
     """
-    serializer = EmployeeTokenObtainPairSerializer(data=request.data)
+    serializer = EmployeeTokenObtainPairSerializer(data=request.data, context={'request': request})
     
     try:
         serializer.is_valid(raise_exception=True)
     except Exception as e:
         errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
+        blocked_message = t(request, 'employee_account_is_blocked')
+        errors_str = json.dumps(errors, ensure_ascii=False)
+        is_blocked = blocked_message in errors_str
         return error_response(
-            message=t(request, 'login_failed'),
+            message=blocked_message if is_blocked else t(request, 'login_failed'),
             errors=errors,
-            status_code=status.HTTP_400_BAD_REQUEST
+            status_code=status.HTTP_403_FORBIDDEN if is_blocked else status.HTTP_400_BAD_REQUEST
         )
     
     return success_response(
@@ -2234,30 +2285,234 @@ def shop_category_detail_view(request, category_id):
 
 # ==================== Public Shops (for Customer selection) ====================
 
+
+def _build_file_url(request, file_field):
+    if not file_field:
+        return None
+    try:
+        file_url = file_field.url
+    except Exception:
+        return None
+    if request:
+        return request.build_absolute_uri(file_url)
+    return file_url
+
+
+def _to_hhmm_time(value):
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value, '%H:%M').time()
+    except ValueError:
+        return None
+
+
+def _is_open_now(status_value, today_schedule):
+    if status_value == 'closed':
+        return False
+    if not today_schedule.get('is_working'):
+        return False
+
+    start_time = _to_hhmm_time(today_schedule.get('start_time'))
+    end_time = _to_hhmm_time(today_schedule.get('end_time'))
+    if not start_time or not end_time:
+        return status_value in {'open', 'busy'}
+
+    now_time = timezone.localtime().time().replace(second=0, microsecond=0)
+    return start_time <= now_time <= end_time
+
+
+def _build_today_hours_label(today_schedule):
+    if not today_schedule.get('is_working'):
+        return 'مغلق'
+    start_time = today_schedule.get('start_time')
+    end_time = today_schedule.get('end_time')
+    if not start_time or not end_time:
+        return 'غير محدد'
+    return f'{start_time} - {end_time}'
+
+
+def _safe_shop_status(shop):
+    try:
+        return shop.shop_status
+    except ShopStatus.DoesNotExist:
+        return None
+
+
+def _resolve_like_actor_identifier(request):
+    user = getattr(request, 'user', None)
+    if user and getattr(user, 'is_authenticated', False):
+        user_type = _resolve_user_type(user) or 'user'
+        user_id = getattr(user, 'id', None)
+        if user_id:
+            return f'{user_type}:{user_id}'
+
+    identifier = None
+    if hasattr(request, 'data'):
+        identifier = request.data.get('user_identifier')
+    if not identifier and hasattr(request, 'query_params'):
+        identifier = request.query_params.get('user_identifier')
+    if not identifier:
+        return None
+
+    return str(identifier).strip()[:100] or None
+
+
+def _build_public_gallery_item(image, request, liked_ids=None):
+    liked_ids = liked_ids or set()
+    shop = image.shop_owner
+    return {
+        'id': image.id,
+        'image_url': _build_file_url(request, image.image),
+        'description': image.description or '',
+        'likes_count': image.likes_count,
+        'is_liked': image.id in liked_ids,
+        'uploaded_at': image.uploaded_at,
+        'updated_at': image.updated_at,
+        'shop': {
+            'id': shop.id,
+            'shop_name': shop.shop_name,
+            'shop_number': shop.shop_number,
+            'profile_image_url': _build_file_url(request, shop.profile_image),
+        }
+    }
+
+
+def _build_public_shop_payload(shop, request, published_images=None):
+    if published_images is None:
+        published_images = list(
+            shop.gallery_images.filter(status='published').order_by('-uploaded_at')
+        )
+
+    status_obj = _safe_shop_status(shop)
+    status_value = status_obj.status if status_obj else 'closed'
+    status_display = status_obj.get_status_display() if status_obj else 'مغلق'
+
+    schedule_payload = _build_work_schedule_response(shop.work_schedule)
+    today_schedule = schedule_payload.get('today', {})
+    is_open_now = _is_open_now(status_value, today_schedule)
+
+    average_rating = getattr(shop, 'avg_shop_rating', None)
+    ratings_count = getattr(shop, 'ratings_count', None)
+    if average_rating is None or ratings_count is None:
+        ratings_stats = OrderRating.objects.filter(order__shop_owner=shop).aggregate(
+            avg=Avg('shop_rating'),
+            count=Count('id')
+        )
+        average_rating = ratings_stats.get('avg') or 0
+        ratings_count = ratings_stats.get('count') or 0
+
+    category = shop.shop_category
+    cover_image = published_images[0] if published_images else None
+    total_likes = sum(image.likes_count for image in published_images)
+
+    return {
+        'id': shop.id,
+        'owner_name': shop.owner_name,
+        'shop_name': shop.shop_name,
+        'shop_number': shop.shop_number,
+        'description': shop.description or '',
+        'phone_number': shop.phone_number,
+        'profile_image_url': _build_file_url(request, shop.profile_image),
+        'cover_image_url': _build_file_url(request, cover_image.image if cover_image else None),
+        'shop_category': (
+            {'id': category.id, 'name': category.name}
+            if category else None
+        ),
+        'status': {
+            'key': status_value,
+            'label': status_display,
+            'is_open_now': is_open_now,
+            'work_badge': 'مفتوح الآن' if is_open_now else 'مغلق الآن',
+        },
+        'rating': {
+            'average': round(float(average_rating), 1) if ratings_count else 0,
+            'count': int(ratings_count or 0),
+        },
+        'today_schedule': {
+            'day_key': today_schedule.get('day_key'),
+            'day_name': today_schedule.get('day_name'),
+            'is_working': today_schedule.get('is_working'),
+            'start_time': today_schedule.get('start_time'),
+            'end_time': today_schedule.get('end_time'),
+            'label': _build_today_hours_label(today_schedule),
+        },
+        'gallery': {
+            'published_images_count': len(published_images),
+            'total_likes': total_likes,
+        },
+        'subtitle': (
+            f"{category.name} • رقم المحل {shop.shop_number}"
+            if category else f"رقم المحل {shop.shop_number}"
+        )
+    }
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def public_shops_list_view(request):
     """
-    List active shops (public).
-    GET /api/shops/
+    List active shops for customer search screen.
+    GET /api/shops/?search=&shop_category_id=&open_now=&with_gallery=&page=&page_size=
     """
-    shops = ShopOwner.objects.filter(is_active=True).select_related('shop_category').order_by('shop_name', 'shop_number')
-    data = [
-        {
-            'id': s.id,
-            'shop_number': s.shop_number,
-            'shop_name': s.shop_name,
-            'shop_category': (
-                {'id': s.shop_category.id, 'name': s.shop_category.name}
-                if s.shop_category else None
+    search_query = request.query_params.get('search', '').strip()
+    shop_category_id = request.query_params.get('shop_category_id')
+    open_now_only = _is_true_query_value(request.query_params.get('open_now'))
+    with_gallery_only = _is_true_query_value(request.query_params.get('with_gallery'))
+
+    shops = (
+        ShopOwner.objects
+        .filter(is_active=True)
+        .select_related('shop_category', 'shop_status')
+        .prefetch_related(
+            Prefetch(
+                'gallery_images',
+                queryset=GalleryImage.objects.filter(status='published').order_by('-uploaded_at'),
+                to_attr='published_gallery_images'
             )
-        }
-        for s in shops
-    ]
+        )
+        .annotate(
+            avg_shop_rating=Avg('orders__rating__shop_rating'),
+            ratings_count=Count('orders__rating', distinct=True),
+        )
+        .order_by('shop_name', 'shop_number')
+    )
+
+    if search_query:
+        shops = shops.filter(
+            Q(shop_name__icontains=search_query) |
+            Q(owner_name__icontains=search_query) |
+            Q(shop_number__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if shop_category_id:
+        shops = shops.filter(shop_category_id=shop_category_id)
+
+    if with_gallery_only:
+        shops = shops.filter(gallery_images__status='published').distinct()
+
+    payload = []
+    for shop in shops:
+        shop_data = _build_public_shop_payload(
+            shop,
+            request,
+            published_images=getattr(shop, 'published_gallery_images', [])
+        )
+        if open_now_only and not shop_data['status']['is_open_now']:
+            continue
+        payload.append(shop_data)
+
+    paginator = PublicShopsPagination()
+    page = paginator.paginate_queryset(payload, request)
+    if page is not None:
+        return paginator.get_paginated_response(page)
+
     return success_response(
-        data=data,
+        data=payload,
         message='shops_retrieved_successfully',
-        status_code=status.HTTP_200_OK
+        status_code=status.HTTP_200_OK,
+        request=request
     )
 
 
@@ -2272,7 +2527,290 @@ def public_shop_categories_list_view(request):
     return success_response(
         data=[{'id': c.id, 'name': c.name} for c in categories],
         message='shop_categories_retrieved_successfully',
-        status_code=status.HTTP_200_OK
+        status_code=status.HTTP_200_OK,
+        request=request
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_shop_profile_view(request, shop_id):
+    """
+    Public profile for a single shop.
+    GET /api/shops/{shop_id}/profile/
+    """
+    shop = (
+        ShopOwner.objects
+        .filter(id=shop_id, is_active=True)
+        .select_related('shop_category', 'shop_status')
+        .prefetch_related(
+            Prefetch(
+                'gallery_images',
+                queryset=GalleryImage.objects.filter(status='published').order_by('-uploaded_at'),
+                to_attr='published_gallery_images'
+            )
+        )
+        .annotate(
+            avg_shop_rating=Avg('orders__rating__shop_rating'),
+            ratings_count=Count('orders__rating', distinct=True),
+        )
+        .first()
+    )
+    if not shop:
+        return error_response(
+            message=t(request, 'not_found'),
+            errors={'shop': 'shop not found.'},
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request
+        )
+
+    return success_response(
+        data=_build_public_shop_payload(
+            shop,
+            request,
+            published_images=getattr(shop, 'published_gallery_images', [])
+        ),
+        message='shop_profile_retrieved_successfully',
+        status_code=status.HTTP_200_OK,
+        request=request
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_shop_schedule_view(request, shop_id):
+    """
+    Public weekly schedule for a single shop.
+    GET /api/shops/{shop_id}/schedule/
+    """
+    shop = ShopOwner.objects.filter(id=shop_id, is_active=True).select_related('shop_status').first()
+    if not shop:
+        return error_response(
+            message=t(request, 'not_found'),
+            errors={'shop': 'shop not found.'},
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request
+        )
+
+    schedule_payload = _build_work_schedule_response(shop.work_schedule)
+    status_obj = _safe_shop_status(shop)
+    status_value = status_obj.status if status_obj else 'closed'
+    schedule_payload['shop'] = {
+        'id': shop.id,
+        'shop_name': shop.shop_name,
+        'shop_number': shop.shop_number,
+    }
+    schedule_payload['status'] = {
+        'key': status_value,
+        'label': status_obj.get_status_display() if status_obj else 'مغلق',
+    }
+    schedule_payload['is_open_now'] = _is_open_now(status_value, schedule_payload.get('today', {}))
+
+    return success_response(
+        data=schedule_payload,
+        message=t(request, 'work_schedule_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_shop_gallery_view(request, shop_id):
+    """
+    Public gallery posts for a single shop.
+    GET /api/shops/{shop_id}/gallery/?search=&sort_by=&page=&page_size=
+    """
+    shop = ShopOwner.objects.filter(id=shop_id, is_active=True).first()
+    if not shop:
+        return error_response(
+            message=t(request, 'not_found'),
+            errors={'shop': 'shop not found.'},
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request
+        )
+
+    search_query = request.query_params.get('search', '').strip()
+    sort_by = request.query_params.get('sort_by', '-uploaded_at')
+    allowed_sort_fields = {'uploaded_at', 'likes_count', 'updated_at'}
+
+    queryset = GalleryImage.objects.filter(shop_owner=shop, status='published').select_related('shop_owner')
+    if search_query:
+        queryset = queryset.filter(description__icontains=search_query)
+    if sort_by.lstrip('-') in allowed_sort_fields:
+        queryset = queryset.order_by(sort_by)
+    else:
+        queryset = queryset.order_by('-uploaded_at')
+
+    paginator = PublicGalleryPagination()
+    page = paginator.paginate_queryset(queryset, request)
+
+    actor_identifier = _resolve_like_actor_identifier(request)
+    liked_ids = set()
+    if actor_identifier and page is not None:
+        page_ids = [item.id for item in page]
+        liked_ids = set(
+            ImageLike.objects.filter(
+                image_id__in=page_ids,
+                user_identifier=actor_identifier
+            ).values_list('image_id', flat=True)
+        )
+    elif actor_identifier:
+        queryset_ids = queryset.values_list('id', flat=True)
+        liked_ids = set(
+            ImageLike.objects.filter(
+                image_id__in=queryset_ids,
+                user_identifier=actor_identifier
+            ).values_list('image_id', flat=True)
+        )
+
+    if page is not None:
+        data = [_build_public_gallery_item(item, request, liked_ids=liked_ids) for item in page]
+        return paginator.get_paginated_response(data)
+
+    data = [_build_public_gallery_item(item, request, liked_ids=liked_ids) for item in queryset]
+    return success_response(
+        data=data,
+        message=t(request, 'images_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_portfolio_feed_view(request):
+    """
+    Public portfolio feed across all active shops.
+    GET /api/shops/portfolio/?search=&shop_id=&shop_category_id=&sort_by=&page=&page_size=
+    """
+    search_query = request.query_params.get('search', '').strip()
+    shop_id = request.query_params.get('shop_id')
+    shop_category_id = request.query_params.get('shop_category_id')
+    sort_by = request.query_params.get('sort_by', '-uploaded_at')
+    allowed_sort_fields = {'uploaded_at', 'likes_count', 'updated_at'}
+
+    queryset = GalleryImage.objects.filter(
+        status='published',
+        shop_owner__is_active=True
+    ).select_related('shop_owner', 'shop_owner__shop_category')
+
+    if shop_id:
+        queryset = queryset.filter(shop_owner_id=shop_id)
+    if shop_category_id:
+        queryset = queryset.filter(shop_owner__shop_category_id=shop_category_id)
+    if search_query:
+        queryset = queryset.filter(
+            Q(description__icontains=search_query) |
+            Q(shop_owner__shop_name__icontains=search_query)
+        )
+    if sort_by.lstrip('-') in allowed_sort_fields:
+        queryset = queryset.order_by(sort_by)
+    else:
+        queryset = queryset.order_by('-uploaded_at')
+
+    paginator = PublicGalleryPagination()
+    page = paginator.paginate_queryset(queryset, request)
+
+    actor_identifier = _resolve_like_actor_identifier(request)
+    liked_ids = set()
+    if actor_identifier and page is not None:
+        page_ids = [item.id for item in page]
+        liked_ids = set(
+            ImageLike.objects.filter(
+                image_id__in=page_ids,
+                user_identifier=actor_identifier
+            ).values_list('image_id', flat=True)
+        )
+    elif actor_identifier:
+        queryset_ids = queryset.values_list('id', flat=True)
+        liked_ids = set(
+            ImageLike.objects.filter(
+                image_id__in=queryset_ids,
+                user_identifier=actor_identifier
+            ).values_list('image_id', flat=True)
+        )
+
+    if page is not None:
+        data = [_build_public_gallery_item(item, request, liked_ids=liked_ids) for item in page]
+        return paginator.get_paginated_response(data)
+
+    data = [_build_public_gallery_item(item, request, liked_ids=liked_ids) for item in queryset]
+    return success_response(
+        data=data,
+        message=t(request, 'images_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request
+    )
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([AllowAny])
+def public_gallery_like_view(request, image_id):
+    """
+    Like/unlike a public portfolio image.
+    POST/DELETE /api/shops/gallery/{image_id}/like/
+    """
+    image = GalleryImage.objects.filter(
+        id=image_id,
+        status='published',
+        shop_owner__is_active=True
+    ).first()
+    if not image:
+        return error_response(
+            message=t(request, 'image_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request
+        )
+
+    actor_identifier = _resolve_like_actor_identifier(request)
+    if not actor_identifier:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'user_identifier': ['user_identifier is required for guest likes.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request
+        )
+
+    if request.method == 'POST':
+        like, created = ImageLike.objects.get_or_create(
+            image=image,
+            user_identifier=actor_identifier
+        )
+        if not created:
+            return error_response(
+                message=t(request, 'this_image_has_already_been_liked'),
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request
+            )
+
+        GalleryImage.objects.filter(id=image.id).update(likes_count=F('likes_count') + 1)
+        image.refresh_from_db(fields=['likes_count'])
+        return success_response(
+            data={'image_id': image.id, 'liked': True, 'likes_count': image.likes_count},
+            message=t(request, 'image_liked_successfully'),
+            status_code=status.HTTP_201_CREATED,
+            request=request
+        )
+
+    deleted_count, _ = ImageLike.objects.filter(
+        image=image,
+        user_identifier=actor_identifier
+    ).delete()
+    if deleted_count == 0:
+        return error_response(
+            message=t(request, 'this_image_was_not_liked'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request
+        )
+
+    GalleryImage.objects.filter(id=image.id, likes_count__gt=0).update(likes_count=F('likes_count') - 1)
+    image.refresh_from_db(fields=['likes_count'])
+    return success_response(
+        data={'image_id': image.id, 'liked': False, 'likes_count': image.likes_count},
+        message=t(request, 'like_removed_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request
     )
 
 

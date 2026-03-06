@@ -7,8 +7,11 @@ urlpatterns = [
     # Public shops list (for customers)
     path('shops/', views.public_shops_list_view, name='public_shops_list'),
     path('shops/shop-categories/', views.public_shop_categories_list_view, name='public_shop_categories_list'),
-    path('shops/products/by-shop-category/', views.public_products_by_shop_category_view, name='public_products_by_shop_category'),
-    path('shops/offers/', views.public_offers_view, name='public_offers'),
+    path('shops/portfolio/', views.public_portfolio_feed_view, name='public_portfolio_feed'),
+    path('shops/<int:shop_id>/profile/', views.public_shop_profile_view, name='public_shop_profile'),
+    path('shops/<int:shop_id>/schedule/', views.public_shop_schedule_view, name='public_shop_schedule'),
+    path('shops/<int:shop_id>/gallery/', views.public_shop_gallery_view, name='public_shop_gallery'),
+    path('shops/gallery/<int:image_id>/like/', views.public_gallery_like_view, name='public_gallery_like'),
 
     # Shop Status
     path('shop/status/', views.shop_status_view, name='shop_status'),
@@ -29,10 +32,6 @@ urlpatterns = [
     # Categories (تصنيفات المنتجات)
     path('shop/categories/', views.category_list_view, name='category_list'),
     path('shop/categories/<int:category_id>/', views.category_detail_view, name='category_detail'),
-    
-    # Products (قائمة المنتجات)
-    path('shop/products/', views.product_list_view, name='product_list'),
-    path('shop/products/<int:product_id>/', views.product_detail_view, name='product_detail'),
     
     # Orders (للمحل)
     path('shop/orders/', views.order_list_view, name='order_list'),
@@ -63,10 +62,6 @@ urlpatterns = [
     path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
     path('customer/orders/<int:order_id>/reject/', views.customer_order_reject_view, name='customer_order_reject'),
     
-    # ==================== Customer Orders (طلب أوردر - البند 1، 2، 3، ...) ====================
-    path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
-    path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
-    
     # ==================== Customer Addresses ====================
     path('customer/addresses/', views.customer_address_list_view, name='customer_address_list'),
     path('customer/addresses/<int:address_id>/', views.customer_address_detail_view, name='customer_address_detail'),
@@ -82,12 +77,6 @@ urlpatterns = [
     path('notifications/', views.notification_list_view, name='notification_list'),
     path('notifications/<int:notification_id>/read/', views.notification_mark_read_view, name='notification_mark_read'),
     path('notifications/read-all/', views.notification_mark_all_read_view, name='notification_mark_all_read'),
-    
-    # ==================== Cart ====================
-    path('cart/<int:shop_id>/', views.cart_view, name='cart_view'),
-    path('cart/<int:shop_id>/add/', views.cart_add_item_view, name='cart_add_item'),
-    path('cart/<int:shop_id>/items/<int:item_id>/', views.cart_item_view, name='cart_item'),
-    path('cart/<int:shop_id>/clear/', views.cart_clear_view, name='cart_clear'),
     
     # ==================== Driver Location ====================
     path('driver/location/', views.driver_location_update_view, name='driver_location_update'),
