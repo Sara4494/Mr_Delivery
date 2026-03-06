@@ -76,6 +76,16 @@ def _forbidden(request, message_key):
     )
 
 
+def _token_user_type(request):
+    token = getattr(request, 'auth', None)
+    if token is None:
+        return None
+    try:
+        return token.get('user_type')
+    except Exception:
+        return None
+
+
 class IsShopOwnerOrCashier(BasePermission):
     """
     Allow only shop owner or cashier employee to access private shop gallery/profile endpoints.
@@ -85,6 +95,12 @@ class IsShopOwnerOrCashier(BasePermission):
         user = request.user
         if not user or not getattr(user, 'is_authenticated', False):
             return False
+
+        token_user_type = _token_user_type(request)
+        if token_user_type and token_user_type not in {'shop_owner', 'employee'}:
+            self.message = t(request, 'permission_only_shop_owner_or_cashier')
+            return False
+
         if _is_shop_owner(user) or _is_cashier(user):
             return True
         self.message = t(request, 'permission_only_shop_owner_or_cashier')

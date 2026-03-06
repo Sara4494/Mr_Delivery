@@ -1,76 +1,69 @@
-from rest_framework_simplejwt.authentication import JWTAuthentication
+﻿from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
+
 from .models import ShopOwner
 
 
 class ShopOwnerJWTAuthentication(JWTAuthentication):
     """
-    Custom JWT Authentication يدعم جميع أنواع المستخدمين:
-    - ShopOwner
-    - Customer
-    - Employee
-    - Driver
+    Custom JWT authentication for all project roles.
+    Enforces strict role->id mapping to prevent cross-role access.
     """
-    
+
     def get_user(self, validated_token):
-        """
-        الحصول على المستخدم من validated token حسب نوعه
-        """
         user_type = validated_token.get('user_type')
-        
-        # ===== Customer =====
-        if user_type == 'customer' or validated_token.get('customer_id'):
+        if not user_type:
+            raise InvalidToken('Token missing user_type')
+
+        if user_type == 'customer':
             customer_id = validated_token.get('customer_id')
             if not customer_id:
                 raise InvalidToken('Customer token missing customer_id')
             try:
                 from shop.models import Customer
+
                 customer = Customer.objects.get(id=customer_id)
                 customer.user_type = 'customer'
                 return customer
-            except Customer.DoesNotExist:
-                raise AuthenticationFailed('العميل غير موجود')
-        
-        # ===== Employee =====
-        if user_type == 'employee' or validated_token.get('employee_id'):
+            except Customer.DoesNotExist as exc:
+                raise AuthenticationFailed('Customer not found') from exc
+
+        if user_type == 'employee':
             employee_id = validated_token.get('employee_id')
             if not employee_id:
                 raise InvalidToken('Employee token missing employee_id')
             try:
                 from shop.models import Employee
+
                 employee = Employee.objects.get(id=employee_id, is_active=True)
                 employee.user_type = 'employee'
                 return employee
-            except Employee.DoesNotExist:
-                raise AuthenticationFailed('الموظف غير موجود أو غير نشط')
-        
-        # ===== Driver =====
-        if user_type == 'driver' or validated_token.get('driver_id'):
+            except Employee.DoesNotExist as exc:
+                raise AuthenticationFailed('Employee not found or inactive') from exc
+
+        if user_type == 'driver':
             driver_id = validated_token.get('driver_id')
             if not driver_id:
                 raise InvalidToken('Driver token missing driver_id')
             try:
                 from shop.models import Driver
+
                 driver = Driver.objects.get(id=driver_id)
                 driver.user_type = 'driver'
                 return driver
-            except Driver.DoesNotExist:
-                raise AuthenticationFailed('السائق غير موجود')
-        
-        # ===== ShopOwner =====
-        # Security note:
-        # Never fallback to generic `user_id` unless token explicitly declares user_type=shop_owner.
-        # This prevents cross-role token confusion (e.g. customer token accidentally mapped to shop owner).
-        shop_owner_id = validated_token.get('shop_owner_id')
-        if not shop_owner_id and user_type == 'shop_owner':
-            shop_owner_id = validated_token.get('user_id')
+            except Driver.DoesNotExist as exc:
+                raise AuthenticationFailed('Driver not found') from exc
 
-        if shop_owner_id:
+        if user_type == 'shop_owner':
+            # Legacy compatibility for owner tokens generated with for_user().
+            shop_owner_id = validated_token.get('shop_owner_id') or validated_token.get('user_id')
+            if not shop_owner_id:
+                raise InvalidToken('Shop owner token missing shop_owner_id')
             try:
                 shop_owner = ShopOwner.objects.get(id=shop_owner_id, is_active=True)
                 shop_owner.user_type = 'shop_owner'
                 return shop_owner
-            except ShopOwner.DoesNotExist:
-                raise AuthenticationFailed('صاحب المحل غير موجود أو غير نشط')
-        
-        raise InvalidToken('Token غير صالح - لا يحتوي على معرف مستخدم')
+            except ShopOwner.DoesNotExist as exc:
+                raise AuthenticationFailed('Shop owner not found or inactive') from exc
+
+        raise InvalidToken('Unsupported user_type in token')

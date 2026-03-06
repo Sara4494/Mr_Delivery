@@ -19,55 +19,48 @@ def get_user_from_token(token):
         decoded_data = jwt_decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         
         user_type = decoded_data.get('user_type')
-        
-        # ShopOwner
-        if user_type == 'shop_owner' or decoded_data.get('shop_owner_id'):
+        if not user_type:
+            return None, None
+
+        if user_type == 'shop_owner':
             shop_owner_id = decoded_data.get('shop_owner_id') or decoded_data.get('user_id')
-            if shop_owner_id:
-                try:
-                    user = ShopOwner.objects.get(id=shop_owner_id, is_active=True)
-                    return user, 'shop_owner'
-                except ShopOwner.DoesNotExist:
-                    pass
-        
-        # Customer
-        if user_type == 'customer' or decoded_data.get('customer_id'):
-            customer_id = decoded_data.get('customer_id') or decoded_data.get('user_id')
-            if customer_id:
-                try:
-                    user = Customer.objects.get(id=customer_id)
-                    return user, 'customer'
-                except Customer.DoesNotExist:
-                    pass
-        
-        # Employee
-        if user_type == 'employee' or decoded_data.get('employee_id'):
-            employee_id = decoded_data.get('employee_id') or decoded_data.get('user_id')
-            if employee_id:
-                try:
-                    user = Employee.objects.get(id=employee_id, is_active=True)
-                    return user, 'employee'
-                except Employee.DoesNotExist:
-                    pass
-        
-        # Driver
-        if user_type == 'driver' or decoded_data.get('driver_id'):
-            driver_id = decoded_data.get('driver_id') or decoded_data.get('user_id')
-            if driver_id:
-                try:
-                    user = Driver.objects.get(id=driver_id)
-                    return user, 'driver'
-                except Driver.DoesNotExist:
-                    pass
-        
-        # Fallback: try shop_owner_id or user_id for backward compatibility
-        user_id = decoded_data.get('user_id')
-        if user_id:
+            if not shop_owner_id:
+                return None, None
             try:
-                user = ShopOwner.objects.get(id=user_id, is_active=True)
+                user = ShopOwner.objects.get(id=shop_owner_id, is_active=True)
                 return user, 'shop_owner'
             except ShopOwner.DoesNotExist:
-                pass
+                return None, None
+
+        if user_type == 'customer':
+            customer_id = decoded_data.get('customer_id')
+            if not customer_id:
+                return None, None
+            try:
+                user = Customer.objects.get(id=customer_id)
+                return user, 'customer'
+            except Customer.DoesNotExist:
+                return None, None
+
+        if user_type == 'employee':
+            employee_id = decoded_data.get('employee_id')
+            if not employee_id:
+                return None, None
+            try:
+                user = Employee.objects.get(id=employee_id, is_active=True)
+                return user, 'employee'
+            except Employee.DoesNotExist:
+                return None, None
+
+        if user_type == 'driver':
+            driver_id = decoded_data.get('driver_id')
+            if not driver_id:
+                return None, None
+            try:
+                user = Driver.objects.get(id=driver_id)
+                return user, 'driver'
+            except Driver.DoesNotExist:
+                return None, None
                 
     except (InvalidToken, TokenError, Exception) as e:
         print(f"[JWTAuthMiddleware] Token error: {e}")
