@@ -910,19 +910,23 @@ class OrderRatingSerializer(serializers.ModelSerializer):
 
 class OrderRatingCreateSerializer(serializers.Serializer):
     """Serializer لإنشاء تقييم"""
-    order_id = serializers.IntegerField(required=True)
+    order_id = serializers.IntegerField(required=False)
+    shop_id = serializers.IntegerField(required=False)
     shop_rating = serializers.IntegerField(min_value=1, max_value=5, required=True)
-    driver_rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
-    food_rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
     comment = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if not attrs.get('order_id') and not attrs.get('shop_id'):
+            raise serializers.ValidationError({
+                'shop_id': ['shop_id or order_id is required.']
+            })
+        return attrs
 
 
 class ShopRatingCreateSerializer(serializers.Serializer):
     """Serializer for rating a shop from the customer app."""
     order_id = serializers.IntegerField(required=False)
     shop_rating = serializers.IntegerField(min_value=1, max_value=5, required=True)
-    driver_rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
-    food_rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
     comment = serializers.CharField(required=False, allow_blank=True)
 
 

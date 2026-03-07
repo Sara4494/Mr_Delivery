@@ -2536,21 +2536,7 @@ def _build_public_shop_profile_summary_payload(shop, request, published_images=N
                 'count': ratings_count,
             },
         },
-        'content_card': {
-            'title': shop.shop_name,
-            'created_since_label': featured_since_label or created_since_label,
-            'description': shop.description or '',
-            'action_text': 'عرض المزيد',
-            'featured_image': (
-                {
-                    'id': featured_image.id,
-                    'image_url': _build_file_url(request, featured_image.image),
-                    'description': featured_image.description or '',
-                    'likes_count': featured_image.likes_count,
-                }
-                if featured_image else None
-            ),
-        },
+       
     }
 
 
@@ -3463,17 +3449,15 @@ def _create_rating_response(request, order, data):
         order=order,
         customer=order.customer,
         shop_rating=data['shop_rating'],
-        driver_rating=data.get('driver_rating'),
-        food_rating=data.get('food_rating'),
         comment=data.get('comment', '')
     )
 
-    if order.driver and data.get('driver_rating'):
-        _update_driver_average_rating(order.driver)
-
     response_serializer = OrderRatingSerializer(rating)
+    response_data = dict(response_serializer.data)
+    response_data.pop('driver_rating', None)
+    response_data.pop('food_rating', None)
     return success_response(
-        data=response_serializer.data,
+        data=response_data,
         message=t(request, 'rating_added_successfully'),
         status_code=status.HTTP_201_CREATED,
     )
@@ -3492,12 +3476,30 @@ def order_rating_create_view(request):
         return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
     
     data = serializer.validated_data
-    order_id = data['order_id']
+    order_id = data.get('order_id')
+    shop_id = data.get('shop_id')
     
-    try:
-        order = Order.objects.get(id=order_id)
-    except Order.DoesNotExist:
-        return error_response(message=t(request, 'order_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+    if order_id:
+        try:
+            order = Order.objects.get(id=order_id)
+        except Order.DoesNotExist:
+            return error_response(message=t(request, 'order_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+    else:
+        order = Order.objects.filter(
+            shop_owner_id=shop_id,
+            customer_id=request.user.id,
+            status='delivered',
+            rating__isnull=True,
+        ).select_related('customer', 'driver').order_by('-updated_at', '-id').first()
+        if not order:
+            return error_response(
+                message=t(
+                    request,
+                    'no_delivered_order_available_for_rating',
+                    default='لا يوجد طلب مكتمل متاح لتقييم هذا المحل',
+                ),
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
 
     if order.customer_id != request.user.id:
         return error_response(message=t(request, 'order_not_found'), status_code=status.HTTP_404_NOT_FOUND)
@@ -3512,13 +3514,11 @@ def order_rating_create_view(request):
         order=order,
         customer=order.customer,
         shop_rating=data['shop_rating'],
-        driver_rating=data.get('driver_rating'),
-        food_rating=data.get('food_rating'),
         comment=data.get('comment', '')
     )
     
     # تحديث تقييم السائق إن وجد
-    if order.driver and data.get('driver_rating'):
+    if False and order.driver and data.get('driver_rating'):
         driver = order.driver
         avg_rating = OrderRating.objects.filter(
             order__driver=driver
@@ -3528,7 +3528,10 @@ def order_rating_create_view(request):
             driver.save()
     
     response_serializer = OrderRatingSerializer(rating)
-    return success_response(data=response_serializer.data, message=t(request, 'rating_added_successfully'), status_code=status.HTTP_201_CREATED)
+    response_data = dict(response_serializer.data)
+    response_data.pop('driver_rating', None)
+    response_data.pop('food_rating', None)
+    return success_response(data=response_data, message=t(request, 'rating_added_successfully'), status_code=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
