@@ -2737,10 +2737,11 @@ def _build_public_shop_profile_post_item(shop, image, request, liked_ids=None):
 def public_shops_list_view(request):
     """
     List active shops for customer search screen.
-    GET /api/shops/?search=&shop_category_id=&open_now=&with_gallery=&page=&page_size=
+    GET /api/shops/?search=&shop_category_name=&open_now=&with_gallery=&page=&page_size=
     """
     search_query = request.query_params.get('search', '').strip()
     shop_category_id = request.query_params.get('shop_category_id')
+    shop_category_name = request.query_params.get('shop_category_name', '').strip()
     open_now_only = _is_true_query_value(request.query_params.get('open_now'))
     with_gallery_only = _is_true_query_value(request.query_params.get('with_gallery'))
 
@@ -2772,6 +2773,8 @@ def public_shops_list_view(request):
 
     if shop_category_id:
         shops = shops.filter(shop_category_id=shop_category_id)
+    elif shop_category_name:
+        shops = shops.filter(shop_category__name__iexact=shop_category_name)
 
     if with_gallery_only:
         shops = shops.filter(gallery_images__status='published').distinct()

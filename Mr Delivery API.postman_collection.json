@@ -351,8 +351,9 @@
                       "description": "Search by shop name or description"
                     },
                     {
-                      "key": "shop_category_id",
+                      "key": "shop_category_name",
                       "value": "",
+                      "description": "اسم تصنيف المحل",
                       "disabled": true
                     },
                     {
@@ -3124,6 +3125,41 @@
                     "dashboard",
                     "statistics",
                     ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "ملخص لوحة التحكم",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}",
+                    "type": "text"
+                  }
+                ],
+                "description": "هذه endpoint جديدة ومنفصلة عن /api/shop/dashboard/statistics/. تعمل بتوكن صاحب المحل أو الموظف، وترجع كروت إجمالي الطلبات والطلبات النشطة وصافي الربح.",
+                "url": {
+                  "raw": "{{base_url}}/api/shop/dashboard/summary/?period=monthly",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "dashboard",
+                    "summary",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "period",
+                      "value": "monthly",
+                      "description": "daily, weekly, monthly, all"
+                    }
                   ]
                 }
               },
