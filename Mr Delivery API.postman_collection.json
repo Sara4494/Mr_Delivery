@@ -220,6 +220,41 @@
                     "description": "الخطوة 2 - العميل"
                   },
                   "response": []
+                },
+                {
+                  "name": "تغيير كلمة المرور",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{access_token}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"current_password\": \"password123\",\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/password-change/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "password-change",
+                        ""
+                      ]
+                    },
+                    "description": "تغيير كلمة المرور للمستخدم المسجل دخولًا. تعمل مع shop owner وemployee وdriver وcustomer."
+                  },
+                  "response": []
                 }
               ]
             },
@@ -3141,9 +3176,9 @@
                     "type": "text"
                   }
                 ],
-                "description": "هذه endpoint جديدة ومنفصلة عن /api/shop/dashboard/statistics/. تعمل بتوكن صاحب المحل أو الموظف، وترجع كروت إجمالي الطلبات والطلبات النشطة وصافي الربح.",
+                "description": "هذه endpoint جديدة ومنفصلة عن /api/shop/dashboard/statistics/. ترجع بيانات الشهر الحالي فقط. إذا كان التوكن لصاحب المحل ترجع بيانات المحل كلها، وإذا كان التوكن للموظف ترجع مبيعات وطلبات هذا الموظف فقط.",
                 "url": {
-                  "raw": "{{base_url}}/api/shop/dashboard/summary/?period=monthly",
+                  "raw": "{{base_url}}/api/shop/dashboard/summary/",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -3153,13 +3188,6 @@
                     "dashboard",
                     "summary",
                     ""
-                  ],
-                  "query": [
-                    {
-                      "key": "period",
-                      "value": "monthly",
-                      "description": "daily, weekly, monthly, all"
-                    }
                   ]
                 }
               },

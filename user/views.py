@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -711,4 +711,90 @@ def reset_password_view(request):
 
     return success_response(
         message=t(request, 'password_changed_successfully')
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    """
+    Change password for the currently authenticated user.
+    Works with shop owner, customer, employee, and driver tokens.
+
+    POST /api/auth/password-change/
+    Body: {
+        "current_password": "current password",
+        "new_password": "new password",
+        "confirm_password": "confirm password"
+    }
+    """
+    user = request.user
+
+    current_password = (
+        request.data.get('current_password')
+        or request.data.get('old_password')
+        or request.data.get('password')
+    )
+    new_password = request.data.get('new_password')
+    confirm_password = (
+        request.data.get('confirm_password')
+        or request.data.get('confirm_new_password')
+        or request.data.get('new_password_confirmation')
+    )
+
+    if not current_password:
+        return error_response(
+            message='كلمة المرور الحالية مطلوبة',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    if not new_password:
+        return error_response(
+            message=t(request, 'new_password_is_required'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    if not confirm_password:
+        return error_response(
+            message='تأكيد كلمة المرور الجديدة مطلوب',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    if new_password != confirm_password:
+        return error_response(
+            message='كلمة المرور الجديدة وتأكيدها غير متطابقين',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    if len(new_password) < 6:
+        return error_response(
+            message=t(request, 'password_must_be_at_least_6_characters'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    if not hasattr(user, 'check_password') or not hasattr(user, 'set_password'):
+        return error_response(
+            message='هذا الحساب لا يدعم تغيير كلمة المرور',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    if not user.check_password(current_password):
+        return error_response(
+            message='كلمة المرور الحالية غير صحيحة',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    user.set_password(new_password)
+    user.save()
+
+    return success_response(
+        message=t(request, 'password_changed_successfully'),
+        request=request,
     )

@@ -18,4 +18,6 @@ urlpatterns = [
     path('auth/otp/verify/', views.verify_otp_login_view, name='verify_otp'),
     # استعادة كلمة المرور
     path('auth/password-reset/', views.reset_password_view, name='reset_password'),
+    # تغيير كلمة المرور للمستخدم الحالي
+    path('auth/password-change/', views.change_password_view, name='change_password'),
 ]

@@ -237,7 +237,7 @@ def _get_dashboard_period_ranges(period):
         current_end = today
         previous_start = current_start - timedelta(days=7)
         previous_end = current_start - timedelta(days=1)
-    elif period == 'monthly':
+    elif period in {'monthly', 'month'}:
         current_start = today.replace(day=1)
         current_end = today
         previous_end = current_start - timedelta(days=1)
@@ -2001,19 +2001,25 @@ def shop_dashboard_summary_view(request):
     Dashboard summary cards for shop owner and employees.
     GET /api/shop/dashboard/summary/
     """
-    shop_owner = _resolve_owner_for_owner_or_employee(request.user)
+    current_user = request.user
+    shop_owner = _resolve_owner_for_owner_or_employee(current_user)
     if not shop_owner:
         return _owner_or_employee_forbidden(request)
 
-    period = (request.query_params.get('period') or 'monthly').strip().lower()
-    if period not in {'daily', 'weekly', 'monthly', 'all'}:
-        return error_response(
-            message=t(request, 'invalid_data'),
-            errors={'period': 'Allowed values: daily, weekly, monthly, all.'},
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
+    period = 'month'
 
     all_orders_qs = Order.objects.filter(shop_owner=shop_owner)
+    data_scope = 'shop'
+    employee_summary = None
+    if _is_employee_user(current_user):
+        all_orders_qs = all_orders_qs.filter(employee=current_user)
+        data_scope = 'employee'
+        employee_summary = {
+            'id': current_user.id,
+            'name': current_user.name,
+            'role': current_user.role,
+        }
+
     delivered_orders_qs = all_orders_qs.filter(status='delivered')
     active_statuses = ['new', 'pending_customer_confirm', 'confirmed', 'preparing', 'on_way']
     active_orders_qs = all_orders_qs.filter(status__in=active_statuses)
@@ -2058,6 +2064,8 @@ def shop_dashboard_summary_view(request):
     return success_response(
         data={
             'period': period,
+            'scope': data_scope,
+            'employee': employee_summary,
             **summary,
             'generated_at': timezone.now().isoformat(),
         },
