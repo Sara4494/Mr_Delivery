@@ -399,6 +399,42 @@
               "response": []
             },
             {
+              "name": "Shop Rating (Customer)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"shop_rating\": 5,\n    \"comment\": \"ممتاز\",\n    \"order_id\": 1\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/shops/1/rating/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    "1",
+                    "rating",
+                    ""
+                  ]
+                },
+                "description": "Rate a shop using customer token. order_id is optional; if omitted, the API uses the latest delivered unrated order for this customer in the selected shop."
+              },
+              "response": []
+            },
+            {
               "name": "Shop Schedule (Customer)",
               "request": {
                 "method": "GET",
