@@ -2033,7 +2033,7 @@ def shop_dashboard_summary_view(request):
     active_orders_value = active_orders_qs.count()
     net_profit_value = delivered_orders_qs.aggregate(total=Sum('total_amount'))['total'] or 0
 
-    current_start, current_end, previous_start, previous_end = _get_dashboard_period_ranges(period)
+    current_start, current_end, previous_start, previous_end = _get_dashboard_period_ranges('month')
     current_orders_qs = _apply_created_date_range(all_orders_qs, current_start, current_end)
     previous_orders_qs = _apply_created_date_range(all_orders_qs, previous_start, previous_end)
 
