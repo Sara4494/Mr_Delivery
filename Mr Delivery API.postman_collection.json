@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "87ba7613-3031-45a9-a2dc-0fa7396fa8f5",
+    "_postman_id": "7b374250-ff8b-4421-9470-9c5f410a4829",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery - APIs للمحلات والمعارض",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-87ba7613-3031-45a9-a2dc-0fa7396fa8f5?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-7b374250-ff8b-4421-9470-9c5f410a4829?source=collection_link"
   },
   "item": [
     {
@@ -152,23 +152,15 @@
                     {
                       "listen": "test",
                       "script": {
-                        "type": "text/javascript",
                         "exec": [
                           "if (pm.response.code === 200) {",
-                          "  var jsonData = pm.response.json();",
-                          "  var role = '';",
-                          "  try {",
-                          "    var body = pm.request.body && pm.request.body.raw ? JSON.parse(pm.request.body.raw) : {};",
-                          "    role = (body.role || '').toLowerCase();",
-                          "  } catch (e) {}",
-                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
-                          "    if (role === 'customer') pm.environment.set('customer_token', jsonData.data.access);",
-                          "    if (role === 'shop_owner') pm.environment.set('access_token', jsonData.data.access);",
-                          "    if (role === 'employee') pm.environment.set('employee_token', jsonData.data.access);",
-                          "    if (role === 'driver') pm.environment.set('driver_token', jsonData.data.access);",
-                          "  }",
+                          "    var jsonData = pm.response.json();",
+                          "    if (jsonData.success && jsonData.data) {",
+                          "        pm.environment.set(\"customer_token\", jsonData.data.access);",
+                          "    }",
                           "}"
-                        ]
+                        ],
+                        "type": "text/javascript"
                       }
                     }
                   ],
@@ -290,23 +282,7 @@
                       ]
                     }
                   },
-                  "response": [],
-                  "event": [
-                    {
-                      "listen": "test",
-                      "script": {
-                        "type": "text/javascript",
-                        "exec": [
-                          "if (pm.response.code === 200) {",
-                          "  var jsonData = pm.response.json();",
-                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
-                          "    pm.environment.set('customer_token', jsonData.data.access);",
-                          "  }",
-                          "}"
-                        ]
-                      }
-                    }
-                  ]
+                  "response": []
                 }
               ]
             }
@@ -360,7 +336,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/?search=&shop_category_id=&open_now=false&page=1&page_size=20",
+                  "raw": "{{base_url}}/api/shops?search=&open_now=false&page=1&page_size=20",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -408,7 +384,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/1/profile/",
+                  "raw": "{{base_url}}/api/shops/1/profile",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -428,7 +404,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/1/schedule/",
+                  "raw": "{{base_url}}/api/shops/1/schedule",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -448,7 +424,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/1/gallery/?sort_by=-uploaded_at&page=1&page_size=12",
+                  "raw": "{{base_url}}/api/shops/1/gallery?sort_by=-uploaded_at&page=1&page_size=12",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -492,7 +468,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/portfolio/?sort_by=-uploaded_at&page=1&page_size=12",
+                  "raw": "{{base_url}}/api/shops/portfolio?sort_by=-uploaded_at&page=1&page_size=12",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -559,7 +535,7 @@
                   "raw": "{\n  \"user_identifier\": \"guest-device-001\"\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/shops/gallery/1/like/",
+                  "raw": "{{base_url}}/api/shops/gallery/1/like",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -594,7 +570,7 @@
                   "raw": "{\n  \"user_identifier\": \"guest-device-001\"\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/shops/gallery/1/like/",
+                  "raw": "{{base_url}}/api/shops/gallery/1/like",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -1248,23 +1224,7 @@
                   ]
                 }
               },
-              "response": [],
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "  var jsonData = pm.response.json();",
-                      "  if (jsonData && jsonData.data && jsonData.data.access) {",
-                      "    pm.environment.set('access_token', jsonData.data.access);",
-                      "  }",
-                      "}"
-                    ]
-                  }
-                }
-              ]
+              "response": []
             }
           ]
         },
@@ -1402,7 +1362,7 @@
           "name": "Shop Profile",
           "item": [
             {
-              "name": "عرض الملف الشخصي (Owner/Cashier Only)",
+              "name": "عرض الملف الشخصي",
               "request": {
                 "method": "GET",
                 "header": [
@@ -1423,13 +1383,12 @@
                     "profile",
                     ""
                   ]
-                },
-                "description": "Owner/Cashier only endpoint. Customer token must return 403."
+                }
               },
               "response": []
             },
             {
-              "name": "تحديث الملف الشخصي (بيانات + صورة - الأونر فقط) (Owner/Cashier Only)",
+              "name": "تحديث الملف الشخصي (بيانات + صورة - الأونر فقط)",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -1480,7 +1439,7 @@
                     ""
                   ]
                 },
-                "description": "Owner/Cashier only endpoint. Customer token must return 403."
+                "description": "تحديث الملف الشخصي في endpoint واحد: owner_name، shop_name، و/أو profile_image. الأونر فقط يقدر يعدّل. يمكن إرسال application/json بدل formdata لتحديث النصوص فقط."
               },
               "response": []
             },
@@ -2097,6 +2056,23 @@
               "item": [
                 {
                   "name": "تسجيل دخول - موظف",
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "if (pm.response.code === 200) {",
+                          "  var jsonData = pm.response.json();",
+                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
+                          "    pm.environment.set(\"employee_token\", jsonData.data.access);",
+                          "    pm.environment.set(\"access_token\", jsonData.data.access);",
+                          "  }",
+                          "}"
+                        ]
+                      }
+                    }
+                  ],
                   "request": {
                     "method": "POST",
                     "header": [
@@ -2122,23 +2098,7 @@
                       ]
                     }
                   },
-                  "response": [],
-                  "event": [
-                    {
-                      "listen": "test",
-                      "script": {
-                        "type": "text/javascript",
-                        "exec": [
-                          "if (pm.response.code === 200) {",
-                          "  var jsonData = pm.response.json();",
-                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
-                          "    pm.environment.set('employee_token', jsonData.data.access);",
-                          "  }",
-                          "}"
-                        ]
-                      }
-                    }
-                  ]
+                  "response": []
                 },
                 {
                   "name": "Employee Login (Blocked Account Test)",
@@ -2168,23 +2128,7 @@
                     },
                     "description": "After blocking employee from /api/shop/staff/employee/{id}/block/, expect blocked-account message."
                   },
-                  "response": [],
-                  "event": [
-                    {
-                      "listen": "test",
-                      "script": {
-                        "type": "text/javascript",
-                        "exec": [
-                          "if (pm.response.code === 200) {",
-                          "  var jsonData = pm.response.json();",
-                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
-                          "    pm.environment.set('employee_token', jsonData.data.access);",
-                          "  }",
-                          "}"
-                        ]
-                      }
-                    }
-                  ]
+                  "response": []
                 }
               ]
             }
