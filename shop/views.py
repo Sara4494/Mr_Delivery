@@ -2049,11 +2049,6 @@ def shop_dashboard_summary_view(request):
     return success_response(
         data={
             'period': period,
-            'cards': [
-                summary['total_orders'],
-                summary['active_orders'],
-                summary['net_profit'],
-            ],
             **summary,
             'generated_at': timezone.now().isoformat(),
         },
