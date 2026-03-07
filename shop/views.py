@@ -2553,6 +2553,14 @@ def _build_public_shop_profile_summary_payload(shop, request, published_images=N
     }
 
 
+def _build_public_shop_profile_post_item(shop, image, request, liked_ids=None):
+    return {
+        'description': image.description or shop.description or '',
+        'post_image_url': _build_file_url(request, image.image),
+        'likes_count': image.likes_count,
+    }
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def public_shops_list_view(request):
@@ -2676,15 +2684,55 @@ def public_shop_profile_view(request, shop_id):
             request=request
         )
 
-    return success_response(
-        data=_build_public_shop_profile_summary_payload(
-            shop,
-            request,
-            published_images=getattr(shop, 'published_gallery_images', [])
-        ),
-        message='shop_profile_retrieved_successfully',
-        status_code=status.HTTP_200_OK,
-        request=request
+    profile_summary = _build_public_shop_profile_summary_payload(
+        shop,
+        request,
+        published_images=getattr(shop, 'published_gallery_images', [])
+    )
+
+    gallery_queryset = GalleryImage.objects.filter(
+        shop_owner=shop,
+        status='published'
+    ).select_related('shop_owner').order_by('-uploaded_at')
+
+    paginator = PublicGalleryPagination()
+    page = paginator.paginate_queryset(gallery_queryset, request)
+
+    actor_identifier = _resolve_like_actor_identifier(request)
+    liked_ids = set()
+    if actor_identifier and page is not None:
+        page_ids = [item.id for item in page]
+        liked_ids = set(
+            ImageLike.objects.filter(
+                image_id__in=page_ids,
+                user_identifier=actor_identifier
+            ).values_list('image_id', flat=True)
+        )
+
+    posts_results = [
+        _build_public_shop_profile_post_item(shop, item, request, liked_ids=liked_ids)
+        for item in (page or [])
+    ]
+
+    return Response(
+        {
+            "status": status.HTTP_200_OK,
+            **build_message_fields(
+                t(request, 'shop_profile_retrieved_successfully'),
+                request=request,
+            ),
+            "data": {
+                "id": profile_summary.get('id'),
+                "header": profile_summary.get('header', {}),
+                "posts": {
+                    "count": paginator.page.paginator.count if page is not None else gallery_queryset.count(),
+                    "next": paginator.get_next_link() if page is not None else None,
+                    "previous": paginator.get_previous_link() if page is not None else None,
+                    "results": posts_results,
+                }
+            }
+        },
+        status=status.HTTP_200_OK,
     )
 
 
