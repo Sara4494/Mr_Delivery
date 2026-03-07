@@ -3553,7 +3553,7 @@ def shop_rating_create_view(request, shop_id):
     """
     Rate a shop from the customer app.
     POST /api/shops/{shop_id}/rating/
-    Body: { "shop_rating": 5, "comment": "...", "order_id": 1 }
+    Body: { "shop_rating": 5, "comment": "..." }
     """
     serializer = ShopRatingCreateSerializer(data=request.data)
     if not serializer.is_valid():
@@ -3564,6 +3564,37 @@ def shop_rating_create_view(request, shop_id):
         )
 
     data = serializer.validated_data
+    shop = ShopOwner.objects.filter(id=shop_id, is_active=True).first()
+    if not shop:
+        return error_response(
+            message=t(request, 'not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    review, created = ShopReview.objects.update_or_create(
+        shop_owner=shop,
+        customer=request.user,
+        defaults={
+            'shop_rating': data['shop_rating'],
+            'comment': data.get('comment', ''),
+        }
+    )
+
+    response_data = {
+        'id': review.id,
+        'shop_id': shop.id,
+        'customer_id': request.user.id,
+        'shop_rating': review.shop_rating,
+        'comment': review.comment or '',
+        'created_at': review.created_at,
+        'updated_at': review.updated_at,
+        'is_updated': not created,
+    }
+    return success_response(
+        data=response_data,
+        message=t(request, 'rating_added_successfully'),
+        status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
     order_id = data.get('order_id')
 
     if order_id:
