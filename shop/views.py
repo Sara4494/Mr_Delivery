@@ -2505,27 +2505,52 @@ def _build_public_shop_profile_summary_payload(shop, request, published_images=N
 
     status_obj = _safe_shop_status(shop)
     status_value = status_obj.status if status_obj else 'closed'
+    status_label = status_obj.get_status_display() if status_obj else 'مغلق'
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
     is_open_now = _is_open_now(status_value, today_schedule)
     featured_image = published_images[0] if published_images else None
+    average_rating = getattr(shop, 'avg_shop_rating', 0) or 0
+    ratings_count = int(getattr(shop, 'ratings_count', 0) or 0)
+    category_name = shop.shop_category.name if shop.shop_category else None
+    created_since_label = _build_relative_time_label(shop.created_at)
+    featured_since_label = _build_relative_time_label(
+        featured_image.uploaded_at if featured_image else None
+    )
 
     return {
         'id': shop.id,
-        'shop_name': shop.shop_name,
-        'profile_image_url': _build_file_url(request, shop.profile_image),
-        'created_since_label': _build_relative_time_label(shop.created_at),
-        'is_open_now': is_open_now,
-        'description': shop.description or '',
-        'featured_image': (
-            {
-                'id': featured_image.id,
-                'image_url': _build_file_url(request, featured_image.image),
-                'description': featured_image.description or '',
-                'likes_count': featured_image.likes_count,
-            }
-            if featured_image else None
-        ),
+        'header': {
+            'shop_name': shop.shop_name,
+            'profile_image_url': _build_file_url(request, shop.profile_image),
+            'category_name': category_name,
+            'created_since_label': created_since_label,
+            'status': {
+                'key': status_value,
+                'label': 'مفتوح الآن' if is_open_now else 'مغلق الآن',
+                'is_open_now': is_open_now,
+                'shop_status_label': status_label,
+            },
+            'rating': {
+                'average': round(float(average_rating), 1) if ratings_count else 0,
+                'count': ratings_count,
+            },
+        },
+        'content_card': {
+            'title': shop.shop_name,
+            'created_since_label': featured_since_label or created_since_label,
+            'description': shop.description or '',
+            'action_text': 'عرض المزيد',
+            'featured_image': (
+                {
+                    'id': featured_image.id,
+                    'image_url': _build_file_url(request, featured_image.image),
+                    'description': featured_image.description or '',
+                    'likes_count': featured_image.likes_count,
+                }
+                if featured_image else None
+            ),
+        },
     }
 
 
