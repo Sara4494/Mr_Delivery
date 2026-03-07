@@ -2558,6 +2558,8 @@ def _build_public_shop_profile_post_item(shop, image, request, liked_ids=None):
         'description': image.description or shop.description or '',
         'post_image_url': _build_file_url(request, image.image),
         'likes_count': image.likes_count,
+        'published_at': image.uploaded_at,
+        'published_since_label': _build_relative_time_label(image.uploaded_at),
     }
 
 
