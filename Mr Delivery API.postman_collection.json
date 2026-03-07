@@ -3166,17 +3166,17 @@
               "response": []
             },
             {
-              "name": "ملخص لوحة التحكم",
+              "name": "ملخص لوحة التحكم (كاشير)",
               "request": {
                 "method": "GET",
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{employee_token}}",
                     "type": "text"
                   }
                 ],
-                "description": "هذه endpoint جديدة ومنفصلة عن /api/shop/dashboard/statistics/. ترجع بيانات الشهر الحالي فقط. إذا كان التوكن لصاحب المحل ترجع بيانات المحل كلها، وإذا كان التوكن للموظف ترجع مبيعات وطلبات هذا الموظف فقط.",
+                "description": "هذه endpoint جديدة ومنفصلة عن /api/shop/dashboard/statistics/. تعمل فقط بتوكن موظف الكاشير، وترجع مبيعات وطلبات هذا الموظف فقط للشهر الحالي.",
                 "url": {
                   "raw": "{{base_url}}/api/shop/dashboard/summary/",
                   "host": [

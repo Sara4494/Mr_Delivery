@@ -1995,30 +1995,35 @@ def shop_dashboard_statistics_view(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsShopOwnerOrEmployee])
+@permission_classes([IsEmployee])
 def shop_dashboard_summary_view(request):
     """
-    Dashboard summary cards for shop owner and employees.
+    Dashboard summary cards for cashier employee only.
     GET /api/shop/dashboard/summary/
     """
     current_user = request.user
-    shop_owner = _resolve_owner_for_owner_or_employee(current_user)
-    if not shop_owner:
-        return _owner_or_employee_forbidden(request)
+    if not _is_cashier_user(current_user):
+        return error_response(
+            message='هذا الإجراء متاح فقط لموظف الكاشير',
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
 
-    period = 'month'
+    shop_owner = getattr(current_user, 'shop_owner', None)
+    if not shop_owner:
+        return error_response(
+            message='لا يوجد محل مرتبط بهذا الموظف',
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
 
     all_orders_qs = Order.objects.filter(shop_owner=shop_owner)
-    data_scope = 'shop'
-    employee_summary = None
-    if _is_employee_user(current_user):
-        all_orders_qs = all_orders_qs.filter(employee=current_user)
-        data_scope = 'employee'
-        employee_summary = {
-            'id': current_user.id,
-            'name': current_user.name,
-            'role': current_user.role,
-        }
+    all_orders_qs = all_orders_qs.filter(employee=current_user)
+    employee_summary = {
+        'id': current_user.id,
+        'name': current_user.name,
+        'role': current_user.role,
+    }
 
     delivered_orders_qs = all_orders_qs.filter(status='delivered')
     active_statuses = ['new', 'pending_customer_confirm', 'confirmed', 'preparing', 'on_way']
@@ -2063,8 +2068,6 @@ def shop_dashboard_summary_view(request):
 
     return success_response(
         data={
-            'period': period,
-            'scope': data_scope,
             'employee': employee_summary,
             **summary,
             'generated_at': timezone.now().isoformat(),
