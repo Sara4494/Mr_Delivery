@@ -8,6 +8,7 @@ urlpatterns = [
     path('shops/', views.public_shops_list_view, name='public_shops_list'),
     path('shops/shop-categories/', views.public_shop_categories_list_view, name='public_shop_categories_list'),
     path('shops/portfolio/', views.public_portfolio_feed_view, name='public_portfolio_feed'),
+    path('shops/<int:shop_id>/rating/', views.shop_rating_create_view, name='shop_rating_create'),
     path('shops/<int:shop_id>/profile/', views.public_shop_profile_view, name='public_shop_profile'),
     path('shops/<int:shop_id>/schedule/', views.public_shop_schedule_view, name='public_shop_schedule'),
     path('shops/<int:shop_id>/gallery/', views.public_shop_gallery_view, name='public_shop_gallery'),

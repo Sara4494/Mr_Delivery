@@ -917,6 +917,15 @@ class OrderRatingCreateSerializer(serializers.Serializer):
     comment = serializers.CharField(required=False, allow_blank=True)
 
 
+class ShopRatingCreateSerializer(serializers.Serializer):
+    """Serializer for rating a shop from the customer app."""
+    order_id = serializers.IntegerField(required=False)
+    shop_rating = serializers.IntegerField(min_value=1, max_value=5, required=True)
+    driver_rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
+    food_rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
+    comment = serializers.CharField(required=False, allow_blank=True)
+
+
 # Payment Method Serializers
 class PaymentMethodSerializer(serializers.ModelSerializer):
     """Serializer لطريقة الدفع"""

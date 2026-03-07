@@ -42,6 +42,7 @@ from .serializers import (
     CategorySerializer,
     OrderRatingSerializer,
     OrderRatingCreateSerializer,
+    ShopRatingCreateSerializer,
     PaymentMethodSerializer,
     PaymentMethodCreateSerializer,
     NotificationSerializer,
@@ -2475,6 +2476,59 @@ def _build_public_shop_card_payload(shop, request, published_images=None):
     }
 
 
+def _build_relative_time_label(dt):
+    if not dt:
+        return None
+
+    delta = timezone.now() - dt
+    days = max(delta.days, 0)
+    hours = max(int(delta.total_seconds() // 3600), 0)
+
+    if days >= 365:
+        years = days // 365
+        return f'منذ {years} سنة'
+    if days >= 30:
+        months = days // 30
+        return f'منذ {months} شهر'
+    if days >= 1:
+        return f'منذ {days} يوم'
+    if hours >= 1:
+        return f'منذ {hours} ساعة'
+    return 'منذ قليل'
+
+
+def _build_public_shop_profile_summary_payload(shop, request, published_images=None):
+    if published_images is None:
+        published_images = list(
+            shop.gallery_images.filter(status='published').order_by('-uploaded_at')
+        )
+
+    status_obj = _safe_shop_status(shop)
+    status_value = status_obj.status if status_obj else 'closed'
+    schedule_payload = _build_work_schedule_response(shop.work_schedule)
+    today_schedule = schedule_payload.get('today', {})
+    is_open_now = _is_open_now(status_value, today_schedule)
+    featured_image = published_images[0] if published_images else None
+
+    return {
+        'id': shop.id,
+        'shop_name': shop.shop_name,
+        'profile_image_url': _build_file_url(request, shop.profile_image),
+        'created_since_label': _build_relative_time_label(shop.created_at),
+        'is_open_now': is_open_now,
+        'description': shop.description or '',
+        'featured_image': (
+            {
+                'id': featured_image.id,
+                'image_url': _build_file_url(request, featured_image.image),
+                'description': featured_image.description or '',
+                'likes_count': featured_image.likes_count,
+            }
+            if featured_image else None
+        ),
+    }
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def public_shops_list_view(request):
@@ -2603,7 +2657,7 @@ def public_shop_profile_view(request, shop_id):
         )
 
     return success_response(
-        data=_build_public_shop_payload(
+        data=_build_public_shop_profile_summary_payload(
             shop,
             request,
             published_images=getattr(shop, 'published_gallery_images', [])
@@ -3353,6 +3407,57 @@ def category_detail_view(request, category_id):
 
 # ==================== Order Rating APIs ====================
 
+def _update_driver_average_rating(driver):
+    if not driver:
+        return
+
+    avg_rating = OrderRating.objects.filter(
+        order__driver=driver
+    ).aggregate(avg=Avg('driver_rating'))['avg']
+    if avg_rating:
+        driver.rating = round(avg_rating, 2)
+        driver.save()
+
+
+def _create_rating_response(request, order, data):
+    if order.customer_id != request.user.id:
+        return error_response(
+            message=t(request, 'order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    if order.status != 'delivered':
+        return error_response(
+            message=t(request, 'cannot_rate_an_incomplete_order'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if hasattr(order, 'rating'):
+        return error_response(
+            message=t(request, 'this_order_has_already_been_rated'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    rating = OrderRating.objects.create(
+        order=order,
+        customer=order.customer,
+        shop_rating=data['shop_rating'],
+        driver_rating=data.get('driver_rating'),
+        food_rating=data.get('food_rating'),
+        comment=data.get('comment', '')
+    )
+
+    if order.driver and data.get('driver_rating'):
+        _update_driver_average_rating(order.driver)
+
+    response_serializer = OrderRatingSerializer(rating)
+    return success_response(
+        data=response_serializer.data,
+        message=t(request, 'rating_added_successfully'),
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
 @api_view(['POST'])
 @permission_classes([IsCustomer])
 def order_rating_create_view(request):
@@ -3371,6 +3476,9 @@ def order_rating_create_view(request):
     try:
         order = Order.objects.get(id=order_id)
     except Order.DoesNotExist:
+        return error_response(message=t(request, 'order_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    if order.customer_id != request.user.id:
         return error_response(message=t(request, 'order_not_found'), status_code=status.HTTP_404_NOT_FOUND)
     
     if order.status != 'delivered':
@@ -3400,6 +3508,52 @@ def order_rating_create_view(request):
     
     response_serializer = OrderRatingSerializer(rating)
     return success_response(data=response_serializer.data, message=t(request, 'rating_added_successfully'), status_code=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsCustomer])
+def shop_rating_create_view(request, shop_id):
+    """
+    Rate a shop from the customer app.
+    POST /api/shops/{shop_id}/rating/
+    Body: { "shop_rating": 5, "comment": "...", "order_id": 1 }
+    """
+    serializer = ShopRatingCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    order_id = data.get('order_id')
+
+    if order_id:
+        order = Order.objects.filter(
+            id=order_id,
+            shop_owner_id=shop_id,
+            customer_id=request.user.id,
+        ).select_related('customer', 'driver').first()
+    else:
+        order = Order.objects.filter(
+            shop_owner_id=shop_id,
+            customer_id=request.user.id,
+            status='delivered',
+            rating__isnull=True,
+        ).select_related('customer', 'driver').order_by('-updated_at', '-id').first()
+
+    if not order:
+        return error_response(
+            message=t(
+                request,
+                'no_delivered_order_available_for_rating',
+                default='لا يوجد طلب مكتمل متاح لتقييم هذا المحل',
+            ),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    return _create_rating_response(request, order, data)
 
 
 @api_view(['GET'])
