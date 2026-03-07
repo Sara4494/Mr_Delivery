@@ -925,7 +925,6 @@ class OrderRatingCreateSerializer(serializers.Serializer):
 
 class ShopRatingCreateSerializer(serializers.Serializer):
     """Serializer for rating a shop from the customer app."""
-    order_id = serializers.IntegerField(required=False)
     shop_rating = serializers.IntegerField(min_value=1, max_value=5, required=True)
     comment = serializers.CharField(required=False, allow_blank=True)
 

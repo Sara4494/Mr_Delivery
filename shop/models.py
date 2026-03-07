@@ -474,6 +474,28 @@ class OrderRating(models.Model):
         return f"تقييم طلب #{self.order.order_number} - {self.shop_rating}/5"
 
 
+class ShopReview(models.Model):
+    """General shop review that does not require an order."""
+    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='shop_reviews', verbose_name="Ø§Ù„Ù…Ø­Ù„")
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='shop_reviews', verbose_name="Ø§Ù„Ø¹Ù…ÙŠÙ„")
+    shop_rating = models.PositiveSmallIntegerField(verbose_name="ØªÙ‚ÙŠÙŠÙ… Ø§Ù„Ù…Ø­Ù„", help_text="Ù…Ù† 1 Ø¥Ù„Ù‰ 5")
+    comment = models.TextField(blank=True, null=True, verbose_name="ØªØ¹Ù„ÙŠÙ‚")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="ØªØ§Ø±ÙŠØ® Ø§Ù„ØªÙ‚ÙŠÙŠÙ…")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="ØªØ§Ø±ÙŠØ® Ø§Ù„ØªØ­Ø¯ÙŠØ«")
+
+    class Meta:
+        verbose_name = "ØªÙ‚ÙŠÙŠÙ… Ù…Ø­Ù„"
+        verbose_name_plural = "ØªÙ‚ÙŠÙŠÙ…Ø§Øª Ø§Ù„Ù…Ø­Ù„Ø§Øª"
+        ordering = ['-updated_at', '-created_at']
+        unique_together = ['shop_owner', 'customer']
+        indexes = [
+            models.Index(fields=['shop_owner', 'customer']),
+        ]
+
+    def __str__(self):
+        return f"ØªÙ‚ÙŠÙŠÙ… {self.shop_owner.shop_name} - {self.shop_rating}/5"
+
+
 class PaymentMethod(models.Model):
     """نموذج طرق الدفع المحفوظة للعميل"""
     TYPE_CHOICES = [

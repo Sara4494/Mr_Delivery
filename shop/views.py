@@ -10,7 +10,7 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage, 
-    Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
+    Invoice, Employee, Product, Category, OrderRating, ShopReview, PaymentMethod, 
     Notification, Cart, CartItem, ShopDriver
 )
 from gallery.models import WorkSchedule, GalleryImage, ImageLike
@@ -2391,6 +2391,28 @@ def _build_public_gallery_item(image, request, liked_ids=None):
     }
 
 
+def _get_shop_rating_stats(shop):
+    order_stats = OrderRating.objects.filter(order__shop_owner=shop).aggregate(
+        avg=Avg('shop_rating'),
+        count=Count('id')
+    )
+    review_stats = ShopReview.objects.filter(shop_owner=shop).aggregate(
+        avg=Avg('shop_rating'),
+        count=Count('id')
+    )
+
+    order_count = int(order_stats.get('count') or 0)
+    review_count = int(review_stats.get('count') or 0)
+    total_count = order_count + review_count
+    if not total_count:
+        return 0, 0
+
+    order_avg = float(order_stats.get('avg') or 0)
+    review_avg = float(review_stats.get('avg') or 0)
+    weighted_avg = ((order_avg * order_count) + (review_avg * review_count)) / total_count
+    return round(weighted_avg, 1), total_count
+
+
 def _build_public_shop_payload(shop, request, published_images=None):
     if published_images is None:
         published_images = list(
@@ -2405,15 +2427,7 @@ def _build_public_shop_payload(shop, request, published_images=None):
     today_schedule = schedule_payload.get('today', {})
     is_open_now = _is_open_now(status_value, today_schedule)
 
-    average_rating = getattr(shop, 'avg_shop_rating', None)
-    ratings_count = getattr(shop, 'ratings_count', None)
-    if average_rating is None or ratings_count is None:
-        ratings_stats = OrderRating.objects.filter(order__shop_owner=shop).aggregate(
-            avg=Avg('shop_rating'),
-            count=Count('id')
-        )
-        average_rating = ratings_stats.get('avg') or 0
-        ratings_count = ratings_stats.get('count') or 0
+    average_rating, ratings_count = _get_shop_rating_stats(shop)
 
     category = shop.shop_category
     cover_image = published_images[0] if published_images else None
@@ -2439,7 +2453,7 @@ def _build_public_shop_payload(shop, request, published_images=None):
             'work_badge': 'مفتوح الآن' if is_open_now else 'مغلق الآن',
         },
         'rating': {
-            'average': round(float(average_rating), 1) if ratings_count else 0,
+            'average': average_rating if ratings_count else 0,
             'count': int(ratings_count or 0),
         },
         'today_schedule': {
@@ -2510,8 +2524,7 @@ def _build_public_shop_profile_summary_payload(shop, request, published_images=N
     today_schedule = schedule_payload.get('today', {})
     is_open_now = _is_open_now(status_value, today_schedule)
     featured_image = published_images[0] if published_images else None
-    average_rating = getattr(shop, 'avg_shop_rating', 0) or 0
-    ratings_count = int(getattr(shop, 'ratings_count', 0) or 0)
+    average_rating, ratings_count = _get_shop_rating_stats(shop)
     category_name = shop.shop_category.name if shop.shop_category else None
     created_since_label = _build_relative_time_label(shop.created_at)
     featured_since_label = _build_relative_time_label(
@@ -2532,7 +2545,7 @@ def _build_public_shop_profile_summary_payload(shop, request, published_images=N
                 'shop_status_label': status_label,
             },
             'rating': {
-                'average': round(float(average_rating), 1) if ratings_count else 0,
+                'average': average_rating if ratings_count else 0,
                 'count': ratings_count,
             },
         },
