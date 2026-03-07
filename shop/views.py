@@ -209,6 +209,98 @@ def _owner_or_cashier_forbidden(request):
     )
 
 
+def _resolve_owner_for_owner_or_employee(user):
+    if _is_shop_owner_user(user):
+        return user
+    if _is_employee_user(user):
+        return getattr(user, 'shop_owner', None)
+    return None
+
+
+def _owner_or_employee_forbidden(request):
+    return error_response(
+        message=t(request, 'permission_only_shop_owner_or_employees'),
+        status_code=status.HTTP_403_FORBIDDEN
+    )
+
+
+def _get_dashboard_period_ranges(period):
+    today = timezone.localdate()
+
+    if period == 'daily':
+        current_start = today
+        current_end = today
+        previous_start = today - timedelta(days=1)
+        previous_end = today - timedelta(days=1)
+    elif period == 'weekly':
+        current_start = today - timedelta(days=today.weekday())
+        current_end = today
+        previous_start = current_start - timedelta(days=7)
+        previous_end = current_start - timedelta(days=1)
+    elif period == 'monthly':
+        current_start = today.replace(day=1)
+        current_end = today
+        previous_end = current_start - timedelta(days=1)
+        previous_start = previous_end.replace(day=1)
+    else:
+        current_start = None
+        current_end = None
+        previous_start = None
+        previous_end = None
+
+    return current_start, current_end, previous_start, previous_end
+
+
+def _apply_created_date_range(queryset, start_date=None, end_date=None):
+    if start_date:
+        queryset = queryset.filter(created_at__date__gte=start_date)
+    if end_date:
+        queryset = queryset.filter(created_at__date__lte=end_date)
+    return queryset
+
+
+def _growth_percentage(current_value, previous_value):
+    if previous_value <= 0:
+        return 100.0 if current_value > 0 else 0.0
+    return round(((current_value - previous_value) / previous_value) * 100, 1)
+
+
+def _format_dashboard_number(value):
+    if isinstance(value, float):
+        if value.is_integer():
+            return f"{value:,.0f}"
+        return f"{value:,.2f}"
+    return f"{value:,}"
+
+
+def _format_dashboard_currency(amount):
+    amount = float(amount)
+    return f"ر.س {_format_dashboard_number(amount)}"
+
+
+def _build_dashboard_card(*, key, label, value, trend_percentage, is_currency=False):
+    rounded_trend = round(float(trend_percentage), 1)
+    if rounded_trend > 0:
+        trend_direction = 'up'
+        trend_display = f"+{_format_dashboard_number(rounded_trend)}%"
+    elif rounded_trend < 0:
+        trend_direction = 'down'
+        trend_display = f"{_format_dashboard_number(rounded_trend)}%"
+    else:
+        trend_direction = 'stable'
+        trend_display = "0%"
+
+    return {
+        'key': key,
+        'label': label,
+        'value': float(value) if is_currency else int(value),
+        'display_value': _format_dashboard_currency(value) if is_currency else _format_dashboard_number(int(value)),
+        'trend_percentage': rounded_trend,
+        'trend_display': trend_display,
+        'trend_direction': trend_direction,
+    }
+
+
 STAFF_TYPE_EMPLOYEE = 'employee'
 STAFF_TYPE_DRIVER = 'driver'
 VALID_STAFF_TYPES = {STAFF_TYPE_EMPLOYEE, STAFF_TYPE_DRIVER}
@@ -1889,6 +1981,83 @@ def shop_dashboard_statistics_view(request):
     return success_response(
         data=statistics,
         message=t(request, 'statistics_retrieved_successfully'),
+        status_code=status.HTTP_200_OK
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsShopOwnerOrEmployee])
+def shop_dashboard_summary_view(request):
+    """
+    Dashboard summary cards for shop owner and employees.
+    GET /api/shop/dashboard/summary/
+    """
+    shop_owner = _resolve_owner_for_owner_or_employee(request.user)
+    if not shop_owner:
+        return _owner_or_employee_forbidden(request)
+
+    period = (request.query_params.get('period') or 'monthly').strip().lower()
+    if period not in {'daily', 'weekly', 'monthly', 'all'}:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'period': 'Allowed values: daily, weekly, monthly, all.'},
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    all_orders_qs = Order.objects.filter(shop_owner=shop_owner)
+    delivered_orders_qs = all_orders_qs.filter(status='delivered')
+    active_statuses = ['new', 'pending_customer_confirm', 'confirmed', 'preparing', 'on_way']
+    active_orders_qs = all_orders_qs.filter(status__in=active_statuses)
+
+    total_orders_value = all_orders_qs.count()
+    active_orders_value = active_orders_qs.count()
+    net_profit_value = delivered_orders_qs.aggregate(total=Sum('total_amount'))['total'] or 0
+
+    current_start, current_end, previous_start, previous_end = _get_dashboard_period_ranges(period)
+    current_orders_qs = _apply_created_date_range(all_orders_qs, current_start, current_end)
+    previous_orders_qs = _apply_created_date_range(all_orders_qs, previous_start, previous_end)
+
+    current_total_orders = current_orders_qs.count()
+    previous_total_orders = previous_orders_qs.count()
+    current_active_orders = current_orders_qs.filter(status__in=active_statuses).count()
+    previous_active_orders = previous_orders_qs.filter(status__in=active_statuses).count()
+    current_net_profit = current_orders_qs.filter(status='delivered').aggregate(total=Sum('total_amount'))['total'] or 0
+    previous_net_profit = previous_orders_qs.filter(status='delivered').aggregate(total=Sum('total_amount'))['total'] or 0
+
+    summary = {
+        'total_orders': _build_dashboard_card(
+            key='total_orders',
+            label='إجمالي الطلبات',
+            value=total_orders_value,
+            trend_percentage=_growth_percentage(current_total_orders, previous_total_orders),
+        ),
+        'active_orders': _build_dashboard_card(
+            key='active_orders',
+            label='الطلبات النشطة',
+            value=active_orders_value,
+            trend_percentage=_growth_percentage(current_active_orders, previous_active_orders),
+        ),
+        'net_profit': _build_dashboard_card(
+            key='net_profit',
+            label='صافي الربح',
+            value=net_profit_value,
+            trend_percentage=_growth_percentage(float(current_net_profit), float(previous_net_profit)),
+            is_currency=True,
+        ),
+    }
+
+    return success_response(
+        data={
+            'period': period,
+            'cards': [
+                summary['total_orders'],
+                summary['active_orders'],
+                summary['net_profit'],
+            ],
+            **summary,
+            'generated_at': timezone.now().isoformat(),
+        },
+        message='تم جلب ملخص لوحة التحكم بنجاح',
         status_code=status.HTTP_200_OK
     )
 

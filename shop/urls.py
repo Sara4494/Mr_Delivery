@@ -47,6 +47,7 @@ urlpatterns = [
     
     # Dashboard Statistics
     path('shop/dashboard/statistics/', views.shop_dashboard_statistics_view, name='dashboard_statistics'),
+    path('shop/dashboard/summary/', views.shop_dashboard_summary_view, name='dashboard_summary'),
     
     # ==================== Login APIs ====================
     path('employee/login/', views.employee_login_view, name='employee_login'),
