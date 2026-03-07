@@ -641,10 +641,19 @@ def _parse_blocked_flag(request):
 
 
 def _clean_staff_payload(request):
-    payload = request.data.copy()
-    payload.pop('staff_type', None)
-    payload.pop('staff_id', None)
-    payload.pop('blocked', None)
+    excluded_keys = {'staff_type', 'staff_id', 'blocked'}
+    payload = {}
+
+    for key in request.data.keys():
+        if key in excluded_keys or key in request.FILES:
+            continue
+        values = request.data.getlist(key) if hasattr(request.data, 'getlist') else None
+        payload[key] = values if values and len(values) > 1 else request.data.get(key)
+
+    for key in request.FILES:
+        if key not in excluded_keys:
+            payload[key] = request.FILES[key]
+
     return payload
 
 
@@ -3519,12 +3528,10 @@ def customer_profile_view(request):
         return success_response(data=serializer.data, message=t(request, 'profile_retrieved_successfully'))
     
     elif request.method == 'PUT':
-        data = request.data.copy()
-        if 'password' in data:
-            data.pop('password')  # تغيير كلمة المرور له endpoint منفصل
-        for field in ['name',  'profile_image']:
-            if field in data:
-                setattr(customer, field, data[field])
+        if 'name' in request.data:
+            customer.name = request.data.get('name')
+        if request.FILES.get('profile_image'):
+            customer.profile_image = request.FILES['profile_image']
         customer.save()
         serializer = CustomerSerializer(customer, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'profile_updated_successfully'))

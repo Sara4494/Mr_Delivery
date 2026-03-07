@@ -137,7 +137,10 @@ def shop_profile_view(request):
         if not _is_shop_owner(user):
             return _forbidden(request, 'permission_only_shop_owner_edit_content')
 
-        data = request.data.copy()
+        data = {}
+        for field in ('owner_name', 'shop_name'):
+            if field in request.data:
+                data[field] = request.data.get(field)
         if request.FILES.get('profile_image'):
             data['profile_image'] = request.FILES['profile_image']
 
