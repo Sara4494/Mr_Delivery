@@ -1,38 +1,38 @@
-﻿# ðŸ“š Mr Delivery - Complete Documentation
+# Mr Delivery - Complete Documentation
 
-Welcome to **Mr Delivery** documentation - A comprehensive shop management and delivery system.
+Welcome to **Mr Delivery** documentation - a comprehensive shop management and delivery system.
 
 ---
 
-## ðŸ“‘ Table of Contents
+## Table of Contents
 
 ### 1. Getting Started
-- [ðŸš€ Installation Guide](./INSTALLATION.md)
-- [âš™ï¸ Environment Setup](./ENVIRONMENT.md)
+- [Installation Guide](./INSTALLATION.md)
+- [Environment Setup](./ENVIRONMENT.md)
 
 ### 2. Authentication & Authorization
-- [ðŸ” Authentication System](./AUTHENTICATION.md)
-- [ðŸ”’ Permissions & Roles](./PERMISSIONS.md)
+- [Authentication System](./AUTHENTICATION.md)
+- [Permissions & Roles](./PERMISSIONS.md)
 
 ### 3. API Reference
-- [ðŸ“¡ REST API Guide](./REST_API.md)
-- [ðŸ”Œ WebSocket API Guide](./WEBSOCKET_API.md)
+- [REST API Guide](./REST_API.md)
+- [WebSocket API Guide](./WEBSOCKET_API.md)
 
 ### 4. Database
-- [ðŸ—„ï¸ Database Models](./DATABASE_MODELS.md)
+- [Database Models](./DATABASE_MODELS.md)
 
 ### 5. Features
-- [ðŸ’¬ Chat System](./CHAT_SYSTEM.md)
+- [Chat System](./CHAT_SYSTEM.md)
 - [Flutter Shop Chat Guide](./FLUTTER_SHOP_CHAT_GUIDE.md)
-- [ðŸ“¦ Orders Management](./ORDERS.md)
-- [ðŸš— Driver Tracking](./DRIVER_TRACKING.md)
+- [Orders Management](./ORDERS.md)
+- [Driver Tracking](./DRIVER_TRACKING.md)
 
 ### 6. Deployment
-- [ðŸš€ Server Deployment](./DEPLOYMENT.md)
+- [Server Deployment](./DEPLOYMENT.md)
 
 ---
 
-## ðŸ—ï¸ Project Overview
+## Project Overview
 
 ### Tech Stack
 | Technology | Purpose |
@@ -55,9 +55,9 @@ Welcome to **Mr Delivery** documentation - A comprehensive shop management and d
 
 ---
 
-## ðŸ”— Quick Links
+## Quick Links
 
-- **Postman Collection**: `Mr_Delivery_API.postman_collection.json`
+- **Postman Collection**: `Mr Delivery API.postman_collection.json`
 - **WebSocket Test**: `frontend_test.html`
 - **Base URL**: `http://86.48.3.103` (development)
 
@@ -65,4 +65,3 @@ Welcome to **Mr Delivery** documentation - A comprehensive shop management and d
 
 **Last Updated**: January 2026  
 **Version**: 1.0.0
-
