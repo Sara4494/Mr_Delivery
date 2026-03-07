@@ -2598,18 +2598,17 @@ def public_shops_list_view(request):
     if with_gallery_only:
         shops = shops.filter(gallery_images__status='published').distinct()
 
-    compact_cards_only = bool(shop_category_id)
     payload = []
     for shop in shops:
         published_images = getattr(shop, 'published_gallery_images', [])
-        shop_data = _build_public_shop_payload(
-            shop,
-            request,
-            published_images=published_images
-        )
-        if open_now_only and not shop_data['status']['is_open_now']:
-            continue
-        if compact_cards_only:
+        if shop_category_id:
+            shop_data = _build_public_shop_payload(
+                shop,
+                request,
+                published_images=published_images
+            )
+            if open_now_only and not shop_data['status']['is_open_now']:
+                continue
             payload.append(
                 _build_public_shop_card_payload(
                     shop,
@@ -2617,8 +2616,16 @@ def public_shops_list_view(request):
                     published_images=published_images,
                 )
             )
-        else:
-            payload.append(shop_data)
+            continue
+
+        shop_data = _build_public_shop_payload(
+            shop,
+            request,
+            published_images=published_images
+        )
+        if open_now_only and not shop_data['status']['is_open_now']:
+            continue
+        payload.append(shop_data)
 
     paginator = PublicShopsPagination()
     page = paginator.paginate_queryset(payload, request)
