@@ -19,6 +19,7 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
         token['shop_name'] = shop_owner.shop_name
         token['shop_category_id'] = shop_owner.shop_category_id
         token['shop_category_name'] = shop_owner.shop_category.name if shop_owner.shop_category else None
+        token['user_type'] = 'shop_owner'
         return token
     
     def validate(self, attrs):
