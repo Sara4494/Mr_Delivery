@@ -150,6 +150,7 @@ MESSAGES = {
     'this_image_has_already_been_liked': 'تم الإعجاب بهذه الصورة مسبقاً',
     'this_image_was_not_liked': 'لم يتم الإعجاب بهذه الصورة',
     'this_order_has_already_been_rated': 'تم تقييم هذا الطلب مسبقاً',
+    'this_shop_has_already_been_rated': 'تم تقييم هذا المحل مسبقاً',
     'token_refresh_failed': 'فشل تحديث Token',
     'token_refreshed_successfully': 'تم تحديث Token بنجاح',
     'tracking_data_retrieved_successfully': 'تم جلب بيانات التتبع بنجاح',

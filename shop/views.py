@@ -3808,14 +3808,35 @@ def shop_rating_create_view(request, shop_id):
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    review, created = ShopReview.objects.update_or_create(
-        shop_owner=shop,
-        customer=request.user,
-        defaults={
-            'shop_rating': data['shop_rating'],
-            'comment': data.get('comment', ''),
-        }
+    existing_review = (
+        ShopReview.objects
+        .filter(shop_owner=shop)
+        .filter(
+            Q(customer_id=request.user.id) |
+            Q(customer__phone_number=getattr(request.user, 'phone_number', None))
+        )
+        .first()
     )
+    if existing_review:
+        return error_response(
+            message=t(request, 'this_shop_has_already_been_rated'),
+            errors={'shop_rating': ['shop has already been rated by this customer.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        review = ShopReview.objects.create(
+            shop_owner=shop,
+            customer_id=request.user.id,
+            shop_rating=data['shop_rating'],
+            comment=data.get('comment', ''),
+        )
+    except IntegrityError:
+        return error_response(
+            message=t(request, 'this_shop_has_already_been_rated'),
+            errors={'shop_rating': ['shop has already been rated by this customer.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
     response_data = {
         'id': review.id,
@@ -3825,12 +3846,12 @@ def shop_rating_create_view(request, shop_id):
         'comment': review.comment or '',
         'created_at': review.created_at,
         'updated_at': review.updated_at,
-        'is_updated': not created,
+        'is_updated': False,
     }
     return success_response(
         data=response_data,
         message=t(request, 'rating_added_successfully'),
-        status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        status_code=status.HTTP_201_CREATED,
     )
     order_id = data.get('order_id')
 

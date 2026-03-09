@@ -150,6 +150,7 @@ MESSAGES = {
     'this_image_has_already_been_liked': 'This image has already been liked',
     'this_image_was_not_liked': 'This image was not liked',
     'this_order_has_already_been_rated': 'This order has already been rated',
+    'this_shop_has_already_been_rated': 'This shop has already been rated',
     'token_refresh_failed': 'Token refresh failed',
     'token_refreshed_successfully': 'Token refreshed successfully',
     'tracking_data_retrieved_successfully': 'Tracking data retrieved successfully',
