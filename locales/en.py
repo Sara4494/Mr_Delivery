@@ -163,4 +163,5 @@ MESSAGES = {
     'you_must_create_the_account_first_via_api_auth_register': 'You must create the account first before requesting an OTP.',
     'staff_retrieved_successfully': 'Staff retrieved successfully',
     'staff_block_status_updated_successfully': 'Block status updated successfully',
+    'shop_posts_retrieved_successfully': 'Shop posts retrieved successfully',
 }

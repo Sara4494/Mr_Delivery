@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "fe3bb534-8d9e-41e4-8bd4-0483db7639c9",
+    "_postman_id": "2dc24f77-def6-488a-bbfc-7337ce52178a",
     "name": "Mr Delivery API",
-    "description": "مجموعة APIs لمشروع Mr Delivery - APIs للعملاء والمحلات والمعارض",
+    "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-fe3bb534-8d9e-41e4-8bd4-0483db7639c9?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-2dc24f77-def6-488a-bbfc-7337ce52178a?source=collection_link"
   },
   "item": [
     {
@@ -64,7 +64,7 @@
                         ""
                       ]
                     },
-                    "description": "الخطوة 1 للتسجيل: إنشاء الحساب أولاً بدون OTP. يمكن رفع profile_image اختيارياً"
+                    "description": "الخطوة 1 من تسجيل العميل: إنشاء الحساب أولًا عبر /api/auth/register/. يمكن رفع profile_image اختياريًا."
                   },
                   "response": []
                 },
@@ -95,7 +95,7 @@
                         ""
                       ]
                     },
-                    "description": "الخطوة 2 للتسجيل: إرسال OTP بعد إنشاء الحساب"
+                    "description": "الخطوة 2 من تسجيل العميل: إرسال OTP بعد إنشاء الحساب مع purpose=register."
                   },
                   "response": []
                 },
@@ -105,15 +105,15 @@
                     {
                       "listen": "test",
                       "script": {
+                        "type": "text/javascript",
                         "exec": [
                           "if (pm.response.code === 200) {",
                           "    var jsonData = pm.response.json();",
-                          "    if (jsonData.data) {",
+                          "    if (jsonData && jsonData.data && jsonData.data.access) {",
                           "        pm.environment.set(\"customer_token\", jsonData.data.access);",
                           "    }",
                           "}"
-                        ],
-                        "type": "text/javascript"
+                        ]
                       }
                     }
                   ],
@@ -142,7 +142,7 @@
                         ""
                       ]
                     },
-                    "description": "الخطوة 3 للتسجيل: التحقق من OTP وتفعيل الحساب"
+                    "description": "الخطوة 3 من تسجيل العميل: التحقق من OTP لتفعيل الحساب. عند النجاح يُحفظ customer_token."
                   },
                   "response": []
                 },
@@ -152,15 +152,15 @@
                     {
                       "listen": "test",
                       "script": {
+                        "type": "text/javascript",
                         "exec": [
                           "if (pm.response.code === 200) {",
                           "    var jsonData = pm.response.json();",
-                          "    if (jsonData.success && jsonData.data) {",
+                          "    if (jsonData && jsonData.data && jsonData.data.access) {",
                           "        pm.environment.set(\"customer_token\", jsonData.data.access);",
                           "    }",
                           "}"
-                        ],
-                        "type": "text/javascript"
+                        ]
                       }
                     }
                   ],
@@ -187,7 +187,39 @@
                         "login",
                         ""
                       ]
-                    }
+                    },
+                    "description": "تسجيل دخول العميل عبر /api/auth/login/ باستخدام role=customer. عند النجاح يُحفظ customer_token."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "إرسال OTP - لاستعادة كلمة المرور (عميل)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"customer\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/send/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "send",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 1 لاستعادة كلمة مرور العميل: إرسال OTP مع role=customer و purpose=reset_password."
                   },
                   "response": []
                 },
@@ -217,18 +249,18 @@
                         ""
                       ]
                     },
-                    "description": "الخطوة 2 - العميل"
+                    "description": "الخطوة 2 لاستعادة كلمة مرور العميل بعد استلام OTP."
                   },
                   "response": []
                 },
                 {
-                  "name": "تغيير كلمة المرور",
+                  "name": "تغيير كلمة المرور (عميل)",
                   "request": {
                     "method": "POST",
                     "header": [
                       {
                         "key": "Authorization",
-                        "value": "Bearer {{access_token}}",
+                        "value": "Bearer {{customer_token}}",
                         "type": "text"
                       },
                       {
@@ -252,11 +284,12 @@
                         ""
                       ]
                     },
-                    "description": "تغيير كلمة المرور للمستخدم المسجل دخولًا. تعمل مع shop owner وemployee وdriver وcustomer."
+                    "description": "تغيير كلمة مرور العميل الحالي باستخدام customer_token."
                   },
                   "response": []
                 }
-              ]
+              ],
+              "description": "يشمل تسجيل العميل على ثلاث خطوات: إنشاء الحساب، إرسال OTP، ثم التحقق من OTP. كما يتضمن تسجيل الدخول، استعادة كلمة المرور، وتغييرها باستخدام customer_token."
             },
             {
               "name": "Direct JWT",
@@ -420,7 +453,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/1/profile?page=1&page_size=12",
+                  "raw": "{{base_url}}/api/shops/1/profile/",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -428,7 +461,30 @@
                     "api",
                     "shops",
                     "1",
-                    "profile"
+                    "profile",
+                    ""
+                  ]
+                },
+                "description": "Returns shop header only. Posts are now available from /api/shops/{shop_id}/posts/."
+              },
+              "response": []
+            },
+            {
+              "name": "Shop Posts (Customer)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/shops/1/posts/?page=1&page_size=12",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shops",
+                    "1",
+                    "posts",
+                    ""
                   ],
                   "query": [
                     {
@@ -441,7 +497,7 @@
                     }
                   ]
                 },
-                "description": "Returns shop header plus paginated posts. posts.results only contains description, post_image_url, likes_count."
+                "description": "Returns paginated shop posts only. Each post now includes id, description, post_image_url, likes_count, and published fields."
               },
               "response": []
             },
@@ -1181,10 +1237,30 @@
           ]
         },
         {
-          "name": "Owner Legacy Login",
+          "name": "صاحب المحل",
           "item": [
             {
-              "name": "تسجيل دخول - صاحب المحل (Legacy)",
+              "name": "تسجيل دخول - صاحب المحل",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data) {",
+                      "        if (jsonData.data.access) {",
+                      "            pm.environment.set(\"shop_owner_token\", jsonData.data.access);",
+                      "            pm.environment.set(\"access_token\", jsonData.data.access);",
+                      "        }",
+                      "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
               "request": {
                 "method": "POST",
                 "header": [
@@ -1208,11 +1284,109 @@
                     "login",
                     ""
                   ]
-                }
+                },
+                "description": "تسجيل دخول صاحب المحل عبر /api/shop/login/. عند النجاح يُحفظ shop_owner_token."
+              },
+              "response": []
+            },
+            {
+              "name": "إرسال OTP - لاستعادة كلمة المرور (صاحب المحل)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"01024305307\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"shop_owner\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/auth/otp/send/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "otp",
+                    "send",
+                    ""
+                  ]
+                },
+                "description": "الخطوة 1 لاستعادة كلمة مرور صاحب المحل: إرسال OTP مع role=shop_owner."
+              },
+              "response": []
+            },
+            {
+              "name": "استعادة كلمة المرور (صاحب المحل)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"role\": \"shop_owner\",\n    \"phone_number\": \"01024305307\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/auth/password-reset/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "password-reset",
+                    ""
+                  ]
+                },
+                "description": "الخطوة 2 لاستعادة كلمة مرور صاحب المحل بعد استلام OTP."
+              },
+              "response": []
+            },
+            {
+              "name": "تغيير كلمة المرور (صاحب المحل)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{shop_owner_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"current_password\": \"password123\",\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/auth/password-change/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "password-change",
+                    ""
+                  ]
+                },
+                "description": "تغيير كلمة مرور صاحب المحل الحالي باستخدام shop_owner_token."
               },
               "response": []
             }
-          ]
+          ],
+          "description": "طلبات صاحب المحل: تسجيل الدخول، إرسال OTP لاستعادة كلمة المرور، استعادة كلمة المرور، وتغييرها. إنشاء صاحب محل جديد يتم من الإدارة وليس من API عام."
         },
         {
           "name": "Driver Auth",
@@ -2038,8 +2212,80 @@
           "name": "Employees",
           "item": [
             {
-              "name": "Auth",
+              "name": "الموظف",
               "item": [
+                {
+                  "name": "إضافة موظف جديد (بواسطة صاحب المحل)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{shop_owner_token}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "formdata",
+                      "formdata": [
+                        {
+                          "key": "staff_type",
+                          "value": "employee",
+                          "type": "text",
+                          "uuid": "bd3a2c93-7480-4955-aff4-44b85b3bac50"
+                        },
+                        {
+                          "key": "name",
+                          "value": "test",
+                          "type": "text",
+                          "uuid": "c57856f0-8947-417d-b83c-9e29ac14fb80"
+                        },
+                        {
+                          "key": "phone_number",
+                          "value": "01027153917",
+                          "type": "text",
+                          "uuid": "0e8b68b0-baa2-48f1-9042-e11d260ab3e5"
+                        },
+                        {
+                          "key": "password",
+                          "value": "12345678",
+                          "type": "text",
+                          "uuid": "77fc3b07-f217-4099-b0cf-d1eee46513ff"
+                        },
+                        {
+                          "key": "role",
+                          "value": "cashier",
+                          "type": "text",
+                          "uuid": "09ec6382-ea1d-4dd1-9374-cb35e572919c"
+                        },
+                        {
+                          "key": "profile_image",
+                          "type": "file",
+                          "uuid": "934c7cac-6c2e-456f-9fd1-4afa1cc32a4e",
+                          "src": "postman-cloud:///1ef9e1cf-31e5-4920-ae33-dc0a1254fd79"
+                        }
+                      ]
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/shop/staff/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "shop",
+                        "staff",
+                        ""
+                      ]
+                    },
+                    "description": "إنشاء موظف جديد يتم بواسطة صاحب المحل عبر /api/shop/staff/. استخدم shop_owner_token في Authorization."
+                  },
+                  "response": []
+                },
                 {
                   "name": "تسجيل دخول - موظف",
                   "event": [
@@ -2050,9 +2296,12 @@
                         "exec": [
                           "if (pm.response.code === 200) {",
                           "  var jsonData = pm.response.json();",
-                          "  if (jsonData && jsonData.data && jsonData.data.access) {",
-                          "    pm.environment.set(\"employee_token\", jsonData.data.access);",
-                          "    pm.environment.set(\"access_token\", jsonData.data.access);",
+                          "  if (jsonData && jsonData.data) {",
+                          "    if (jsonData.data.access) {",
+                          "      pm.environment.set(\"employee_token\", jsonData.data.access);",
+                          "      pm.environment.set(\"access_token\", jsonData.data.access);",
+                          "    }",
+                          "    if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
                           "  }",
                           "}"
                         ]
@@ -2082,12 +2331,13 @@
                         "login",
                         ""
                       ]
-                    }
+                    },
+                    "description": "تسجيل دخول الموظف عبر /api/employee/login/. عند النجاح يُحفظ employee_token."
                   },
                   "response": []
                 },
                 {
-                  "name": "Employee Login (Blocked Account Test)",
+                  "name": "تسجيل دخول - موظف (اختبار الحظر)",
                   "request": {
                     "method": "POST",
                     "header": [
@@ -2112,11 +2362,108 @@
                         ""
                       ]
                     },
-                    "description": "After blocking employee from /api/shop/staff/employee/{id}/block/, expect blocked-account message."
+                    "description": "اختبار تسجيل دخول موظف محظور بعد حظره من endpoints الموظفين."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "إرسال OTP - لاستعادة كلمة المرور (موظف)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"phone_number\": \"01000000000\",\n    \"shop_number\": \"01024305307\",\n    \"purpose\": \"reset_password\",\n    \"role\": \"employee\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/otp/send/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "otp",
+                        "send",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 1 لاستعادة كلمة مرور الموظف: إرسال OTP مع role=employee و shop_number."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "استعادة كلمة المرور (موظف)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"role\": \"employee\",\n    \"phone_number\": \"01000000000\",\n    \"shop_number\": \"01024305307\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/password-reset/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "password-reset",
+                        ""
+                      ]
+                    },
+                    "description": "الخطوة 2 لاستعادة كلمة مرور الموظف بعد استلام OTP."
+                  },
+                  "response": []
+                },
+                {
+                  "name": "تغيير كلمة المرور (موظف)",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{employee_token}}",
+                        "type": "text"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n    \"current_password\": \"password123\",\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
+                    },
+                    "url": {
+                      "raw": "{{base_url}}/api/auth/password-change/",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "auth",
+                        "password-change",
+                        ""
+                      ]
+                    },
+                    "description": "تغيير كلمة مرور الموظف الحالي باستخدام employee_token."
                   },
                   "response": []
                 }
-              ]
+              ],
+              "description": "طلبات الموظف: إضافة موظف جديد بواسطة صاحب المحل، تسجيل دخول الموظف، إرسال OTP لاستعادة كلمة المرور، استعادة كلمة المرور، وتغييرها. إنشاء الموظف يتم من صاحب المحل عبر /api/shop/staff/."
             }
           ]
         },
@@ -3166,7 +3513,7 @@
               "response": []
             },
             {
-              "name": "ملخص لوحة التحكم (كاشير)",
+              "name": "ملخص لوحة التحكم (كاشير فقط)",
               "request": {
                 "method": "GET",
                 "header": [
@@ -3176,7 +3523,6 @@
                     "type": "text"
                   }
                 ],
-                "description": "هذه endpoint جديدة ومنفصلة عن /api/shop/dashboard/statistics/. تعمل فقط بتوكن موظف الكاشير، وترجع مبيعات وطلبات هذا الموظف فقط للشهر الحالي.",
                 "url": {
                   "raw": "{{base_url}}/api/shop/dashboard/summary/",
                   "host": [
@@ -3189,7 +3535,8 @@
                     "summary",
                     ""
                   ]
-                }
+                },
+                "description": "هذه endpoint جديدة ومنفصلة عن /api/shop/dashboard/statistics/.\n\nالاستخدام:\n1. سجلي دخول الموظف أولاً من endpoint تسجيل دخول الموظف.\n2. استخدمي Authorization: Bearer {{employee_token}}.\n3. يجب أن يكون الموظف بدور cashier فقط.\n4. لا ترسلي أي query params.\n\nما الذي ترجعه:\n- employee: بيانات الموظف الحالي.\n- total_orders: إجمالي الطلبات الخاصة بهذا الموظف فقط.\n- active_orders: الطلبات النشطة الخاصة بهذا الموظف فقط.\n- net_profit: صافي مبيعات هذا الموظف من الطلبات delivered فقط.\n- generated_at: وقت إنشاء الرد.\n\nملاحظات:\n- البيانات تخص الشهر الحالي فقط.\n- إذا كان التوكن لموظف غير cashier أو لأي نوع مستخدم آخر فسيتم إرجاع 403."
               },
               "response": []
             }

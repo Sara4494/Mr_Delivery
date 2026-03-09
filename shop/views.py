@@ -2695,25 +2695,16 @@ def _build_relative_time_label(dt):
     return 'منذ قليل'
 
 
-def _build_public_shop_profile_summary_payload(shop, request, published_images=None):
-    if published_images is None:
-        published_images = list(
-            shop.gallery_images.filter(status='published').order_by('-uploaded_at')
-        )
-
+def _build_public_shop_profile_summary_payload(shop, request):
     status_obj = _safe_shop_status(shop)
     status_value = status_obj.status if status_obj else 'closed'
     status_label = status_obj.get_status_display() if status_obj else 'مغلق'
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
     is_open_now = _is_open_now(status_value, today_schedule)
-    featured_image = published_images[0] if published_images else None
     average_rating, ratings_count = _get_shop_rating_stats(shop)
     category_name = shop.shop_category.name if shop.shop_category else None
     created_since_label = _build_relative_time_label(shop.created_at)
-    featured_since_label = _build_relative_time_label(
-        featured_image.uploaded_at if featured_image else None
-    )
 
     return {
         'id': shop.id,
@@ -2737,9 +2728,10 @@ def _build_public_shop_profile_summary_payload(shop, request, published_images=N
     }
 
 
-def _build_public_shop_profile_post_item(shop, image, request, liked_ids=None):
+def _build_public_shop_post_item(image, request):
     return {
-        'description': image.description or shop.description or '',
+        'id': image.id,
+        'description': image.description or image.shop_owner.description or '',
         'post_image_url': _build_file_url(request, image.image),
         'likes_count': image.likes_count,
         'published_at': image.uploaded_at,
@@ -2852,13 +2844,6 @@ def public_shop_profile_view(request, shop_id):
         ShopOwner.objects
         .filter(id=shop_id, is_active=True)
         .select_related('shop_category', 'shop_status')
-        .prefetch_related(
-            Prefetch(
-                'gallery_images',
-                queryset=GalleryImage.objects.filter(status='published').order_by('-uploaded_at'),
-                to_attr='published_gallery_images'
-            )
-        )
         .annotate(
             avg_shop_rating=Avg('orders__rating__shop_rating'),
             ratings_count=Count('orders__rating', distinct=True),
@@ -2876,32 +2861,7 @@ def public_shop_profile_view(request, shop_id):
     profile_summary = _build_public_shop_profile_summary_payload(
         shop,
         request,
-        published_images=getattr(shop, 'published_gallery_images', [])
     )
-
-    gallery_queryset = GalleryImage.objects.filter(
-        shop_owner=shop,
-        status='published'
-    ).select_related('shop_owner').order_by('-uploaded_at')
-
-    paginator = PublicGalleryPagination()
-    page = paginator.paginate_queryset(gallery_queryset, request)
-
-    actor_identifier = _resolve_like_actor_identifier(request)
-    liked_ids = set()
-    if actor_identifier and page is not None:
-        page_ids = [item.id for item in page]
-        liked_ids = set(
-            ImageLike.objects.filter(
-                image_id__in=page_ids,
-                user_identifier=actor_identifier
-            ).values_list('image_id', flat=True)
-        )
-
-    posts_results = [
-        _build_public_shop_profile_post_item(shop, item, request, liked_ids=liked_ids)
-        for item in (page or [])
-    ]
 
     return Response(
         {
@@ -2913,12 +2873,54 @@ def public_shop_profile_view(request, shop_id):
             "data": {
                 "id": profile_summary.get('id'),
                 "header": profile_summary.get('header', {}),
-                "posts": {
-                    "count": paginator.page.paginator.count if page is not None else gallery_queryset.count(),
-                    "next": paginator.get_next_link() if page is not None else None,
-                    "previous": paginator.get_previous_link() if page is not None else None,
-                    "results": posts_results,
-                }
+            }
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_shop_posts_view(request, shop_id):
+    """
+    Public posts for a single shop.
+    GET /api/shops/{shop_id}/posts/?page=&page_size=
+    """
+    shop = ShopOwner.objects.filter(id=shop_id, is_active=True).first()
+    if not shop:
+        return error_response(
+            message=t(request, 'not_found'),
+            errors={'shop': 'shop not found.'},
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request
+        )
+
+    gallery_queryset = GalleryImage.objects.filter(
+        shop_owner=shop,
+        status='published'
+    ).select_related('shop_owner').order_by('-uploaded_at')
+
+    paginator = PublicGalleryPagination()
+    page = paginator.paginate_queryset(gallery_queryset, request)
+    posts_source = page if page is not None else gallery_queryset
+    posts_results = [
+        _build_public_shop_post_item(item, request)
+        for item in posts_source
+    ]
+
+    return Response(
+        {
+            "status": status.HTTP_200_OK,
+            **build_message_fields(
+                t(request, 'shop_posts_retrieved_successfully'),
+                request=request,
+            ),
+            "data": {
+                "shop_id": shop.id,
+                "count": paginator.page.paginator.count if page is not None else gallery_queryset.count(),
+                "next": paginator.get_next_link() if page is not None else None,
+                "previous": paginator.get_previous_link() if page is not None else None,
+                "results": posts_results,
             }
         },
         status=status.HTTP_200_OK,
