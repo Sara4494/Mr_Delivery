@@ -3820,7 +3820,7 @@ def shop_rating_create_view(request, shop_id):
     if existing_review:
         return error_response(
             message=t(request, 'this_shop_has_already_been_rated'),
-            errors={'shop_rating': ['shop has already been rated by this customer.']},
+ 
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -3834,7 +3834,7 @@ def shop_rating_create_view(request, shop_id):
     except IntegrityError:
         return error_response(
             message=t(request, 'this_shop_has_already_been_rated'),
-            errors={'shop_rating': ['shop has already been rated by this customer.']},
+        
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -3853,35 +3853,8 @@ def shop_rating_create_view(request, shop_id):
         message=t(request, 'rating_added_successfully'),
         status_code=status.HTTP_201_CREATED,
     )
-    order_id = data.get('order_id')
-
-    if order_id:
-        order = Order.objects.filter(
-            id=order_id,
-            shop_owner_id=shop_id,
-            customer_id=request.user.id,
-        ).select_related('customer', 'driver').first()
-    else:
-        order = Order.objects.filter(
-            shop_owner_id=shop_id,
-            customer_id=request.user.id,
-            status='delivered',
-            rating__isnull=True,
-        ).select_related('customer', 'driver').order_by('-updated_at', '-id').first()
-
-    if not order:
-        return error_response(
-            message=t(
-                request,
-                'no_delivered_order_available_for_rating',
-                default='لا يوجد طلب مكتمل متاح لتقييم هذا المحل',
-            ),
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-
-    return _create_rating_response(request, order, data)
-
-
+ 
+ 
 @api_view(['GET'])
 @permission_classes([IsShopOwner])
 def order_rating_view(request, order_id):
