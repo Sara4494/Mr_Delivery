@@ -76,6 +76,42 @@ def _forbidden(request, message_key):
     )
 
 
+def _build_file_url(request, file_field):
+    if not file_field:
+        return None
+    if request:
+        return request.build_absolute_uri(file_field.url)
+    return file_field.url
+
+
+def _build_viewer_profile_payload(request, shop_owner):
+    user = getattr(request, 'user', None)
+    if not user or not getattr(user, 'is_authenticated', False):
+        return None
+
+    if _is_employee(user):
+        return {
+            'type': 'cashier' if getattr(user, 'role', None) == 'cashier' else 'employee',
+            'id': user.id,
+            'name': user.name,
+            'role': user.role,
+            'role_display': user.get_role_display(),
+            'profile_image_url': _build_file_url(request, getattr(user, 'profile_image', None)),
+        }
+
+    if _is_shop_owner(user):
+        return {
+            'type': 'shop_owner',
+            'id': shop_owner.id,
+            'name': shop_owner.owner_name,
+            'role': 'shop_owner',
+            'role_display': 'صاحب المحل',
+            'profile_image_url': _build_file_url(request, getattr(shop_owner, 'profile_image', None)),
+        }
+
+    return None
+
+
 def _token_user_type(request):
     token = getattr(request, 'auth', None)
     if token is None:
@@ -158,6 +194,25 @@ def shop_profile_view(request):
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
+
+
+@api_view(['GET'])
+@permission_classes([IsShopOwnerOrCashier])
+def shop_viewer_profile_view(request):
+    """
+    GET /api/shop/profile/viewer-profile/ - عرض بيانات المستخدم الحالي للملف الشخصي
+    """
+    user = request.user
+    shop_owner = _resolve_shop_owner(user)
+    if not shop_owner:
+        return _forbidden(request, 'permission_only_shop_owner_or_cashier')
+
+    viewer_profile = _build_viewer_profile_payload(request, shop_owner)
+    return success_response(
+        data=viewer_profile,
+        message=t(request, 'viewer_profile_retrieved_successfully'),
+        status_code=status.HTTP_200_OK
+    )
 
 
 @api_view(['GET', 'PUT'])

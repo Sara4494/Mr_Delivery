@@ -6,6 +6,7 @@ app_name = 'gallery'
 urlpatterns = [
     # Profile (عرض + تحديث البيانات وصورة البروفيل - الأونر فقط)
     path('shop/profile/', views.shop_profile_view, name='shop_profile'),
+    path('shop/profile/viewer-profile/', views.shop_viewer_profile_view, name='shop_viewer_profile'),
     
     # Gallery
     path('shop/gallery/', views.gallery_list_view, name='gallery_list'),

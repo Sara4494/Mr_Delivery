@@ -1626,7 +1626,35 @@
                     ""
                   ]
                 },
-                "description": "Returns shop profile plus viewer_profile with cashier name, role, and image."
+                "description": "Returns shop profile only. viewer_profile is now available from /api/shop/profile/viewer-profile/."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Viewer Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{employee_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/shop/profile/viewer-profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "shop",
+                    "profile",
+                    "viewer-profile",
+                    ""
+                  ]
+                },
+                "description": "Returns only the current viewer profile for shop owner or cashier."
               },
               "response": []
             },

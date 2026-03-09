@@ -131,6 +131,7 @@ MESSAGES = {
     'product_not_found_or_unavailable': 'المنتج غير موجود أو غير متاح',
     'product_updated_successfully': 'تم تحديث المنتج بنجاح',
     'profile_retrieved_successfully': 'تم جلب الملف الشخصي بنجاح',
+    'viewer_profile_retrieved_successfully': 'تم جلب بيانات المستخدم الحالي بنجاح',
     'profile_updated_successfully': 'تم تحديث الملف الشخصي بنجاح',
     'rating_added_successfully': 'تم إضافة التقييم بنجاح',
     'rating_retrieved_successfully': 'تم جلب التقييم بنجاح',

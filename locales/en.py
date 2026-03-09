@@ -131,6 +131,7 @@ MESSAGES = {
     'product_not_found_or_unavailable': 'Product not found or unavailable',
     'product_updated_successfully': 'Product updated successfully',
     'profile_retrieved_successfully': 'Profile retrieved successfully',
+    'viewer_profile_retrieved_successfully': 'Viewer profile retrieved successfully',
     'profile_updated_successfully': 'Profile updated successfully',
     'rating_added_successfully': 'Rating added successfully',
     'rating_retrieved_successfully': 'Rating retrieved successfully',

@@ -78,13 +78,12 @@ class ShopProfileSerializer(serializers.ModelSerializer):
     total_images = serializers.SerializerMethodField()
     published_images = serializers.SerializerMethodField()
     total_likes = serializers.SerializerMethodField()
-    viewer_profile = serializers.SerializerMethodField()
 
     class Meta:
         model = ShopOwner
         fields = ['id', 'owner_name', 'shop_name', 'shop_number', 'phone_number', 'description', 'profile_image', 'profile_image_url',
                   'work_schedule', 'total_images', 'published_images',
-                  'total_likes', 'viewer_profile', 'created_at', 'updated_at', 'is_active']
+                  'total_likes', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_work_schedule(self, obj):
