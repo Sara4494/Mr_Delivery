@@ -2946,11 +2946,7 @@ def public_shop_schedule_view(request, shop_id):
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     status_obj = _safe_shop_status(shop)
     status_value = status_obj.status if status_obj else 'closed'
-    schedule_payload['shop'] = {
-        'id': shop.id,
-        'shop_name': shop.shop_name,
-        'shop_number': shop.shop_number,
-    }
+    
     schedule_payload['status'] = {
         'key': status_value,
         'label': status_obj.get_status_display() if status_obj else 'مغلق',
