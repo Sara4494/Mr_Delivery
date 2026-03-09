@@ -497,7 +497,7 @@
                     }
                   ]
                 },
-                "description": "Returns paginated shop posts only. Each post now includes id, description, post_image_url, likes_count, and published fields."
+                "description": "Returns paginated shop posts only. Each post now includes id, description, post_image_url, likes_count, is_liked, and published fields. is_liked depends on the authenticated token or user_identifier."
               },
               "response": []
             },

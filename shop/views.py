@@ -2728,12 +2728,14 @@ def _build_public_shop_profile_summary_payload(shop, request):
     }
 
 
-def _build_public_shop_post_item(image, request):
+def _build_public_shop_post_item(image, request, liked_ids=None):
+    liked_ids = liked_ids or set()
     return {
         'id': image.id,
         'description': image.description or image.shop_owner.description or '',
         'post_image_url': _build_file_url(request, image.image),
         'likes_count': image.likes_count,
+        'is_liked': image.id in liked_ids,
         'published_at': image.uploaded_at,
         'published_since_label': _build_relative_time_label(image.uploaded_at),
     }
@@ -2902,9 +2904,28 @@ def public_shop_posts_view(request, shop_id):
 
     paginator = PublicGalleryPagination()
     page = paginator.paginate_queryset(gallery_queryset, request)
+    actor_identifier = _resolve_like_actor_identifier(request)
+    liked_ids = set()
+    if actor_identifier and page is not None:
+        page_ids = [item.id for item in page]
+        liked_ids = set(
+            ImageLike.objects.filter(
+                image_id__in=page_ids,
+                user_identifier=actor_identifier
+            ).values_list('image_id', flat=True)
+        )
+    elif actor_identifier:
+        queryset_ids = gallery_queryset.values_list('id', flat=True)
+        liked_ids = set(
+            ImageLike.objects.filter(
+                image_id__in=queryset_ids,
+                user_identifier=actor_identifier
+            ).values_list('image_id', flat=True)
+        )
+
     posts_source = page if page is not None else gallery_queryset
     posts_results = [
-        _build_public_shop_post_item(item, request)
+        _build_public_shop_post_item(item, request, liked_ids=liked_ids)
         for item in posts_source
     ]
 
