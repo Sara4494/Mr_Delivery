@@ -2742,7 +2742,7 @@ def _build_public_shop_post_item(image, request, liked_ids=None):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_shops_list_view(request):
     """
     List active shops for customer search screen.
@@ -2820,7 +2820,7 @@ def public_shops_list_view(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_shop_categories_list_view(request):
     """
     List all available shop categories.
@@ -2836,7 +2836,7 @@ def public_shop_categories_list_view(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_shop_profile_view(request, shop_id):
     """
     Public profile for a single shop.
@@ -2882,7 +2882,7 @@ def public_shop_profile_view(request, shop_id):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_shop_posts_view(request, shop_id):
     """
     Public posts for a single shop.
@@ -2949,7 +2949,7 @@ def public_shop_posts_view(request, shop_id):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_shop_schedule_view(request, shop_id):
     """
     Public weekly schedule for a single shop.
@@ -2983,7 +2983,7 @@ def public_shop_schedule_view(request, shop_id):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_shop_gallery_view(request, shop_id):
     """
     Public gallery posts for a single shop.
@@ -3046,7 +3046,7 @@ def public_shop_gallery_view(request, shop_id):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_portfolio_feed_view(request):
     """
     Public portfolio feed across all active shops.
@@ -3113,7 +3113,7 @@ def public_portfolio_feed_view(request):
 
 
 @api_view(['POST', 'DELETE'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_gallery_like_view(request, image_id):
     """
     Like/unlike a public portfolio image.
@@ -3183,7 +3183,7 @@ def public_gallery_like_view(request, image_id):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_products_by_shop_category_view(request):
     """
     List products for all shops in a specific shop category.
@@ -3243,7 +3243,7 @@ def public_products_by_shop_category_view(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsCustomer])
 def public_offers_view(request):
     """
     List current offers (fixed logic = discounted products only).

@@ -353,11 +353,14 @@ def _find_user_for_reset(role, phone_number, shop_number=None):
 
     variants = _phone_variants(phone_number)
 
-    def _phone_match(qs, field="phone_number"):
+    def _phone_queryset(qs, field="phone_number"):
         q = Q()
         for v in variants:
             q |= Q(**{field: v})
-        return qs.filter(q).first()
+        return qs.filter(q)
+
+    def _phone_match(qs, field="phone_number"):
+        return _phone_queryset(qs, field).first()
 
     if role == "customer":
         user = _phone_match(Customer.objects.all())
@@ -371,14 +374,25 @@ def _find_user_for_reset(role, phone_number, shop_number=None):
             return None, "رقم الهاتف غير مسجل أو صاحب المحل لم يضف رقم الهاتف بعد"
         return (user, None)
     if role == "employee":
-        if not shop_number:
-            return None, "رقم المحل مطلوب للموظفين"
-        try:
-            shop = ShopOwner.objects.get(shop_number=shop_number)
-            user = _phone_match(Employee.objects.filter(shop_owner=shop))
-            return (user, None) if user else (None, "رقم الهاتف غير مسجل في هذا المحل")
-        except ShopOwner.DoesNotExist:
-            return None, "رقم المحل غير صحيح"
+        employee_qs = Employee.objects.all()
+        if shop_number:
+            try:
+                shop = ShopOwner.objects.get(shop_number=shop_number)
+                employee_qs = employee_qs.filter(shop_owner=shop)
+            except ShopOwner.DoesNotExist:
+                return None, "invalid_shop_number"
+
+        matches = list(_phone_queryset(employee_qs).distinct()[:2])
+        if not matches:
+            return (
+                None,
+                "employee_phone_number_is_not_registered_in_this_shop"
+                if shop_number else
+                "employee_phone_number_is_not_registered"
+            )
+        if len(matches) > 1 and not shop_number:
+            return None, "employee_phone_number_is_linked_to_multiple_shops_use_shop_number"
+        return matches[0], None
     if role == "driver":
         if not shop_number:
             return None, "رقم المحل مطلوب للسائقين"
@@ -512,7 +526,7 @@ def send_otp_view(request):
         "phone_number": "+201012345678",
         "purpose": "login" | "register" | "reset_password",
         "role": "customer" | "shop_owner" | "employee" | "driver",  // لـ reset_password
-        "shop_number": "12345"  // مطلوب لـ employee و driver عند reset_password
+        "shop_number": "12345"  // اختياري للموظف عند reset_password ومطلوب للسائق
     }
     """
     phone_number = request.data.get('phone_number')
@@ -661,7 +675,7 @@ def reset_password_view(request):
     Body: {
         "role": "customer" | "shop_owner" | "employee" | "driver",
         "phone_number": "+201012345678",
-        "shop_number": "12345",  // مطلوب لـ employee و driver
+        "shop_number": "12345",  // اختياري للموظف ومطلوب للسائق
         "otp": "123456",
         "new_password": "كلمة المرور الجديدة"
     }

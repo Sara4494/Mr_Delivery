@@ -218,7 +218,8 @@ ULTRAMSG_TOKEN=your_token
 ```
 - **customer**: `phone_number` فقط
 - **shop_owner**: `phone_number` فقط (يجب إضافته في إعدادات المحل أولاً)
-- **employee**, **driver**: مطلوب `phone_number` + `shop_number`
+- **employee**: `phone_number` فقط يكفي في الوضع الطبيعي، و`shop_number` اختياري إذا كان نفس الرقم مرتبطًا بأكثر من محل
+- **driver**: مطلوب `phone_number` + `shop_number`
 
 ### تغيير كلمة المرور
 **Endpoint**: `POST /api/auth/password-reset/`
@@ -233,7 +234,7 @@ ULTRAMSG_TOKEN=your_token
     "new_password": "newpassword123"
 }
 ```
-- `shop_number` مطلوب فقط لـ employee و driver
+- `shop_number` اختياري للـ employee عند الحاجة لتحديد الحساب، ومطلوب فقط للـ driver
 
 **Success Response (200)**
 ```json

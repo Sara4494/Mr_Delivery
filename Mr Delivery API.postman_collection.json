@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "2dc24f77-def6-488a-bbfc-7337ce52178a",
+    "_postman_id": "efc0c82a-9053-4775-a876-d9db30d56776",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-2dc24f77-def6-488a-bbfc-7337ce52178a?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-efc0c82a-9053-4775-a876-d9db30d56776?source=collection_link"
   },
   "item": [
     {
@@ -360,12 +360,12 @@
           "name": "🏬 المتاجر العامة (Public Shops)",
           "item": [
             {
-              "name": "قائمة المحلات المتاحة",
+              "name": "shop-categories",
               "request": {
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/",
+                  "raw": "{{base_url}}/api/shops/?search=&shop_category_id=&shop_category_name=&open_now=false&with_gallery=false&page=1&page_size=20",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -373,6 +373,41 @@
                     "api",
                     "shops",
                     ""
+                  ],
+                  "query": [
+                    {
+                      "key": "search",
+                      "value": "",
+                      "description": "Search by shop name, owner, shop number, or description"
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "",
+                      "description": "ID of the shop category",
+                      "disabled": true
+                    },
+                    {
+                      "key": "shop_category_name",
+                      "value": "",
+                      "description": "اسم تصنيف المحل",
+                      "disabled": true
+                    },
+                    {
+                      "key": "open_now",
+                      "value": "false"
+                    },
+                    {
+                      "key": "with_gallery",
+                      "value": "false"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "20"
+                    }
                   ]
                 }
               },
@@ -404,7 +439,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops?search=&open_now=false&page=1&page_size=20",
+                  "raw": "{{base_url}}/api/shops?search=&shop_category_id=&shop_category_name=&open_now=false&with_gallery=false&page=1&page_size=20",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -416,7 +451,13 @@
                     {
                       "key": "search",
                       "value": "",
-                      "description": "Search by shop name or description"
+                      "description": "Search by shop name, owner, shop number, or description"
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "",
+                      "description": "ID of the shop category",
+                      "disabled": true
                     },
                     {
                       "key": "shop_category_name",
@@ -430,8 +471,7 @@
                     },
                     {
                       "key": "with_gallery",
-                      "value": "true",
-                      "disabled": true
+                      "value": "false"
                     },
                     {
                       "key": "page",
@@ -453,14 +493,14 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/1/profile/",
+                  "raw": "{{base_url}}/api/shops/2/profile/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shops",
-                    "1",
+                    "2",
                     "profile",
                     ""
                   ]
@@ -473,31 +513,43 @@
               "name": "Shop Posts (Customer)",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/1/posts/?page=1&page_size=12",
+                  "raw": "{{base_url}}/api/shops/2/posts/?page=2&page_size=12",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "shops",
-                    "1",
+                    "2",
                     "posts",
                     ""
                   ],
                   "query": [
                     {
                       "key": "page",
-                      "value": "1"
+                      "value": "2"
                     },
                     {
                       "key": "page_size",
                       "value": "12"
+                    },
+                    {
+                      "key": "",
+                      "value": null,
+                      "type": "text",
+                      "disabled": true
                     }
                   ]
                 },
-                "description": "Returns paginated shop posts only. Each post now includes id, description, post_image_url, likes_count, is_liked, and published fields. is_liked depends on the authenticated token or user_identifier."
+                "description": "Returns paginated shop posts only. Each post now includes id, description, post_image_url, likes_count, and published fields."
               },
               "response": []
             },

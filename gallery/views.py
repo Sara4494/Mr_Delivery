@@ -105,7 +105,7 @@ def _build_viewer_profile_payload(request, shop_owner):
             'id': shop_owner.id,
             'name': shop_owner.owner_name,
             'role': 'shop_owner',
-            'role_display': 'صاحب المحل',
+            'role_display': 'المدير',
             'profile_image_url': _build_file_url(request, getattr(shop_owner, 'profile_image', None)),
         }
 
