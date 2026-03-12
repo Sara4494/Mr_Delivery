@@ -8,6 +8,7 @@ urlpatterns = [
     path('shops/', views.public_shops_list_view, name='public_shops_list'),
     path('shops/shop-categories/', views.public_shop_categories_list_view, name='public_shop_categories_list'),
     path('shops/portfolio/', views.public_portfolio_feed_view, name='public_portfolio_feed'),
+    path('shops/offers/', views.public_offers_view, name='public_offers'),
     path('shops/<int:shop_id>/rating/', views.shop_rating_create_view, name='shop_rating_create'),
     path('shops/<int:shop_id>/profile/', views.public_shop_profile_view, name='public_shop_profile'),
     path('shops/<int:shop_id>/posts/', views.public_shop_posts_view, name='public_shop_posts'),
@@ -35,6 +36,8 @@ urlpatterns = [
     # Categories (تصنيفات المنتجات)
     path('shop/categories/', views.category_list_view, name='category_list'),
     path('shop/categories/<int:category_id>/', views.category_detail_view, name='category_detail'),
+    path('shop/offers/', views.offer_list_view, name='offer_list'),
+    path('shop/offers/<int:offer_id>/', views.offer_detail_view, name='offer_detail'),
     
     # Orders (للمحل)
     path('shop/orders/', views.order_list_view, name='order_list'),

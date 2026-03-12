@@ -1,4 +1,6 @@
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from user.models import ShopOwner
 
 
@@ -453,6 +455,61 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.shop_owner.shop_name}"
+
+
+class Offer(models.Model):
+    """Independent marketing offer for the shop."""
+
+    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='offers', verbose_name="صاحب المحل")
+    title = models.CharField(max_length=200, verbose_name="عنوان العرض")
+    description = models.TextField(blank=True, null=True, verbose_name="وصف العرض")
+    image = models.ImageField(upload_to='offer_images/', blank=True, null=True, verbose_name="صورة العرض")
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, verbose_name="نسبة الخصم")
+    start_date = models.DateField(verbose_name="تاريخ بداية العرض")
+    end_date = models.DateField(verbose_name="تاريخ انتهاء العرض")
+    views_count = models.PositiveIntegerField(default=0, verbose_name="عدد المشاهدات")
+    is_active = models.BooleanField(default=True, verbose_name="نشط")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "عرض"
+        verbose_name_plural = "العروض"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['shop_owner', 'is_active']),
+            models.Index(fields=['start_date']),
+            models.Index(fields=['end_date']),
+            models.Index(fields=['views_count']),
+        ]
+
+    def clean(self):
+        errors = {}
+
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            errors['end_date'] = "End date cannot be earlier than start date."
+
+        if self.discount_percentage is not None and self.discount_percentage <= 0:
+            errors['discount_percentage'] = "Discount percentage must be greater than zero."
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    @property
+    def status(self):
+        today = timezone.localdate()
+        if self.start_date > today:
+            return 'scheduled'
+        if self.end_date < today:
+            return 'expired'
+        return 'active'
+
+    def __str__(self):
+        return f"{self.title} - {self.shop_owner.shop_name}"
 
 
 class OrderRating(models.Model):

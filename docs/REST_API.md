@@ -302,9 +302,23 @@ Authorization: Bearer {customer_token}
 
 ### Get/Update Profile
 ```http
-GET|PUT /api/customer/profile/
+GET|PUT|PATCH /api/customer/profile/
 Authorization: Bearer {customer_token}
 ```
+
+**Update body**
+```json
+{
+    "name": "أحمد محمد",
+    "phone_number": "01012345678",
+    "current_password": "old-password",
+    "new_password": "new-password"
+}
+```
+
+- يدعم `application/json` لتعديل الاسم/الهاتف/الباسورد
+- ويدعم `multipart/form-data` عند إرسال `profile_image`
+- يمكن استخدام `old_password` بدل `current_password`
 
 ### Addresses
 ```http

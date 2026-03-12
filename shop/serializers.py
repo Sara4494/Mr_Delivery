@@ -1,11 +1,12 @@
 from rest_framework import serializers
 from .models import (
-    ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage, 
-    Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
+    ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
+    Invoice, Employee, Product, Category, Offer, OrderRating, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
 )
 from user.models import ShopOwner, ShopCategory
 from user.utils import t
+from user.otp_service import normalize_phone
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
@@ -86,6 +87,113 @@ class CustomerSerializer(serializers.ModelSerializer):
                     'created_at': last_message.created_at
                 }
         return None
+
+
+class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
+    """Serializer لتحديث ملف العميل من نفس endpoint."""
+
+    profile_image = serializers.ImageField(required=False, allow_null=True)
+    current_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    new_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    confirm_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    remove_profile_image = serializers.BooleanField(write_only=True, required=False, default=False)
+
+    class Meta:
+        model = Customer
+        fields = [
+            'name',
+            'phone_number',
+            'profile_image',
+            'remove_profile_image',
+            'current_password',
+            'new_password',
+            'confirm_password',
+        ]
+
+    @staticmethod
+    def _phone_variants(phone_number):
+        raw = str(phone_number or '').strip()
+        normalized = normalize_phone(raw)
+        variants = {raw, normalized}
+        if normalized.startswith('+20'):
+            variants.add(normalized[1:])
+            variants.add(normalized[3:])
+            variants.add('0' + normalized[3:])
+        return [variant for variant in variants if variant]
+
+    def validate_name(self, value):
+        request = self.context.get('request')
+        name = str(value or '').strip()
+        if not name:
+            raise serializers.ValidationError(t(request, 'name_is_required'))
+        return name
+
+    def validate_phone_number(self, value):
+        request = self.context.get('request')
+        raw_phone = str(value or '').strip()
+        if not raw_phone:
+            raise serializers.ValidationError(t(request, 'phone_number_is_required'))
+
+        normalized_phone = normalize_phone(raw_phone)
+        phone_variants = self._phone_variants(raw_phone)
+        existing_customer = Customer.objects.filter(phone_number__in=phone_variants)
+        if self.instance and self.instance.pk:
+            existing_customer = existing_customer.exclude(pk=self.instance.pk)
+        if existing_customer.exists():
+            raise serializers.ValidationError(t(request, 'phone_number_is_already_registered'))
+
+        return normalized_phone
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        current_password = str(attrs.get('current_password') or '').strip()
+        new_password = str(attrs.get('new_password') or '').strip()
+        confirm_password = str(attrs.get('confirm_password') or '').strip()
+
+        if current_password and not new_password:
+            raise serializers.ValidationError({
+                'new_password': [t(request, 'new_password_is_required')]
+            })
+
+        if new_password and not current_password:
+            raise serializers.ValidationError({
+                'current_password': [t(request, 'current_password_is_required')]
+            })
+
+        if new_password and len(new_password) < 6:
+            raise serializers.ValidationError({
+                'new_password': [t(request, 'password_must_be_at_least_6_characters')]
+            })
+
+        if new_password and confirm_password and new_password != confirm_password:
+            raise serializers.ValidationError({
+                'confirm_password': [t(request, 'new_password_confirmation_does_not_match')]
+            })
+
+        if new_password and self.instance and not self.instance.check_password(current_password):
+            raise serializers.ValidationError({
+                'current_password': [t(request, 'current_password_is_incorrect')]
+            })
+
+        return attrs
+
+    def update(self, instance, validated_data):
+        validated_data.pop('current_password', None)
+        new_password = validated_data.pop('new_password', None)
+        validated_data.pop('confirm_password', None)
+        remove_profile_image = validated_data.pop('remove_profile_image', False)
+
+        if remove_profile_image:
+            instance.profile_image = None
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if new_password:
+            instance.set_password(new_password)
+
+        instance.save()
+        return instance
 
 
 class CustomerCreateSerializer(serializers.ModelSerializer):
@@ -482,6 +590,115 @@ class PublicOfferProductSerializer(ProductSerializer):
         if obj.discount_price is None or obj.price <= 0 or obj.discount_price >= obj.price:
             return 0
         return round(((obj.price - obj.discount_price) / obj.price) * 100, 2)
+
+
+class OfferBaseSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+    status = serializers.ReadOnlyField()
+    offer_percentage = serializers.DecimalField(
+        source='discount_percentage',
+        max_digits=5,
+        decimal_places=2,
+        read_only=True,
+    )
+
+    class Meta:
+        model = Offer
+        fields = [
+            'id', 'title', 'description', 'image', 'image_url',
+            'discount_percentage', 'offer_percentage', 'start_date',
+            'end_date', 'status', 'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'status', 'created_at', 'updated_at']
+
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+
+class PublicOfferSerializer(OfferBaseSerializer):
+    shop_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
+    shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
+    shop_number = serializers.CharField(source='shop_owner.shop_number', read_only=True)
+    shop_category = serializers.SerializerMethodField()
+
+    class Meta(OfferBaseSerializer.Meta):
+        fields = [
+            'id', 'shop_id', 'shop_name', 'shop_number', 'shop_category',
+            'title', 'description', 'image', 'image_url',
+            'discount_percentage', 'offer_percentage',
+            'start_date', 'end_date'
+        ]
+
+    def get_shop_category(self, obj):
+        category = getattr(obj.shop_owner, 'shop_category', None)
+        if not category:
+            return None
+        return {'id': category.id, 'name': category.name}
+
+
+class OfferManagementSerializer(OfferBaseSerializer):
+    shop_owner_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
+    shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
+
+    class Meta(OfferBaseSerializer.Meta):
+        fields = [
+            'id', 'shop_owner_id', 'shop_name', 'title', 'description',
+            'image', 'image_url', 'discount_percentage', 'offer_percentage',
+            'start_date', 'end_date', 'status', 'views_count',
+            'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'status', 'views_count', 'created_at', 'updated_at']
+
+
+class OfferCreateUpdateSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = Offer
+        fields = [
+            'title', 'description', 'image', 'discount_percentage',
+            'start_date', 'end_date', 'is_active'
+        ]
+
+    def validate_title(self, value):
+        request = self.context.get('request')
+        title = str(value or '').strip()
+        if not title:
+            raise serializers.ValidationError(t(request, 'offer_title_is_required'))
+        return title
+
+    def validate_discount_percentage(self, value):
+        request = self.context.get('request')
+        if value is None or value <= 0:
+            raise serializers.ValidationError(
+                t(request, 'discount_percentage_must_be_greater_than_zero')
+            )
+        return value
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        start_date = attrs.get('start_date')
+        end_date = attrs.get('end_date')
+
+        if self.instance:
+            start_date = start_date or self.instance.start_date
+            end_date = end_date or self.instance.end_date
+
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError({
+                'end_date': [t(request, 'offer_end_date_must_not_be_before_start_date')]
+            })
+
+        description = attrs.get('description')
+        if description is not None:
+            attrs['description'] = str(description).strip()
+
+        return attrs
 
 
 class ProductCreateSerializer(serializers.ModelSerializer):

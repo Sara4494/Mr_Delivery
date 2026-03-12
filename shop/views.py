@@ -9,8 +9,8 @@ from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import (
-    ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage, 
-    Invoice, Employee, Product, Category, OrderRating, ShopReview, PaymentMethod, 
+    ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
+    Invoice, Employee, Product, Category, Offer, OrderRating, ShopReview, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
 )
 from gallery.models import WorkSchedule, GalleryImage, ImageLike
@@ -18,6 +18,7 @@ from .serializers import (
     ShopCategorySerializer,
     ShopStatusSerializer,
     CustomerSerializer,
+    CustomerProfileUpdateSerializer,
     CustomerCreateSerializer,
     CustomerAddressSerializer,
     DriverSerializer,
@@ -37,7 +38,9 @@ from .serializers import (
     CustomerRegisterSerializer,
     ProductSerializer,
     PublicProductSerializer,
-    PublicOfferProductSerializer,
+    PublicOfferSerializer,
+    OfferManagementSerializer,
+    OfferCreateUpdateSerializer,
     ProductCreateSerializer,
     CategorySerializer,
     OrderRatingSerializer,
@@ -175,6 +178,30 @@ class PublicGalleryPagination(PageNumberPagination):
         return Response(response_data, status=status.HTTP_200_OK)
 
 
+class OfferPagination(PageNumberPagination):
+    """Pagination for offer feeds."""
+
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def get_paginated_response(self, data):
+        response_data = {
+            "status": status.HTTP_200_OK,
+            **build_message_fields(
+                t(getattr(self, "request", None), "offers_retrieved_successfully"),
+                request=getattr(self, "request", None)
+            ),
+            "data": {
+                'count': self.page.paginator.count,
+                'next': self.get_next_link(),
+                'previous': self.get_previous_link(),
+                'results': data
+            }
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
 def _is_true_query_value(value):
     """تحويل قيمة query param إلى bool."""
     return str(value).lower() in {'1', 'true', 'yes', 'on'}
@@ -257,6 +284,49 @@ def _apply_created_date_range(queryset, start_date=None, end_date=None):
     if end_date:
         queryset = queryset.filter(created_at__date__lte=end_date)
     return queryset
+
+
+def _cleanup_expired_offers():
+    grace_cutoff = timezone.localdate() - timedelta(days=7)
+    Offer.objects.filter(end_date__lt=grace_cutoff).delete()
+
+
+def _apply_offer_status_filter(queryset, status_filter):
+    today = timezone.localdate()
+    grace_cutoff = today - timedelta(days=7)
+
+    if status_filter == 'all':
+        return queryset
+    if status_filter == 'active':
+        return queryset.filter(
+            is_active=True,
+            start_date__lte=today,
+            end_date__gte=today,
+        )
+    if status_filter == 'scheduled':
+        return queryset.filter(
+            is_active=True,
+            start_date__gt=today,
+        )
+    if status_filter == 'expired':
+        return queryset.filter(
+            is_active=True,
+            end_date__lt=today,
+            end_date__gte=grace_cutoff,
+        )
+    return None
+
+
+def _apply_offer_sorting(queryset, sort_by):
+    sort_options = {
+        'newest': ('-created_at', '-id'),
+        'oldest': ('created_at', 'id'),
+        'most_viewed': ('-views_count', '-created_at', '-id'),
+    }
+    ordering = sort_options.get(sort_by)
+    if ordering is None:
+        return None
+    return queryset.order_by(*ordering)
 
 
 def _growth_percentage(current_value, previous_value):
@@ -1439,6 +1509,140 @@ def product_detail_view(request, product_id):
             message=t(request, 'product_deleted_successfully'),
             status_code=status.HTTP_200_OK
         )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsShopOwnerOrEmployee])
+def offer_list_view(request):
+    """List or create independent offers for a shop."""
+    _cleanup_expired_offers()
+
+    shop_owner = _resolve_owner_for_owner_or_employee(request.user)
+    if not shop_owner:
+        return _owner_or_employee_forbidden(request)
+
+    if request.method == 'GET':
+        status_filter = str(request.query_params.get('status', 'all') or 'all').strip().lower()
+        sort_by = str(request.query_params.get('sort_by', 'newest') or 'newest').strip().lower()
+        search_query = str(request.query_params.get('search') or '').strip()
+
+        if status_filter not in {'all', 'active', 'scheduled', 'expired'}:
+            return error_response(
+                message=t(request, 'invalid_offer_status_available_values_all_active_scheduled_expired'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        queryset = Offer.objects.filter(shop_owner=shop_owner).select_related('shop_owner')
+        queryset = _apply_offer_status_filter(queryset, status_filter)
+        queryset = queryset if queryset is not None else Offer.objects.none()
+
+        if search_query:
+            queryset = queryset.filter(
+                Q(title__icontains=search_query) |
+                Q(description__icontains=search_query)
+            )
+
+        queryset = _apply_offer_sorting(queryset, sort_by)
+        if queryset is None:
+            return error_response(
+                message=t(request, 'invalid_offer_sort_available_values_newest_oldest_most_viewed'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        paginator = OfferPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        if page is not None:
+            serializer = OfferManagementSerializer(page, many=True, context={'request': request})
+            return paginator.get_paginated_response(serializer.data)
+
+        serializer = OfferManagementSerializer(queryset, many=True, context={'request': request})
+        return success_response(
+            data=serializer.data,
+            message=t(request, 'offers_retrieved_successfully'),
+            status_code=status.HTTP_200_OK
+        )
+
+    if not _is_shop_owner_user(request.user):
+        return error_response(
+            message=t(request, 'permission_only_shop_owner_edit_content'),
+            status_code=status.HTTP_403_FORBIDDEN
+        )
+
+    serializer = OfferCreateUpdateSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        offer = serializer.save(shop_owner=shop_owner)
+        response_serializer = OfferManagementSerializer(offer, context={'request': request})
+        return success_response(
+            data=response_serializer.data,
+            message=t(request, 'offer_added_successfully'),
+            status_code=status.HTTP_201_CREATED
+        )
+
+    return error_response(
+        message=t(request, 'invalid_data'),
+        errors=serializer.errors,
+        status_code=status.HTTP_400_BAD_REQUEST
+    )
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsShopOwnerOrEmployee])
+def offer_detail_view(request, offer_id):
+    """Retrieve, update, or delete a shop offer."""
+    _cleanup_expired_offers()
+
+    shop_owner = _resolve_owner_for_owner_or_employee(request.user)
+    if not shop_owner:
+        return _owner_or_employee_forbidden(request)
+
+    try:
+        offer = Offer.objects.select_related('shop_owner').get(id=offer_id, shop_owner=shop_owner)
+    except Offer.DoesNotExist:
+        return error_response(
+            message=t(request, 'offer_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    if request.method == 'GET':
+        serializer = OfferManagementSerializer(offer, context={'request': request})
+        return success_response(
+            data=serializer.data,
+            message=t(request, 'offer_data_retrieved_successfully'),
+            status_code=status.HTTP_200_OK
+        )
+
+    if not _is_shop_owner_user(request.user):
+        return error_response(
+            message=t(request, 'permission_only_shop_owner_edit_content'),
+            status_code=status.HTTP_403_FORBIDDEN
+        )
+
+    if request.method == 'PUT':
+        serializer = OfferCreateUpdateSerializer(
+            offer,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            response_serializer = OfferManagementSerializer(offer, context={'request': request})
+            return success_response(
+                data=response_serializer.data,
+                message=t(request, 'offer_updated_successfully'),
+                status_code=status.HTTP_200_OK
+            )
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+    offer.delete()
+    return success_response(
+        message=t(request, 'offer_deleted_successfully'),
+        status_code=status.HTTP_200_OK
+    )
 
 
 # Order APIs
@@ -3246,36 +3450,52 @@ def public_products_by_shop_category_view(request):
 @permission_classes([IsCustomer])
 def public_offers_view(request):
     """
-    List current offers (fixed logic = discounted products only).
-    GET /api/shops/offers/?shop_id=1&shop_category_id=1&category_id=2
+    List active independent offers for customers.
+    GET /api/shops/offers/?shop_id=1&shop_category_id=1&page=1&page_size=20
     """
+    _cleanup_expired_offers()
+
+    today = timezone.localdate()
     shop_id = request.query_params.get('shop_id')
     shop_category_id = request.query_params.get('shop_category_id')
-    category_id = request.query_params.get('category_id')
     search_query = request.query_params.get('search')
 
-    offers = Product.objects.filter(
+    offers = Offer.objects.filter(
         shop_owner__is_active=True,
-        is_available=True,
-        discount_price__isnull=False,
-        discount_price__lt=F('price')
-    ).select_related('shop_owner', 'category', 'shop_owner__shop_category')
+        is_active=True,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).select_related('shop_owner', 'shop_owner__shop_category')
 
     if shop_id:
         offers = offers.filter(shop_owner_id=shop_id)
     if shop_category_id:
         offers = offers.filter(shop_owner__shop_category_id=shop_category_id)
-    if category_id:
-        offers = offers.filter(category_id=category_id)
     if search_query:
         offers = offers.filter(
-            Q(name__icontains=search_query) | Q(description__icontains=search_query)
+            Q(title__icontains=search_query) | Q(description__icontains=search_query)
         )
 
-    serializer = PublicOfferProductSerializer(offers, many=True, context={'request': request})
+    offers = offers.order_by('-created_at', '-id')
+
+    paginator = OfferPagination()
+    page = paginator.paginate_queryset(offers, request)
+
+    if page is not None:
+        offer_ids = [offer.id for offer in page]
+        if offer_ids:
+            Offer.objects.filter(id__in=offer_ids).update(views_count=F('views_count') + 1)
+        serializer = PublicOfferSerializer(page, many=True, context={'request': request})
+        return paginator.get_paginated_response(serializer.data)
+
+    offer_ids = list(offers.values_list('id', flat=True))
+    if offer_ids:
+        Offer.objects.filter(id__in=offer_ids).update(views_count=F('views_count') + 1)
+
+    serializer = PublicOfferSerializer(offers, many=True, context={'request': request})
     return success_response(
         data=serializer.data,
-        message='offers_retrieved_successfully',
+        message=t(request, 'offers_retrieved_successfully'),
         status_code=status.HTTP_200_OK
     )
 
@@ -3530,12 +3750,12 @@ def customer_order_reject_view(request, order_id):
     )
 
 
-@api_view(['GET', 'PUT'])
+@api_view(['GET', 'PUT', 'PATCH'])
 @permission_classes([IsCustomer])
 def customer_profile_view(request):
     """
     عرض وتحديث ملف العميل
-    GET/PUT /api/customer/profile/
+    GET/PUT/PATCH /api/customer/profile/
     """
     # التحقق من أن المستخدم هو عميل
     user = request.user
@@ -3557,12 +3777,63 @@ def customer_profile_view(request):
         serializer = CustomerSerializer(customer, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'profile_retrieved_successfully'))
     
-    elif request.method == 'PUT':
-        if 'name' in request.data:
-            customer.name = request.data.get('name')
-        if request.FILES.get('profile_image'):
-            customer.profile_image = request.FILES['profile_image']
-        customer.save()
+    elif request.method in ('PUT', 'PATCH'):
+        payload = {}
+
+        name_value = request.data.get('name', request.data.get('full_name'))
+        if name_value is not None:
+            payload['name'] = name_value
+
+        phone_value = request.data.get('phone_number', request.data.get('phone'))
+        if phone_value is not None:
+            payload['phone_number'] = phone_value
+
+        current_password = (
+            request.data.get('current_password')
+            or request.data.get('old_password')
+            or request.data.get('password')
+        )
+        if current_password is not None:
+            payload['current_password'] = current_password
+
+        new_password = request.data.get('new_password')
+        if new_password is not None:
+            payload['new_password'] = new_password
+
+        confirm_password = (
+            request.data.get('confirm_password')
+            or request.data.get('confirm_new_password')
+            or request.data.get('new_password_confirmation')
+        )
+        if confirm_password is not None:
+            payload['confirm_password'] = confirm_password
+
+        remove_profile_image = request.data.get('remove_profile_image', request.data.get('delete_profile_image'))
+        if remove_profile_image is not None:
+            payload['remove_profile_image'] = remove_profile_image
+
+        profile_image = (
+            request.FILES.get('profile_image')
+            or request.FILES.get('avatar')
+            or request.FILES.get('image')
+        )
+        if profile_image is not None:
+            payload['profile_image'] = profile_image
+
+        serializer = CustomerProfileUpdateSerializer(
+            customer,
+            data=payload,
+            partial=True,
+            context={'request': request},
+        )
+        if not serializer.is_valid():
+            return error_response(
+                message=t(request, 'invalid_data'),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer.save()
         serializer = CustomerSerializer(customer, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'profile_updated_successfully'))
 

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
-    ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage, 
-    Invoice, Employee, Product, Category, OrderRating, PaymentMethod, 
+    ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
+    Invoice, Employee, Product, Category, Offer, OrderRating, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
 )
 
@@ -81,6 +81,24 @@ class ProductAdmin(admin.ModelAdmin):
     list_filter = ('is_available', 'is_featured', 'category', 'shop_owner')
     search_fields = ('name', 'shop_owner__shop_name')
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(Offer)
+class OfferAdmin(admin.ModelAdmin):
+    """Offer management."""
+
+    list_display = (
+        'title', 'shop_owner', 'status_display', 'discount_percentage',
+        'views_count', 'start_date', 'end_date', 'is_active'
+    )
+    list_filter = ('is_active', 'start_date', 'end_date', 'shop_owner')
+    search_fields = ('title', 'description', 'shop_owner__shop_name')
+    readonly_fields = ('views_count', 'created_at', 'updated_at')
+
+    def status_display(self, obj):
+        return obj.status
+
+    status_display.short_description = 'Status'
 
 
 @admin.register(Order)

@@ -79,7 +79,7 @@ Located in: `shop/permissions.py`
 ### Customer APIs (`IsCustomer`)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/customer/profile/` | GET, PUT | Customer profile |
+| `/api/customer/profile/` | GET, PUT, PATCH | Customer profile |
 | `/api/customer/addresses/` | GET, POST | Address list |
 | `/api/customer/addresses/{id}/` | GET, PUT, DELETE | Address details |
 | `/api/customer/payment-methods/` | GET, POST | Payment methods |
