@@ -835,14 +835,38 @@
         function loadCustomerShops() {
             const base = _customerOrderApiBase();
             const selectEl = document.getElementById('customerOrderShopSelect');
+            const tokenInputEl = document.getElementById('customerOrderToken');
             if (!selectEl) return;
 
-            selectEl.innerHTML = '<option value=\"\">(Load shops)</option>';
+            const token = _normalizeBearerToken((tokenInputEl || {}).value);
+            if (tokenInputEl) tokenInputEl.value = token;
+            selectEl.innerHTML = '<option value=\"\">(Loading shops...)</option>';
 
-            fetch(base + '/shops/', { method: 'GET' })
-                .then(r => r.json())
-                .then(data => {
-                    const shops = (data && data.data) || [];
+            const headers = {};
+            if (token && _extractTokenUserType(token) === 'customer') {
+                headers['Authorization'] = 'Bearer ' + token;
+            }
+
+            fetch(base + '/shops/?page_size=100', {
+                method: 'GET',
+                headers
+            })
+                .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+                .then(({ ok, json }) => {
+                    if (!ok) {
+                        throw new Error((json && (json.message || json.detail)) || 'Failed to load shops');
+                    }
+
+                    const payload = json && json.data;
+                    const shops = Array.isArray(payload)
+                        ? payload
+                        : (((payload || {}).results && Array.isArray(payload.results)) ? payload.results : []);
+
+                    if (!shops.length) {
+                        selectEl.innerHTML = '<option value=\"\">(No shops found)</option>';
+                        return;
+                    }
+
                     selectEl.innerHTML = '<option value=\"\">(Select)</option>';
                     shops.forEach(s => {
                         const opt = document.createElement('option');
@@ -854,9 +878,64 @@
                     const saved = localStorage.getItem('mr_delivery_shop_owner_id');
                     if (saved) selectEl.value = saved;
                 })
-                .catch(() => {
-                    selectEl.innerHTML = '<option value=\"\">(Failed to load)</option>';
+                .catch((err) => {
+                    selectEl.innerHTML = '<option value=\"\">(' + (err.message || 'Failed to load') + ')</option>';
                 });
+        }
+
+        function _validateCustomerTokenRole(token) {
+            const tokenUserType = _extractTokenUserType(token);
+            if (tokenUserType && tokenUserType !== 'customer') {
+                return 'هذا القسم يحتاج JWT خاص بالعميل، وليس ' + tokenUserType + '.';
+            }
+            return '';
+        }
+
+        function _getCustomerShopPayload() {
+            const shopOwnerId = (document.getElementById('customerOrderShopSelect') || {}).value;
+            const shopNumber = ((document.getElementById('customerOrderShopNumber') || {}).value || '').trim();
+
+            if (shopOwnerId) return { shop_owner_id: Number(shopOwnerId) };
+            if (shopNumber) return { shop_number: shopNumber };
+            return null;
+        }
+
+        function _applyCustomerShopSelection(shopData) {
+            if (!shopData || !shopData.shop_owner_id) return;
+
+            localStorage.setItem('mr_delivery_shop_owner_id', String(shopData.shop_owner_id));
+
+            const selectEl = document.getElementById('customerOrderShopSelect');
+            if (selectEl) selectEl.value = String(shopData.shop_owner_id);
+
+            const resultEl = document.getElementById('customerShopResult');
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.className = 'status connected';
+                resultEl.textContent = 'Selected: ' + (shopData.shop_name || '') + ' (' + (shopData.shop_number || shopData.shop_owner_id) + ')';
+            }
+        }
+
+        function _chooseCustomerShop(base, token) {
+            const payload = _getCustomerShopPayload();
+            if (!payload) {
+                return Promise.reject(new Error('لازم تختار محل أو تكتب رقم المحل أولاً.'));
+            }
+
+            return fetch(base + '/customer/select-shop/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
+            .then(({ ok, json }) => {
+                if (!ok || !json || !json.data || !json.data.shop_owner_id) {
+                    throw new Error((json && (json.message || json.detail)) ? (json.message || json.detail) : 'Failed');
+                }
+
+                _applyCustomerShopSelection(json.data);
+                return json.data;
+            });
         }
 
         function selectCustomerShop() {
@@ -864,12 +943,11 @@
             const tokenInputEl = document.getElementById('customerOrderToken');
             const token = _normalizeBearerToken((tokenInputEl || {}).value);
             const tokenErr = _validateHeaderToken(token);
-            const shopOwnerId = (document.getElementById('customerOrderShopSelect') || {}).value;
-            const shopNumber = ((document.getElementById('customerOrderShopNumber') || {}).value || '').trim();
+            const tokenRoleErr = _validateCustomerTokenRole(token);
 
             if (tokenErr) { alert(tokenErr); return; }
+            if (tokenRoleErr) { alert(tokenRoleErr); return; }
             if (tokenInputEl) tokenInputEl.value = token;
-            if (!shopOwnerId && !shopNumber) { alert('Select shop or enter shop number'); return; }
 
             const resultEl = document.getElementById('customerShopResult');
             if (!resultEl) return;
@@ -877,26 +955,8 @@
             resultEl.className = 'status connecting';
             resultEl.textContent = 'Choosing shop...';
 
-            const payload = shopOwnerId ? { shop_owner_id: Number(shopOwnerId) } : { shop_number: shopNumber };
-
-            fetch(base + '/customer/select-shop/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify(payload)
-            })
-            .then(r => r.json().then(j => ({ ok: r.ok, json: j })))
-            .then(({ ok, json }) => {
-                if (ok && json && json.data && json.data.shop_owner_id) {
-                    resultEl.className = 'status connected';
-                    resultEl.textContent = 'Selected: ' + (json.data.shop_name || '') + ' (' + (json.data.shop_number || json.data.shop_owner_id) + ')';
-                    localStorage.setItem('mr_delivery_shop_owner_id', String(json.data.shop_owner_id));
-                    const selectEl = document.getElementById('customerOrderShopSelect');
-                    if (selectEl) selectEl.value = String(json.data.shop_owner_id);
-                } else {
-                    resultEl.className = 'status disconnected';
-                    resultEl.textContent = (json && (json.message || json.detail)) ? (json.message || json.detail) : 'Failed';
-                }
-            })
+            _chooseCustomerShop(base, token)
+            .then(() => {})
             .catch(err => {
                 resultEl.className = 'status disconnected';
                 resultEl.textContent = 'Error: ' + err.message;
@@ -908,6 +968,7 @@
             const tokenInputEl = document.getElementById('customerOrderToken');
             const token = _normalizeBearerToken((tokenInputEl || {}).value);
             const tokenErr = _validateHeaderToken(token);
+            const tokenRoleErr = _validateCustomerTokenRole(token);
             const address = (document.getElementById('customerOrderAddress') || {}).value.trim();
             const notes = (document.getElementById('customerOrderNotes') || {}).value.trim();
             const container = document.getElementById('customerOrderBands');
@@ -917,46 +978,32 @@
             if (!address) { alert('العنوان مطلوب'); return; }
             if (items.length === 0) { alert('أضف بنداً واحداً على الأقل (تفاصيل الأوردر)'); return; }
             if (tokenErr) { alert(tokenErr); return; }
+            if (tokenRoleErr) { alert(tokenRoleErr); return; }
             if (tokenInputEl) tokenInputEl.value = token;
             const resultEl = document.getElementById('customerOrderResult');
             resultEl.style.display = 'block';
             resultEl.className = 'status connecting';
-            resultEl.textContent = 'جاري إرسال الطلب...';
-            fetch(base + '/customer/orders/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ address, items, notes })
+            resultEl.textContent = 'جاري اختيار المحل...';
+
+            _chooseCustomerShop(base, token)
+            .then(() => {
+                resultEl.textContent = 'جاري إرسال الطلب...';
+                return fetch(base + '/customer/orders/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ address, items, notes })
+                });
             })
             .then(r => r.json())
             .then(data => {
                 if (data.data && data.data.id) {
                     resultEl.className = 'status connected';
                     resultEl.innerHTML = 'تم إرسال الطلب بنجاح. رقم الطلب: <strong>' + (data.data.order_number || data.data.id) + '</strong>. افتح تبويب "شات الطلب" وادخل معرف الطلب: <strong>' + data.data.id + '</strong> للدردشة مع المحل.';
-                } else {
-                    const directShopError = data && data.shop;
-                    const nestedShopError = data && data.errors && data.errors.shop;
-                    const shopError = Array.isArray(nestedShopError)
-                        ? nestedShopError[0]
-                        : (nestedShopError || directShopError);
-
-                    if (shopError) {
-                        const shopInternalEl = document.getElementById('customerShopInternal');
-                        const shopResultEl = document.getElementById('customerShopResult');
-                        if (shopInternalEl) shopInternalEl.style.display = 'block';
-                        loadCustomerShops();
-                        if (shopResultEl) {
-                            shopResultEl.style.display = 'block';
-                            shopResultEl.className = 'status disconnected';
-                            shopResultEl.textContent = String(shopError);
-                        }
-                        resultEl.className = 'status disconnected';
-                        resultEl.textContent = 'لازم تختار المحل الأول، ثم اضغط Choose Shop وبعدها أعد إرسال الطلب.';
-                        return;
-                    }
-
-                    resultEl.className = 'status disconnected';
-                    resultEl.textContent = (data.message || 'خطأ') + (data.errors ? ' ' + JSON.stringify(data.errors) : '');
+                    return;
                 }
+
+                resultEl.className = 'status disconnected';
+                resultEl.textContent = (data.message || 'خطأ') + (data.errors ? ' ' + JSON.stringify(data.errors) : '');
             })
             .catch(err => {
                 resultEl.className = 'status disconnected';
@@ -1880,6 +1927,12 @@
             if (file) uploadChatMedia(file, 'audio');
             e.target.value = '';
         });
+
+        const customerOrderTokenEl = document.getElementById('customerOrderToken');
+        if (customerOrderTokenEl) {
+            customerOrderTokenEl.addEventListener('change', loadCustomerShops);
+            customerOrderTokenEl.addEventListener('blur', loadCustomerShops);
+        }
     </script>
 </body>
 </html>

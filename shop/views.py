@@ -3015,7 +3015,7 @@ def _build_public_shop_post_item(image, request, liked_ids=None):
 
 
 @api_view(['GET'])
-@permission_classes([IsCustomer])
+@permission_classes([AllowAny])
 def public_shops_list_view(request):
     """
     List active shops for customer search screen.
