@@ -1553,11 +1553,16 @@ def offer_list_view(request):
         page = paginator.paginate_queryset(queryset, request)
         if page is not None:
             serializer = OfferManagementSerializer(page, many=True, context={'request': request})
-            return paginator.get_paginated_response(serializer.data)
+            response = paginator.get_paginated_response(serializer.data)
+            response.data['data']['offers_count'] = paginator.page.paginator.count
+            return response
 
         serializer = OfferManagementSerializer(queryset, many=True, context={'request': request})
         return success_response(
-            data=serializer.data,
+            data={
+                'offers_count': queryset.count(),
+                'results': serializer.data,
+            },
             message=t(request, 'offers_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
