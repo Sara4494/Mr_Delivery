@@ -2801,6 +2801,69 @@ def _get_shop_rating_stats(shop):
     return round(weighted_avg, 1), total_count
 
 
+def _build_public_offer_serializer_context(request, offers):
+    shop_ids = sorted({offer.shop_owner_id for offer in offers if offer.shop_owner_id})
+    if not shop_ids:
+        return {'request': request, 'shop_rating_map': {}, 'shop_gallery_map': {}}
+
+    order_stats = {
+        row['order__shop_owner_id']: row
+        for row in (
+            OrderRating.objects
+            .filter(order__shop_owner_id__in=shop_ids)
+            .values('order__shop_owner_id')
+            .annotate(avg=Avg('shop_rating'), count=Count('id'))
+        )
+    }
+    review_stats = {
+        row['shop_owner_id']: row
+        for row in (
+            ShopReview.objects
+            .filter(shop_owner_id__in=shop_ids)
+            .values('shop_owner_id')
+            .annotate(avg=Avg('shop_rating'), count=Count('id'))
+        )
+    }
+
+    shop_rating_map = {}
+    shop_gallery_map = {}
+    for offer in offers:
+        shop_id = offer.shop_owner_id
+        if shop_id not in shop_rating_map:
+            order_row = order_stats.get(shop_id, {})
+            review_row = review_stats.get(shop_id, {})
+
+            order_count = int(order_row.get('count') or 0)
+            review_count = int(review_row.get('count') or 0)
+            total_count = order_count + review_count
+
+            if total_count:
+                order_avg = float(order_row.get('avg') or 0)
+                review_avg = float(review_row.get('avg') or 0)
+                weighted_avg = ((order_avg * order_count) + (review_avg * review_count)) / total_count
+                average = round(weighted_avg, 1)
+            else:
+                average = 0.0
+
+            shop_rating_map[shop_id] = {
+                'average': average,
+                'count': total_count,
+            }
+
+        if shop_id not in shop_gallery_map:
+            published_images = getattr(offer.shop_owner, 'published_gallery_images', []) or []
+            shop_gallery_map[shop_id] = {
+                'published_images_count': len(published_images),
+                'total_likes': sum(image.likes_count for image in published_images),
+            }
+
+    return {
+        'request': request,
+        'shop_rating_map': shop_rating_map,
+        'shop_gallery_map': shop_gallery_map,
+    }
+
+
 def _build_public_shop_payload(shop, request, published_images=None):
     if published_images is None:
         published_images = list(
@@ -3465,7 +3528,13 @@ def public_offers_view(request):
         is_active=True,
         start_date__lte=today,
         end_date__gte=today,
-    ).select_related('shop_owner', 'shop_owner__shop_category')
+    ).select_related('shop_owner', 'shop_owner__shop_category').prefetch_related(
+        Prefetch(
+            'shop_owner__gallery_images',
+            queryset=GalleryImage.objects.filter(status='published').order_by('-uploaded_at'),
+            to_attr='published_gallery_images',
+        )
+    )
 
     if shop_id:
         offers = offers.filter(shop_owner_id=shop_id)
@@ -3482,17 +3551,31 @@ def public_offers_view(request):
     page = paginator.paginate_queryset(offers, request)
 
     if page is not None:
+        page = list(page)
         offer_ids = [offer.id for offer in page]
         if offer_ids:
             Offer.objects.filter(id__in=offer_ids).update(views_count=F('views_count') + 1)
-        serializer = PublicOfferSerializer(page, many=True, context={'request': request})
+            for offer in page:
+                offer.views_count += 1
+        serializer = PublicOfferSerializer(
+            page,
+            many=True,
+            context=_build_public_offer_serializer_context(request, page),
+        )
         return paginator.get_paginated_response(serializer.data)
 
-    offer_ids = list(offers.values_list('id', flat=True))
+    offers = list(offers)
+    offer_ids = [offer.id for offer in offers]
     if offer_ids:
         Offer.objects.filter(id__in=offer_ids).update(views_count=F('views_count') + 1)
+        for offer in offers:
+            offer.views_count += 1
 
-    serializer = PublicOfferSerializer(offers, many=True, context={'request': request})
+    serializer = PublicOfferSerializer(
+        offers,
+        many=True,
+        context=_build_public_offer_serializer_context(request, offers),
+    )
     return success_response(
         data=serializer.data,
         message=t(request, 'offers_retrieved_successfully'),

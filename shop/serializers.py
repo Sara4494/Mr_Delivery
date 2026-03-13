@@ -1,3 +1,6 @@
+from datetime import datetime, time
+
+from django.utils import timezone
 from rest_framework import serializers
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
@@ -625,13 +628,19 @@ class PublicOfferSerializer(OfferBaseSerializer):
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
     shop_number = serializers.CharField(source='shop_owner.shop_number', read_only=True)
     shop_category = serializers.SerializerMethodField()
+    shop = serializers.SerializerMethodField()
+    display_image_url = serializers.SerializerMethodField()
+    views_count = serializers.IntegerField(read_only=True)
+    countdown = serializers.SerializerMethodField()
+    ui = serializers.SerializerMethodField()
 
     class Meta(OfferBaseSerializer.Meta):
         fields = [
             'id', 'shop_id', 'shop_name', 'shop_number', 'shop_category',
             'title', 'description', 'image', 'image_url',
             'discount_percentage', 'offer_percentage',
-            'start_date', 'end_date'
+            'start_date', 'end_date', 'views_count',
+            'display_image_url', 'shop', 'countdown', 'ui'
         ]
 
     def get_shop_category(self, obj):
@@ -639,6 +648,110 @@ class PublicOfferSerializer(OfferBaseSerializer):
         if not category:
             return None
         return {'id': category.id, 'name': category.name}
+
+    def _build_file_url(self, file_field):
+        if not file_field:
+            return None
+
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(file_field.url)
+        return file_field.url
+
+    def _get_shop_gallery_images(self, obj):
+        return getattr(obj.shop_owner, 'published_gallery_images', []) or []
+
+    def _get_shop_cover_image_url(self, obj):
+        published_images = self._get_shop_gallery_images(obj)
+        if not published_images:
+            return None
+        return self._build_file_url(published_images[0].image)
+
+    def _get_shop_rating_stats(self, obj):
+        rating_map = self.context.get('shop_rating_map', {})
+        return rating_map.get(
+            obj.shop_owner_id,
+            {'average': 0.0, 'count': 0},
+        )
+
+    def _get_shop_gallery_stats(self, obj):
+        gallery_map = self.context.get('shop_gallery_map', {})
+        if obj.shop_owner_id in gallery_map:
+            return gallery_map[obj.shop_owner_id]
+
+        published_images = self._get_shop_gallery_images(obj)
+        return {
+            'published_images_count': len(published_images),
+            'total_likes': sum(image.likes_count for image in published_images),
+        }
+
+    def _format_discount_percentage(self, value):
+        if value is None:
+            return '0'
+
+        text = format(value, 'f')
+        if '.' in text:
+            text = text.rstrip('0').rstrip('.')
+        return text or '0'
+
+    def _build_countdown_payload(self, obj):
+        request = self.context.get('request')
+        end_of_offer = timezone.make_aware(
+            datetime.combine(obj.end_date, time(23, 59, 59)),
+            timezone.get_current_timezone(),
+        )
+        remaining_seconds = max(int((end_of_offer - timezone.localtime()).total_seconds()), 0)
+        hours, remainder = divmod(remaining_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        formatted = f'{hours:02d}:{minutes:02d}:{seconds:02d}'
+
+        return {
+            'remaining_seconds': remaining_seconds,
+            'formatted': formatted,
+            'label': t(request, 'offer_ends_in_label', time_left=formatted),
+        }
+
+    def get_shop(self, obj):
+        shop_owner = obj.shop_owner
+        category = getattr(shop_owner, 'shop_category', None)
+
+        return {
+            'id': shop_owner.id,
+            'shop_name': shop_owner.shop_name,
+            'shop_number': shop_owner.shop_number,
+            'profile_image_url': self._build_file_url(shop_owner.profile_image),
+            'cover_image_url': self._get_shop_cover_image_url(obj),
+            'shop_category': (
+                {'id': category.id, 'name': category.name}
+                if category else None
+            ),
+            'rating': self._get_shop_rating_stats(obj),
+            'gallery': self._get_shop_gallery_stats(obj),
+        }
+
+    def get_display_image_url(self, obj):
+        return (
+            self.get_image_url(obj)
+            or self._get_shop_cover_image_url(obj)
+            or self._build_file_url(obj.shop_owner.profile_image)
+        )
+
+    def get_countdown(self, obj):
+        return self._build_countdown_payload(obj)
+
+    def get_ui(self, obj):
+        request = self.context.get('request')
+        countdown = self._build_countdown_payload(obj)
+
+        return {
+            'discount_badge': t(
+                request,
+                'offer_discount_badge_label',
+                discount_percentage=self._format_discount_percentage(obj.discount_percentage),
+            ),
+            'cta_label': t(request, 'offer_order_now_label'),
+            'ends_in_label': countdown['label'],
+        }
 
 
 class OfferManagementSerializer(OfferBaseSerializer):
