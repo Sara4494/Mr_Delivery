@@ -468,6 +468,7 @@ class Offer(models.Model):
     start_date = models.DateField(verbose_name="تاريخ بداية العرض")
     end_date = models.DateField(verbose_name="تاريخ انتهاء العرض")
     views_count = models.PositiveIntegerField(default=0, verbose_name="عدد المشاهدات")
+    likes_count = models.PositiveIntegerField(default=0, verbose_name="عدد الإعجابات")
     is_active = models.BooleanField(default=True, verbose_name="نشط")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
@@ -510,6 +511,27 @@ class Offer(models.Model):
 
     def __str__(self):
         return f"{self.title} - {self.shop_owner.shop_name}"
+
+
+class OfferLike(models.Model):
+    """Persistent likes for public offers."""
+
+    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name='likes', verbose_name="العرض")
+    user_identifier = models.CharField(max_length=100, verbose_name="معرف المستخدم")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإعجاب")
+
+    class Meta:
+        verbose_name = "إعجاب على عرض"
+        verbose_name_plural = "إعجابات العروض"
+        constraints = [
+            models.UniqueConstraint(fields=['offer', 'user_identifier'], name='unique_offer_like_per_user')
+        ]
+        indexes = [
+            models.Index(fields=['offer', 'user_identifier']),
+        ]
+
+    def __str__(self):
+        return f"{self.offer_id} - {self.user_identifier}"
 
 
 class OrderRating(models.Model):

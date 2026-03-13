@@ -10,7 +10,7 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
-    Invoice, Employee, Product, Category, Offer, OrderRating, ShopReview, PaymentMethod,
+    Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, ShopReview, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
 )
 from gallery.models import WorkSchedule, GalleryImage, ImageLike
@@ -1532,13 +1532,7 @@ def offer_list_view(request):
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 
-        queryset = Offer.objects.filter(shop_owner=shop_owner).select_related('shop_owner').prefetch_related(
-            Prefetch(
-                'shop_owner__gallery_images',
-                queryset=GalleryImage.objects.filter(status='published').order_by('-uploaded_at'),
-                to_attr='published_gallery_images',
-            )
-        )
+        queryset = Offer.objects.filter(shop_owner=shop_owner).select_related('shop_owner')
         queryset = _apply_offer_status_filter(queryset, status_filter)
         queryset = queryset if queryset is not None else Offer.objects.none()
 
@@ -1559,7 +1553,10 @@ def offer_list_view(request):
         page = paginator.paginate_queryset(queryset, request)
         if page is not None:
             serializer = OfferManagementSerializer(page, many=True, context={'request': request})
-            return paginator.get_paginated_response(serializer.data)
+            response = paginator.get_paginated_response(serializer.data)
+            response.data['data'].pop('next', None)
+            response.data['data'].pop('previous', None)
+            return response
 
         serializer = OfferManagementSerializer(queryset, many=True, context={'request': request})
         return success_response(
@@ -2809,8 +2806,9 @@ def _get_shop_rating_stats(shop):
 
 def _build_public_offer_serializer_context(request, offers):
     shop_ids = sorted({offer.shop_owner_id for offer in offers if offer.shop_owner_id})
+    offer_ids = sorted({offer.id for offer in offers if offer.id})
     if not shop_ids:
-        return {'request': request, 'shop_rating_map': {}, 'liked_image_ids': set()}
+        return {'request': request, 'shop_rating_map': {}, 'liked_offer_ids': set()}
 
     order_stats = {
         row['order__shop_owner_id']: row
@@ -2832,7 +2830,6 @@ def _build_public_offer_serializer_context(request, offers):
     }
 
     shop_rating_map = {}
-    cover_image_ids = set()
     for offer in offers:
         shop_id = offer.shop_owner_id
         if shop_id not in shop_rating_map:
@@ -2856,24 +2853,20 @@ def _build_public_offer_serializer_context(request, offers):
                 'count': total_count,
             }
 
-        published_images = getattr(offer.shop_owner, 'published_gallery_images', []) or []
-        if published_images:
-            cover_image_ids.add(published_images[0].id)
-
     actor_identifier = _resolve_like_actor_identifier(request)
-    liked_image_ids = set()
-    if actor_identifier and cover_image_ids:
-        liked_image_ids = set(
-            ImageLike.objects.filter(
+    liked_offer_ids = set()
+    if actor_identifier and offer_ids:
+        liked_offer_ids = set(
+            OfferLike.objects.filter(
                 user_identifier=actor_identifier,
-                image_id__in=cover_image_ids,
-            ).values_list('image_id', flat=True)
+                offer_id__in=offer_ids,
+            ).values_list('offer_id', flat=True)
         )
 
     return {
         'request': request,
         'shop_rating_map': shop_rating_map,
-        'liked_image_ids': liked_image_ids,
+        'liked_offer_ids': liked_offer_ids,
     }
 
 
@@ -3457,6 +3450,83 @@ def public_gallery_like_view(request, image_id):
     return success_response(
         data={'image_id': image.id, 'liked': False, 'likes_count': image.likes_count},
         message=t(request, 'like_removed_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request
+    )
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsCustomer])
+def public_offer_like_view(request, offer_id):
+    """
+    Like/unlike a public offer.
+    POST/DELETE /api/shops/offers/{offer_id}/like/
+    """
+    today = timezone.localdate()
+    offer = Offer.objects.filter(
+        id=offer_id,
+        shop_owner__is_active=True,
+        is_active=True,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).first()
+    if not offer:
+        return error_response(
+            message=t(request, 'offer_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request
+        )
+
+    actor_identifier = _resolve_like_actor_identifier(request)
+    if not actor_identifier:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'user_identifier': ['user_identifier is required for guest likes.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request
+        )
+
+    if request.method == 'POST':
+        try:
+            _, created = OfferLike.objects.get_or_create(
+                offer=offer,
+                user_identifier=actor_identifier,
+            )
+        except IntegrityError:
+            created = False
+
+        if not created:
+            return error_response(
+                message=t(request, 'this_offer_has_already_been_liked'),
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request
+            )
+
+        Offer.objects.filter(id=offer.id).update(likes_count=F('likes_count') + 1)
+        offer.refresh_from_db(fields=['likes_count'])
+        return success_response(
+            data={'offer_id': offer.id, 'liked': True, 'likes_count': offer.likes_count},
+            message=t(request, 'offer_liked_successfully'),
+            status_code=status.HTTP_201_CREATED,
+            request=request
+        )
+
+    deleted_count, _ = OfferLike.objects.filter(
+        offer=offer,
+        user_identifier=actor_identifier,
+    ).delete()
+    if deleted_count == 0:
+        return error_response(
+            message=t(request, 'this_offer_was_not_liked'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request
+        )
+
+    Offer.objects.filter(id=offer.id, likes_count__gt=0).update(likes_count=F('likes_count') - 1)
+    offer.refresh_from_db(fields=['likes_count'])
+    return success_response(
+        data={'offer_id': offer.id, 'liked': False, 'likes_count': offer.likes_count},
+        message=t(request, 'offer_like_removed_successfully'),
         status_code=status.HTTP_200_OK,
         request=request
     )
