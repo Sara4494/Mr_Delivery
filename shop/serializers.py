@@ -718,15 +718,30 @@ class PublicOfferSerializer(OfferBaseSerializer):
 class OfferManagementSerializer(OfferBaseSerializer):
     shop_owner_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
+    likes_count = serializers.SerializerMethodField()
 
     class Meta(OfferBaseSerializer.Meta):
         fields = [
             'id', 'shop_owner_id', 'shop_name', 'title', 'description',
             'image', 'image_url', 'discount_percentage', 'offer_percentage',
-            'start_date', 'end_date', 'status', 'views_count',
+            'start_date', 'end_date', 'status', 'views_count', 'likes_count',
             'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'status', 'views_count', 'created_at', 'updated_at']
+
+    def _get_shop_cover_image(self, obj):
+        published_images = getattr(obj.shop_owner, 'published_gallery_images', None)
+        if published_images is None:
+            published_images = list(
+                obj.shop_owner.gallery_images.filter(status='published').order_by('-uploaded_at')[:1]
+            )
+        return published_images[0] if published_images else None
+
+    def get_likes_count(self, obj):
+        cover_image = self._get_shop_cover_image(obj)
+        if not cover_image:
+            return 0
+        return int(cover_image.likes_count or 0)
 
 
 class OfferCreateUpdateSerializer(serializers.ModelSerializer):

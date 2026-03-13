@@ -1532,7 +1532,13 @@ def offer_list_view(request):
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 
-        queryset = Offer.objects.filter(shop_owner=shop_owner).select_related('shop_owner')
+        queryset = Offer.objects.filter(shop_owner=shop_owner).select_related('shop_owner').prefetch_related(
+            Prefetch(
+                'shop_owner__gallery_images',
+                queryset=GalleryImage.objects.filter(status='published').order_by('-uploaded_at'),
+                to_attr='published_gallery_images',
+            )
+        )
         queryset = _apply_offer_status_filter(queryset, status_filter)
         queryset = queryset if queryset is not None else Offer.objects.none()
 
@@ -1553,16 +1559,11 @@ def offer_list_view(request):
         page = paginator.paginate_queryset(queryset, request)
         if page is not None:
             serializer = OfferManagementSerializer(page, many=True, context={'request': request})
-            response = paginator.get_paginated_response(serializer.data)
-            response.data['data']['offers_count'] = paginator.page.paginator.count
-            return response
+            return paginator.get_paginated_response(serializer.data)
 
         serializer = OfferManagementSerializer(queryset, many=True, context={'request': request})
         return success_response(
-            data={
-                'offers_count': queryset.count(),
-                'results': serializer.data,
-            },
+            data=serializer.data,
             message=t(request, 'offers_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
