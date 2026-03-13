@@ -1,4 +1,6 @@
 from datetime import datetime, time
+import secrets
+import string
 
 from django.utils import timezone
 from rest_framework import serializers
@@ -406,6 +408,18 @@ def _items_to_db_value(value):
         return json.dumps(value, ensure_ascii=False)
     return value if value else '[]'
 
+
+def _generate_short_order_number():
+    alphabet = string.ascii_uppercase + string.digits
+    prefix = 'OD'
+
+    for _ in range(20):
+        order_number = prefix + ''.join(secrets.choice(alphabet) for _ in range(6))
+        if not Order.objects.filter(order_number=order_number).exists():
+            return order_number
+
+    raise serializers.ValidationError({'order_number': 'Failed to generate a unique order number.'})
+
 class OrderCreateSerializer(serializers.Serializer):
     """Serializer لإنشاء طلب جديد (من المحل)"""
     customer_id = serializers.IntegerField(required=True)
@@ -473,10 +487,7 @@ class OrderCreateSerializer(serializers.Serializer):
             driver = Driver.objects.get(id=driver_id, shops=shop_owner)
         
         # إنشاء رقم طلب تلقائي
-        import random
-        order_number = f"{shop_owner.shop_number}{random.randint(1000, 9999)}"
-        while Order.objects.filter(order_number=order_number).exists():
-            order_number = f"{shop_owner.shop_number}{random.randint(1000, 9999)}"
+        order_number = _generate_short_order_number()
         
         order = Order.objects.create(
             shop_owner=shop_owner,
@@ -503,16 +514,13 @@ class CustomerOrderCreateSerializer(serializers.Serializer):
     phone_number = serializers.CharField(required=False, allow_blank=True)
     
     def create(self, validated_data):
-        import random
         customer = self.context['customer']
         shop_owner = getattr(customer, 'shop_owner', None)
         if not shop_owner:
             raise serializers.ValidationError({'shop': 'العميل غير مرتبط بمحل. يرجى اختيار المحل أولاً.'})
         
         items_str = _items_to_db_value(validated_data['items'])
-        order_number = f"{shop_owner.shop_number}{random.randint(1000, 9999)}"
-        while Order.objects.filter(order_number=order_number).exists():
-            order_number = f"{shop_owner.shop_number}{random.randint(1000, 9999)}"
+        order_number = _generate_short_order_number()
         
         order = Order.objects.create(
             shop_owner=shop_owner,
