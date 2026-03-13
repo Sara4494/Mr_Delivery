@@ -626,28 +626,18 @@ class OfferBaseSerializer(serializers.ModelSerializer):
 class PublicOfferSerializer(OfferBaseSerializer):
     shop_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
-    shop_number = serializers.CharField(source='shop_owner.shop_number', read_only=True)
-    shop_category = serializers.SerializerMethodField()
-    shop = serializers.SerializerMethodField()
-    display_image_url = serializers.SerializerMethodField()
-    views_count = serializers.IntegerField(read_only=True)
-    countdown = serializers.SerializerMethodField()
-    ui = serializers.SerializerMethodField()
+    shop_logo_url = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    rating = serializers.SerializerMethodField()
+    likes_count = serializers.SerializerMethodField()
+    expires_in = serializers.SerializerMethodField()
 
     class Meta(OfferBaseSerializer.Meta):
         fields = [
-            'id', 'shop_id', 'shop_name', 'shop_number', 'shop_category',
-            'title', 'description', 'image', 'image_url',
-            'discount_percentage', 'offer_percentage',
-            'start_date', 'end_date', 'views_count',
-            'display_image_url', 'shop', 'countdown', 'ui'
+            'id', 'shop_id', 'shop_name', 'shop_logo_url',
+            'title', 'description', 'image_url',
+            'discount_percentage', 'rating', 'likes_count', 'expires_in'
         ]
-
-    def get_shop_category(self, obj):
-        category = getattr(obj.shop_owner, 'shop_category', None)
-        if not category:
-            return None
-        return {'id': category.id, 'name': category.name}
 
     def _build_file_url(self, file_field):
         if not file_field:
@@ -685,15 +675,6 @@ class PublicOfferSerializer(OfferBaseSerializer):
             'total_likes': sum(image.likes_count for image in published_images),
         }
 
-    def _format_discount_percentage(self, value):
-        if value is None:
-            return '0'
-
-        text = format(value, 'f')
-        if '.' in text:
-            text = text.rstrip('0').rstrip('.')
-        return text or '0'
-
     def _build_countdown_payload(self, obj):
         request = self.context.get('request')
         end_of_offer = timezone.make_aware(
@@ -711,47 +692,27 @@ class PublicOfferSerializer(OfferBaseSerializer):
             'label': t(request, 'offer_ends_in_label', time_left=formatted),
         }
 
-    def get_shop(self, obj):
-        shop_owner = obj.shop_owner
-        category = getattr(shop_owner, 'shop_category', None)
-
-        return {
-            'id': shop_owner.id,
-            'shop_name': shop_owner.shop_name,
-            'shop_number': shop_owner.shop_number,
-            'profile_image_url': self._build_file_url(shop_owner.profile_image),
-            'cover_image_url': self._get_shop_cover_image_url(obj),
-            'shop_category': (
-                {'id': category.id, 'name': category.name}
-                if category else None
-            ),
-            'rating': self._get_shop_rating_stats(obj),
-            'gallery': self._get_shop_gallery_stats(obj),
-        }
-
-    def get_display_image_url(self, obj):
+    def _get_display_image_url(self, obj):
         return (
-            self.get_image_url(obj)
+            super().get_image_url(obj)
             or self._get_shop_cover_image_url(obj)
             or self._build_file_url(obj.shop_owner.profile_image)
         )
 
-    def get_countdown(self, obj):
-        return self._build_countdown_payload(obj)
+    def get_shop_logo_url(self, obj):
+        return self._build_file_url(obj.shop_owner.profile_image)
 
-    def get_ui(self, obj):
-        request = self.context.get('request')
-        countdown = self._build_countdown_payload(obj)
+    def get_image_url(self, obj):
+        return self._get_display_image_url(obj)
 
-        return {
-            'discount_badge': t(
-                request,
-                'offer_discount_badge_label',
-                discount_percentage=self._format_discount_percentage(obj.discount_percentage),
-            ),
-            'cta_label': t(request, 'offer_order_now_label'),
-            'ends_in_label': countdown['label'],
-        }
+    def get_rating(self, obj):
+        return self._get_shop_rating_stats(obj)['average']
+
+    def get_likes_count(self, obj):
+        return self._get_shop_gallery_stats(obj)['total_likes']
+
+    def get_expires_in(self, obj):
+        return self._build_countdown_payload(obj)['label']
 
 
 class OfferManagementSerializer(OfferBaseSerializer):

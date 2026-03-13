@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "d29ad898-76f3-43ad-b538-71aafd35ba56",
+    "_postman_id": "24aab302-d01f-490b-917e-16240e4dcbd7",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-d29ad898-76f3-43ad-b538-71aafd35ba56?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-24aab302-d01f-490b-917e-16240e4dcbd7?source=collection_link"
   },
   "item": [
     {
@@ -691,7 +691,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/offers/?shop_id=&shop_category_id=&search=&page=1&page_size=20",
+                  "raw": "{{base_url}}/api/shops/offers/?shop_id=&shop_category_id=&search=&page=1&page_size=20&lang=ar",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -705,16 +705,19 @@
                     {
                       "key": "shop_id",
                       "value": "",
+                      "description": "Filter offers by shop ID",
                       "disabled": true
                     },
                     {
                       "key": "shop_category_id",
                       "value": "",
+                      "description": "Filter offers by shop category ID",
                       "disabled": true
                     },
                     {
                       "key": "search",
-                      "value": ""
+                      "value": "",
+                      "description": "Search in offer title or description"
                     },
                     {
                       "key": "page",
@@ -723,12 +726,82 @@
                     {
                       "key": "page_size",
                       "value": "20"
+                    },
+                    {
+                      "key": "lang",
+                      "value": "ar",
+                      "description": "Optional response language: ar or en"
                     }
                   ]
                 },
-                "description": "يعرض العروض النشطة فقط للعميل. كل مرة يفتح العميل صفحة من النتائج تتحسب مشاهدة لكل العروض الظاهرة في هذه الصفحة، لكن views_count لا يظهر في response الخاص بالعميل."
+                "description": "Lists active customer-facing offers using a flat, minimal card payload for the app. Returns only the fields needed for the offer card: shop_id, shop_name, shop_logo_url, title, description, image_url, discount_percentage, rating, likes_count, and expires_in."
               },
-              "response": []
+              "response": [
+                {
+                  "name": "200 OK - Public Offers App Card",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{customer_token}}",
+                        "type": "text"
+                      }
+                    ],
+                    "url": {
+                      "raw": "{{base_url}}/api/shops/offers/?shop_id=&shop_category_id=&search=&page=1&page_size=20&lang=ar",
+                      "host": [
+                        "{{base_url}}"
+                      ],
+                      "path": [
+                        "api",
+                        "shops",
+                        "offers",
+                        ""
+                      ],
+                      "query": [
+                        {
+                          "key": "shop_id",
+                          "value": "",
+                          "disabled": true
+                        },
+                        {
+                          "key": "shop_category_id",
+                          "value": "",
+                          "disabled": true
+                        },
+                        {
+                          "key": "search",
+                          "value": ""
+                        },
+                        {
+                          "key": "page",
+                          "value": "1"
+                        },
+                        {
+                          "key": "page_size",
+                          "value": "20"
+                        },
+                        {
+                          "key": "lang",
+                          "value": "ar"
+                        }
+                      ]
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"status\": 200,\n  \"message\": \"تم جلب العروض بنجاح\",\n  \"data\": {\n    \"count\": 1,\n    \"next\": null,\n    \"previous\": null,\n    \"results\": [\n      {\n        \"id\": 12,\n        \"shop_id\": 3,\n        \"shop_name\": \"بيتزا هت\",\n        \"shop_logo_url\": \"{{base_url}}/media/shop_profiles/shop-3.jpg\",\n        \"title\": \"بيتزا هت\",\n        \"description\": \"خصم 30% على وجبات الشاورما\",\n        \"image_url\": \"{{base_url}}/media/offer_images/offer-12.jpg\",\n        \"discount_percentage\": \"30.00\",\n        \"rating\": 4.8,\n        \"likes_count\": 128,\n        \"expires_in\": \"ينتهي خلال 17:30:42\"\n      }\n    ]\n  }\n}"
+                }
+              ]
             }
           ]
         },
