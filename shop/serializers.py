@@ -376,6 +376,29 @@ class OrderSerializer(serializers.ModelSerializer):
         return None
 
 
+class ShopOrderListSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(source='customer.name', read_only=True)
+    customer_phone_number = serializers.CharField(source='customer.phone_number', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id',
+            'order_number',
+            'customer_name',
+            'customer_phone_number',
+            'address',
+            'status',
+            'status_display',
+            'total_amount',
+            'delivery_fee',
+            'unread_messages_count',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
 def _items_to_db_value(value):
     """تحويل items من قائمة أو نص إلى JSON string للحفظ"""
     import json

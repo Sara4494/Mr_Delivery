@@ -25,6 +25,7 @@ from .serializers import (
     DriverCreateSerializer,
     DriverLocationUpdateSerializer,
     OrderSerializer,
+    ShopOrderListSerializer,
     OrderCreateSerializer,
     CustomerOrderCreateSerializer,
     InvoiceSerializer,
@@ -1658,12 +1659,14 @@ def order_list_view(request):
     POST /api/shop/orders/ - إنشاء طلب جديد (من المحل)
     """
     shop_owner = _get_shop_owner_from_request(request)
+    if not shop_owner:
+        return _owner_or_employee_forbidden(request)
     
     if request.method == 'GET':
         status_filter = request.query_params.get('status')
         search_query = request.query_params.get('search')
         
-        queryset = Order.objects.filter(shop_owner=shop_owner).select_related('customer', 'driver')
+        queryset = Order.objects.filter(shop_owner=shop_owner).select_related('customer')
         
         if status_filter:
             queryset = queryset.filter(status=status_filter)
@@ -1685,10 +1688,10 @@ def order_list_view(request):
         page = paginator.paginate_queryset(queryset, request)
         
         if page is not None:
-            serializer = OrderSerializer(page, many=True, context={'request': request})
+            serializer = ShopOrderListSerializer(page, many=True, context={'request': request})
             return paginator.get_paginated_response(serializer.data)
         
-        serializer = OrderSerializer(queryset, many=True, context={'request': request})
+        serializer = ShopOrderListSerializer(queryset, many=True, context={'request': request})
         return success_response(
             data=serializer.data,
             message=t(request, 'orders_retrieved_successfully'),
@@ -1717,10 +1720,7 @@ def order_list_view(request):
 
 def _get_shop_owner_from_request(request):
     """صاحب المحل من الطلب (صاحب محل أو موظف)"""
-    user = request.user
-    if hasattr(user, 'shop_owner_id') and user.shop_owner_id:
-        return user.shop_owner
-    return user
+    return _resolve_owner_for_owner_or_employee(request.user)
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
@@ -1733,6 +1733,8 @@ def order_detail_view(request, order_id):
     DELETE /api/shop/orders/{id}/ - حذف طلب
     """
     shop_owner = _get_shop_owner_from_request(request)
+    if not shop_owner:
+        return _owner_or_employee_forbidden(request)
     
     try:
         order = Order.objects.get(id=order_id, shop_owner=shop_owner)
