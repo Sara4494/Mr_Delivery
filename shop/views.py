@@ -2804,7 +2804,7 @@ def _get_shop_rating_stats(shop):
 def _build_public_offer_serializer_context(request, offers):
     shop_ids = sorted({offer.shop_owner_id for offer in offers if offer.shop_owner_id})
     if not shop_ids:
-        return {'request': request, 'shop_rating_map': {}, 'shop_gallery_map': {}}
+        return {'request': request, 'shop_rating_map': {}, 'liked_image_ids': set()}
 
     order_stats = {
         row['order__shop_owner_id']: row
@@ -2826,7 +2826,7 @@ def _build_public_offer_serializer_context(request, offers):
     }
 
     shop_rating_map = {}
-    shop_gallery_map = {}
+    cover_image_ids = set()
     for offer in offers:
         shop_id = offer.shop_owner_id
         if shop_id not in shop_rating_map:
@@ -2850,17 +2850,24 @@ def _build_public_offer_serializer_context(request, offers):
                 'count': total_count,
             }
 
-        if shop_id not in shop_gallery_map:
-            published_images = getattr(offer.shop_owner, 'published_gallery_images', []) or []
-            shop_gallery_map[shop_id] = {
-                'published_images_count': len(published_images),
-                'total_likes': sum(image.likes_count for image in published_images),
-            }
+        published_images = getattr(offer.shop_owner, 'published_gallery_images', []) or []
+        if published_images:
+            cover_image_ids.add(published_images[0].id)
+
+    actor_identifier = _resolve_like_actor_identifier(request)
+    liked_image_ids = set()
+    if actor_identifier and cover_image_ids:
+        liked_image_ids = set(
+            ImageLike.objects.filter(
+                user_identifier=actor_identifier,
+                image_id__in=cover_image_ids,
+            ).values_list('image_id', flat=True)
+        )
 
     return {
         'request': request,
         'shop_rating_map': shop_rating_map,
-        'shop_gallery_map': shop_gallery_map,
+        'liked_image_ids': liked_image_ids,
     }
 
 

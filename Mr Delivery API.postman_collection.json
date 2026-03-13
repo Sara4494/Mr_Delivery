@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "24aab302-d01f-490b-917e-16240e4dcbd7",
+    "_postman_id": "1178077b-e6dd-4f57-8e69-2b0d24fe14be",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-24aab302-d01f-490b-917e-16240e4dcbd7?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-1178077b-e6dd-4f57-8e69-2b0d24fe14be?source=collection_link"
   },
   "item": [
     {
@@ -152,7 +152,6 @@
                     {
                       "listen": "test",
                       "script": {
-                        "type": "text/javascript",
                         "exec": [
                           "if (pm.response.code === 200) {",
                           "    var jsonData = pm.response.json();",
@@ -160,7 +159,10 @@
                           "        pm.environment.set(\"customer_token\", jsonData.data.access);",
                           "    }",
                           "}"
-                        ]
+                        ],
+                        "type": "text/javascript",
+                        "packages": {},
+                        "requests": {}
                       }
                     }
                   ],
@@ -174,7 +176,7 @@
                     ],
                     "body": {
                       "mode": "raw",
-                      "raw": "{\n    \"role\": \"customer\",\n    \"phone_number\": \"01012345678\",\n    \"password\": \"password123\"\n}"
+                      "raw": "{\n    \"role\": \"customer\",\n    \"phone_number\": \"+201069646266\",\n    \"password\": \"123123\"\n}"
                     },
                     "url": {
                       "raw": "{{base_url}}/api/auth/login/",
@@ -363,9 +365,15 @@
               "name": "shop-categories",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/?search=&open_now=false&with_gallery=false&page=1&page_size=20",
+                  "raw": "{{base_url}}/api/shops/?shop_category_name=&open_now=false&with_gallery=false&page=1&page_size=20",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -378,7 +386,8 @@
                     {
                       "key": "search",
                       "value": "",
-                      "description": "Search by shop name, owner, shop number, or description"
+                      "description": "Search by shop name, owner, shop number, or description",
+                      "disabled": true
                     },
                     {
                       "key": "shop_category_id",
@@ -389,8 +398,7 @@
                     {
                       "key": "shop_category_name",
                       "value": "",
-                      "description": "اسم تصنيف المحل",
-                      "disabled": true
+                      "description": "عروض"
                     },
                     {
                       "key": "open_now",
@@ -417,7 +425,13 @@
               "name": "قائمة تصنيفات المحلات",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
                 "url": {
                   "raw": "{{base_url}}/api/shops/shop-categories/",
                   "host": [
@@ -691,7 +705,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shops/offers/?shop_id=&shop_category_id=&search=&page=1&page_size=20&lang=ar",
+                  "raw": "{{base_url}}/api/shops/offers/?search=&page=1&page_size=20&lang=ar",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -734,7 +748,7 @@
                     }
                   ]
                 },
-                "description": "Lists active customer-facing offers using a flat, minimal card payload for the app. Returns only the fields needed for the offer card: shop_id, shop_name, shop_logo_url, title, description, image_url, discount_percentage, rating, likes_count, and expires_in."
+                "description": "Lists active customer-facing offers using a flat, minimal card payload for the app. Returns only the fields needed for the offer card: shop_id, shop_name, shop_logo_url, title, description, image_url, discount_percentage, rating, and is_liked."
               },
               "response": [
                 {
@@ -799,7 +813,7 @@
                     }
                   ],
                   "cookie": [],
-                  "body": "{\n  \"status\": 200,\n  \"message\": \"تم جلب العروض بنجاح\",\n  \"data\": {\n    \"count\": 1,\n    \"next\": null,\n    \"previous\": null,\n    \"results\": [\n      {\n        \"id\": 12,\n        \"shop_id\": 3,\n        \"shop_name\": \"بيتزا هت\",\n        \"shop_logo_url\": \"{{base_url}}/media/shop_profiles/shop-3.jpg\",\n        \"title\": \"بيتزا هت\",\n        \"description\": \"خصم 30% على وجبات الشاورما\",\n        \"image_url\": \"{{base_url}}/media/offer_images/offer-12.jpg\",\n        \"discount_percentage\": \"30.00\",\n        \"rating\": 4.8,\n        \"likes_count\": 128,\n        \"expires_in\": \"ينتهي خلال 17:30:42\"\n      }\n    ]\n  }\n}"
+                  "body": "{\n  \"status\": 200,\n  \"message\": \"تم جلب العروض بنجاح\",\n  \"data\": {\n    \"count\": 1,\n    \"next\": null,\n    \"previous\": null,\n    \"results\": [\n      {\n        \"id\": 12,\n        \"shop_id\": 3,\n        \"shop_name\": \"بيتزا هت\",\n        \"shop_logo_url\": \"{{base_url}}/media/shop_profiles/shop-3.jpg\",\n        \"title\": \"بيتزا هت\",\n        \"description\": \"خصم 30% على وجبات الشاورما\",\n        \"image_url\": \"{{base_url}}/media/offer_images/offer-12.jpg\",\n        \"discount_percentage\": \"30.00\",\n        \"rating\": 4.8,\n        \"is_liked\": false\n      }\n    ]\n  }\n}"
                 }
               ]
             }

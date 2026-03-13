@@ -1,6 +1,3 @@
-from datetime import datetime, time
-
-from django.utils import timezone
 from rest_framework import serializers
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
@@ -629,14 +626,13 @@ class PublicOfferSerializer(OfferBaseSerializer):
     shop_logo_url = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     rating = serializers.SerializerMethodField()
-    likes_count = serializers.SerializerMethodField()
-    expires_in = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
 
     class Meta(OfferBaseSerializer.Meta):
         fields = [
             'id', 'shop_id', 'shop_name', 'shop_logo_url',
             'title', 'description', 'image_url',
-            'discount_percentage', 'rating', 'likes_count', 'expires_in'
+            'discount_percentage', 'rating', 'is_liked'
         ]
 
     def _build_file_url(self, file_field):
@@ -651,11 +647,17 @@ class PublicOfferSerializer(OfferBaseSerializer):
     def _get_shop_gallery_images(self, obj):
         return getattr(obj.shop_owner, 'published_gallery_images', []) or []
 
-    def _get_shop_cover_image_url(self, obj):
+    def _get_shop_cover_image(self, obj):
         published_images = self._get_shop_gallery_images(obj)
         if not published_images:
             return None
-        return self._build_file_url(published_images[0].image)
+        return published_images[0]
+
+    def _get_shop_cover_image_url(self, obj):
+        cover_image = self._get_shop_cover_image(obj)
+        if not cover_image:
+            return None
+        return self._build_file_url(cover_image.image)
 
     def _get_shop_rating_stats(self, obj):
         rating_map = self.context.get('shop_rating_map', {})
@@ -663,34 +665,6 @@ class PublicOfferSerializer(OfferBaseSerializer):
             obj.shop_owner_id,
             {'average': 0.0, 'count': 0},
         )
-
-    def _get_shop_gallery_stats(self, obj):
-        gallery_map = self.context.get('shop_gallery_map', {})
-        if obj.shop_owner_id in gallery_map:
-            return gallery_map[obj.shop_owner_id]
-
-        published_images = self._get_shop_gallery_images(obj)
-        return {
-            'published_images_count': len(published_images),
-            'total_likes': sum(image.likes_count for image in published_images),
-        }
-
-    def _build_countdown_payload(self, obj):
-        request = self.context.get('request')
-        end_of_offer = timezone.make_aware(
-            datetime.combine(obj.end_date, time(23, 59, 59)),
-            timezone.get_current_timezone(),
-        )
-        remaining_seconds = max(int((end_of_offer - timezone.localtime()).total_seconds()), 0)
-        hours, remainder = divmod(remaining_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        formatted = f'{hours:02d}:{minutes:02d}:{seconds:02d}'
-
-        return {
-            'remaining_seconds': remaining_seconds,
-            'formatted': formatted,
-            'label': t(request, 'offer_ends_in_label', time_left=formatted),
-        }
 
     def _get_display_image_url(self, obj):
         return (
@@ -708,11 +682,12 @@ class PublicOfferSerializer(OfferBaseSerializer):
     def get_rating(self, obj):
         return self._get_shop_rating_stats(obj)['average']
 
-    def get_likes_count(self, obj):
-        return self._get_shop_gallery_stats(obj)['total_likes']
-
-    def get_expires_in(self, obj):
-        return self._build_countdown_payload(obj)['label']
+    def get_is_liked(self, obj):
+        cover_image = self._get_shop_cover_image(obj)
+        if not cover_image:
+            return False
+        liked_image_ids = self.context.get('liked_image_ids', set())
+        return cover_image.id in liked_image_ids
 
 
 class OfferManagementSerializer(OfferBaseSerializer):
