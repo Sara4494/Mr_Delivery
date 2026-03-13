@@ -1,3 +1,6 @@
+from datetime import datetime, time
+
+from django.utils import timezone
 from rest_framework import serializers
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
@@ -626,13 +629,16 @@ class PublicOfferSerializer(OfferBaseSerializer):
     shop_logo_url = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     rating = serializers.SerializerMethodField()
+    likes_count = serializers.SerializerMethodField()
     is_liked = serializers.SerializerMethodField()
+    expires_in = serializers.SerializerMethodField()
 
     class Meta(OfferBaseSerializer.Meta):
         fields = [
             'id', 'shop_id', 'shop_name', 'shop_logo_url',
             'title', 'description', 'image_url',
-            'discount_percentage', 'rating', 'is_liked'
+            'discount_percentage', 'rating', 'likes_count', 'is_liked',
+            'expires_in'
         ]
 
     def _build_file_url(self, file_field):
@@ -666,6 +672,16 @@ class PublicOfferSerializer(OfferBaseSerializer):
             {'average': 0.0, 'count': 0},
         )
 
+    def _get_remaining_time(self, obj):
+        end_of_offer = timezone.make_aware(
+            datetime.combine(obj.end_date, time(23, 59, 59)),
+            timezone.get_current_timezone(),
+        )
+        remaining_seconds = max(int((end_of_offer - timezone.localtime()).total_seconds()), 0)
+        hours, remainder = divmod(remaining_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f'{hours:02d}:{minutes:02d}:{seconds:02d}'
+
     def _get_display_image_url(self, obj):
         return (
             super().get_image_url(obj)
@@ -682,12 +698,21 @@ class PublicOfferSerializer(OfferBaseSerializer):
     def get_rating(self, obj):
         return self._get_shop_rating_stats(obj)['average']
 
+    def get_likes_count(self, obj):
+        cover_image = self._get_shop_cover_image(obj)
+        if not cover_image:
+            return 0
+        return int(cover_image.likes_count or 0)
+
     def get_is_liked(self, obj):
         cover_image = self._get_shop_cover_image(obj)
         if not cover_image:
             return False
         liked_image_ids = self.context.get('liked_image_ids', set())
         return cover_image.id in liked_image_ids
+
+    def get_expires_in(self, obj):
+        return self._get_remaining_time(obj)
 
 
 class OfferManagementSerializer(OfferBaseSerializer):
