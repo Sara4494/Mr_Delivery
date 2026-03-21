@@ -642,6 +642,17 @@ class OrderConsumer(AsyncWebsocketConsumer):
             },
             'تم الاتصال بنجاح'
         )))
+
+        orders_snapshot = await self.get_orders_snapshot()
+        await self.send(text_data=json.dumps(_with_localized_message(
+            {
+                'type': 'orders_snapshot',
+                'data': {
+                    'orders': orders_snapshot,
+                },
+            },
+            'تمت مزامنة قائمة الطلبات بنجاح'
+        )))
     
     async def disconnect(self, close_code):
         """قطع الاتصال"""
@@ -682,6 +693,16 @@ class OrderConsumer(AsyncWebsocketConsumer):
             'type': 'driver_status_updated',
             'data': event['data']
         }))
+
+    @database_sync_to_async
+    def get_orders_snapshot(self):
+        orders = (
+            Order.objects
+            .filter(shop_owner_id=self.shop_owner_id)
+            .select_related('customer', 'employee', 'driver')
+            .order_by('-updated_at')[:50]
+        )
+        return OrderSerializer(orders, many=True).data
 
 
 class CustomerOrderConsumer(AsyncWebsocketConsumer):

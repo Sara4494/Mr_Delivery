@@ -1322,6 +1322,42 @@
             state.orders.sort((a, b) => orderSortValue(b) - orderSortValue(a));
         }
 
+        function getFilteredOrders() {
+            const search = state.searchTerm.trim().toLowerCase();
+            const statusMap = {
+                all: '',
+                new: 'new',
+                on_way: 'on_way',
+                cancelled: 'cancelled',
+            };
+            const activeStatusValue = statusMap[state.activeStatus] || '';
+
+            return state.orders.filter((order) => {
+                const statusMatches = !activeStatusValue || order.status === activeStatusValue;
+                if (!statusMatches) {
+                    return false;
+                }
+
+                if (!search) {
+                    return true;
+                }
+
+                const haystack = [
+                    order.id,
+                    order.orderNumber,
+                    order.customerName,
+                    order.customerPhone,
+                    order.preview,
+                    order.statusDisplay,
+                ]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase();
+
+                return haystack.includes(search);
+            });
+        }
+
         function upsertOrder(orderPayload) {
             const normalized = normalizeOrder(orderPayload);
             const existingIndex = state.orders.findIndex((item) => Number(item.id) === Number(normalized.id));
@@ -1347,8 +1383,9 @@
 
         function renderOrders() {
             els.ordersList.innerHTML = '';
+            const visibleOrders = getFilteredOrders();
 
-            if (!state.orders.length) {
+            if (!visibleOrders.length) {
                 const empty = document.createElement('div');
                 empty.className = 'empty-state';
                 empty.textContent = 'لا توجد طلبات مطابقة حاليًا.';
@@ -1356,7 +1393,7 @@
                 return;
             }
 
-            for (const order of state.orders) {
+            for (const order of visibleOrders) {
                 const card = document.createElement('button');
                 card.type = 'button';
                 card.className = `order-card${Number(order.id) === Number(state.selectedOrderId) ? ' active' : ''}`;
@@ -1708,6 +1745,7 @@
             }
             els.loginOverlay.classList.add('hidden');
             updateShopIdentity();
+            setRealtimeHint('جارٍ مزامنة قائمة الطلبات عبر السوكت...');
             await loadOrders();
             connectOrdersSocket();
         }
@@ -1735,66 +1773,39 @@
         }
 
         async function loadOrders() {
-            if (!state.accessToken) {
-                return;
-            }
+            sortOrders();
+            const visibleOrders = getFilteredOrders();
+            renderOrders();
 
-            const params = new URLSearchParams({
-                page_size: '50',
-                sort_by: '-updated_at',
-            });
-
-            const statusMap = {
-                all: '',
-                new: 'new',
-                on_way: 'on_way',
-                cancelled: 'cancelled',
-            };
-
-            if (statusMap[state.activeStatus]) {
-                params.set('status', statusMap[state.activeStatus]);
-            }
-            if (state.searchTerm.trim()) {
-                params.set('search', state.searchTerm.trim());
-            }
-
-            try {
-                const payload = await apiRequest(`/api/shop/orders/?${params.toString()}`);
-                const results = Array.isArray(payload.data)
-                    ? payload.data
-                    : Array.isArray(payload.data?.results)
-                        ? payload.data.results
-                        : [];
-
-                state.orders = results.map(normalizeOrder);
-                sortOrders();
-                renderOrders();
-
-                if (state.orders.length) {
-                    const currentExists = state.orders.some((order) => Number(order.id) === Number(state.selectedOrderId));
-                    const nextId = currentExists ? state.selectedOrderId : state.orders[0].id;
-                    await selectOrder(nextId, { skipOrderReload: currentExists && state.selectedOrder });
-                } else {
-                    state.selectedOrderId = null;
-                    state.selectedOrder = null;
-                    state.chatMessages = [];
-                    closeChatSocket(false);
-                    renderSelectedOrder();
-                }
-            } catch (error) {
-                showToast(error.message || 'تعذر تحميل الطلبات', 'error');
+            if (visibleOrders.length) {
+                const currentExists = visibleOrders.some((order) => Number(order.id) === Number(state.selectedOrderId));
+                const nextId = currentExists ? state.selectedOrderId : visibleOrders[0].id;
+                await selectOrder(nextId, {
+                    skipOrderReload: currentExists && state.selectedOrder,
+                    skipChatReconnect: currentExists,
+                });
+            } else {
+                state.selectedOrderId = null;
+                state.selectedOrder = null;
+                state.chatMessages = [];
+                closeChatSocket(false);
+                renderSelectedOrder();
             }
         }
 
         async function selectOrder(orderId, options = {}) {
-            state.selectedOrderId = Number(orderId);
+            const nextOrderId = Number(orderId);
+            const sameOrderSelected = Number(state.selectedOrderId) === nextOrderId;
+            state.selectedOrderId = nextOrderId;
             renderOrders();
             if (!options.skipOrderReload) {
                 await loadOrderDetail(orderId);
             } else {
                 renderSelectedOrder();
             }
-            connectChatSocket(orderId);
+            if (!options.skipChatReconnect && (!sameOrderSelected || !state.chatSocket)) {
+                connectChatSocket(orderId);
+            }
         }
 
         async function loadOrderDetail(orderId) {
@@ -1873,8 +1884,19 @@
         function handleOrdersSocketMessage(payload) {
             switch (payload.type) {
                 case 'connection':
-                    setRealtimeHint('تمت مزامنة قائمة الطلبات بنجاح.');
+                    setRealtimeHint('تم فتح قناة طلبات المحل.');
                     break;
+                case 'orders_snapshot': {
+                    const snapshotOrders = Array.isArray(payload.data)
+                        ? payload.data
+                        : Array.isArray(payload.data?.orders)
+                            ? payload.data.orders
+                            : [];
+                    state.orders = snapshotOrders.map(normalizeOrder);
+                    loadOrders();
+                    setRealtimeHint(payload.message || 'تمت مزامنة قائمة الطلبات بنجاح.');
+                    break;
+                }
                 case 'new_order':
                     upsertOrder(payload.data || {});
                     setRealtimeHint(`طلب جديد #${payload.data?.id || ''}`);
