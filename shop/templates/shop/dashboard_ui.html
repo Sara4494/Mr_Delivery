@@ -1015,7 +1015,7 @@
         const state = {
             accessToken: localStorage.getItem('mr_delivery_shop_access') || '',
             refreshToken: localStorage.getItem('mr_delivery_shop_refresh') || '',
-            shopOwner: parseStoredJson('mr_delivery_shop_user'),
+            shopOwner: normalizeShopOwner(parseStoredJson('mr_delivery_shop_user')),
             orders: [],
             selectedOrderId: null,
             selectedOrder: null,
@@ -1077,6 +1077,40 @@
             } catch (error) {
                 return null;
             }
+        }
+
+        function normalizeShopOwner(input) {
+            if (!input || typeof input !== 'object') {
+                return null;
+            }
+
+            const id = Number(input.id || input.shop_owner_id || 0);
+            if (!id) {
+                return null;
+            }
+
+            return {
+                id,
+                owner_name: input.owner_name || input.name || input.shop_owner_name || '',
+                shop_name: input.shop_name || input.store_name || '',
+                shop_number: input.shop_number || '',
+                shop_category_id: input.shop_category_id || null,
+                shop_category_name: input.shop_category_name || '',
+            };
+        }
+
+        function extractShopAuthSession(payload) {
+            const data = payload?.data || payload || {};
+            return {
+                accessToken: data.access || '',
+                refreshToken: data.refresh || '',
+                shopOwner: normalizeShopOwner(
+                    data.shop_owner
+                    || data.user
+                    || data.shopOwner
+                    || null
+                ),
+            };
         }
 
         function setSocketStatus(kind, status) {
@@ -1643,14 +1677,24 @@
                     },
                 });
 
-                state.accessToken = payload.data?.access || '';
-                state.refreshToken = payload.data?.refresh || '';
-                state.shopOwner = payload.data?.user || null;
+                const session = extractShopAuthSession(payload);
+                state.accessToken = session.accessToken;
+                state.refreshToken = session.refreshToken;
+                state.shopOwner = session.shopOwner;
+
+                if (!state.accessToken || !state.shopOwner?.id) {
+                    throw new Error('تم تسجيل الدخول لكن بيانات المحل غير مكتملة في الاستجابة');
+                }
+
                 persistSession();
                 setLoginStatus('connected', 'تم تسجيل الدخول بنجاح');
                 showToast(payload.message || 'تم تسجيل الدخول بنجاح', 'success');
                 await startDashboard();
             } catch (error) {
+                state.accessToken = '';
+                state.refreshToken = '';
+                state.shopOwner = null;
+                clearSessionStorage();
                 setLoginStatus('disconnected', error.message || 'فشل تسجيل الدخول');
                 showToast(error.message || 'فشل تسجيل الدخول', 'error');
             } finally {
