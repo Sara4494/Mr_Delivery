@@ -1,6 +1,7 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
+from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 from .models import Order, ChatMessage, Customer, Employee, Driver
 from user.models import ShopOwner
@@ -13,6 +14,10 @@ def _with_localized_message(payload, message):
         **payload,
         **build_message_fields(message),
     }
+
+
+def _json_dumps(payload):
+    return json.dumps(payload, cls=DjangoJSONEncoder)
 
 
 
@@ -78,7 +83,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.accept()
             
             # إرسال رسالة ترحيبية
-            await self.send(text_data=json.dumps(_with_localized_message(
+            await self.send(text_data=_json_dumps(_with_localized_message(
                 {
                     'type': 'connection',
                     'order_id': self.order_id,
@@ -90,7 +95,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
             # إرسال الرسائل السابقة
             previous_messages = await self.get_previous_messages()
-            await self.send(text_data=json.dumps({
+            await self.send(text_data=_json_dumps({
                 'type': 'previous_messages',
                 'messages': previous_messages
             }))
@@ -291,14 +296,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     async def chat_message(self, event):
         """إرسال رسالة الشات"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'chat_message',
             'data': event['message']
         }))
     
     async def messages_read(self, event):
         """إرسال تأكيد قراءة الرسائل"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'messages_read',
             'order_id': event['order_id'],
             'reader_type': event['reader_type'],
@@ -307,7 +312,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     async def typing_indicator(self, event):
         """إرسال مؤشر الكتابة"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'typing',
             'user_type': event['user_type'],
             'user_name': event['user_name'],
@@ -323,7 +328,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }
         if request_id is not None:
             payload['request_id'] = request_id
-        await self.send(text_data=json.dumps(_with_localized_message(payload, message)))
+        await self.send(text_data=_json_dumps(_with_localized_message(payload, message)))
 
     async def send_error_event(self, code, message, request_id=None, details=None):
         payload = {
@@ -335,7 +340,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             payload['request_id'] = request_id
         if details:
             payload['details'] = details
-        await self.send(text_data=json.dumps(_with_localized_message(payload, message)))
+        await self.send(text_data=_json_dumps(_with_localized_message(payload, message)))
 
     async def broadcast_new_message_notification(self, message_payload):
         notification_payload = await self.build_order_message_notification(message_payload)
@@ -635,7 +640,7 @@ class OrderConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         
-        await self.send(text_data=json.dumps(_with_localized_message(
+        await self.send(text_data=_json_dumps(_with_localized_message(
             {
                 'type': 'connection',
                 'shop_owner_id': self.shop_owner_id
@@ -644,7 +649,7 @@ class OrderConsumer(AsyncWebsocketConsumer):
         )))
 
         orders_snapshot = await self.get_orders_snapshot()
-        await self.send(text_data=json.dumps(_with_localized_message(
+        await self.send(text_data=_json_dumps(_with_localized_message(
             {
                 'type': 'orders_snapshot',
                 'data': {
@@ -661,35 +666,35 @@ class OrderConsumer(AsyncWebsocketConsumer):
     
     async def order_update(self, event):
         """إرسال تحديث الطلب"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'order_update',
             'data': event['data']
         }))
     
     async def new_order(self, event):
         """إرسال إشعار بطلب جديد"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'new_order',
             'data': event['data']
         }))
     
     async def new_message(self, event):
         """إشعار برسالة جديدة"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'new_message',
             'data': event['data']
         }))
 
     async def store_status_updated(self, event):
         """تحديث حالة المتجر في الوقت الحقيقي"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'store_status_updated',
             'data': event['data']
         }))
 
     async def driver_status_updated(self, event):
         """تحديث حالة السائق في الوقت الحقيقي"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'driver_status_updated',
             'data': event['data']
         }))
@@ -734,7 +739,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         
-        await self.send(text_data=json.dumps(_with_localized_message(
+        await self.send(text_data=_json_dumps(_with_localized_message(
             {'type': 'connection'},
             'تم الاتصال بنجاح'
         )))
@@ -746,21 +751,21 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
     
     async def order_update(self, event):
         """تحديث حالة الطلب"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'order_update',
             'data': event['data']
         }))
     
     async def driver_location(self, event):
         """تحديث موقع السائق"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'driver_location',
             'data': event['data']
         }))
     
     async def new_message(self, event):
         """رسالة جديدة"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'new_message',
             'data': event['data']
         }))
@@ -795,7 +800,7 @@ class DriverConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         
-        await self.send(text_data=json.dumps(_with_localized_message(
+        await self.send(text_data=_json_dumps(_with_localized_message(
             {'type': 'connection'},
             'تم الاتصال بنجاح'
         )))
@@ -868,21 +873,21 @@ class DriverConsumer(AsyncWebsocketConsumer):
     
     async def new_order(self, event):
         """طلب توصيل جديد"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'new_order',
             'data': event['data']
         }))
     
     async def order_update(self, event):
         """تحديث طلب"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'order_update',
             'data': event['data']
         }))
     
     async def new_message(self, event):
         """رسالة جديدة من عميل"""
-        await self.send(text_data=json.dumps({
+        await self.send(text_data=_json_dumps({
             'type': 'new_message',
             'data': event['data']
         }))

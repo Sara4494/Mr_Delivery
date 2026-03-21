@@ -89,7 +89,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             if last_message:
                 return {
                     'content': last_message.content[:50] + '...' if len(last_message.content) > 50 else last_message.content,
-                    'created_at': last_message.created_at
+                    'created_at': last_message.created_at.isoformat() if last_message.created_at else None
                 }
         return None
 
