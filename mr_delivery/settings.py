@@ -80,8 +80,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
     'user.middleware.StripUntrustedOriginSecurityHeadersMiddleware',
+    'django.middleware.security.SecurityMiddleware',
     'user.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'user.middleware.APILanguageMiddleware',
@@ -91,6 +91,10 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# We intentionally serve some dashboard screens over plain HTTP on raw IPs.
+# Disable Django's default COOP header there to avoid browser warnings.
+SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
 ROOT_URLCONF = 'mr_delivery.urls'
 
