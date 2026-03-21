@@ -112,3 +112,42 @@ class APILanguageMiddleware:
         if response is not None:
             response["Content-Language"] = lang
         return response
+
+
+class StripUntrustedOriginSecurityHeadersMiddleware:
+    """
+    Browsers ignore cross-origin isolation headers on plain HTTP origins
+    except localhost. Strip them to avoid noisy console warnings when the
+    dashboard is intentionally served over http://<ip>.
+    """
+
+    STRIPPED_HEADERS = (
+        "Cross-Origin-Opener-Policy",
+        "Cross-Origin-Embedder-Policy",
+        "Cross-Origin-Resource-Policy",
+        "Origin-Agent-Cluster",
+        "Permissions-Policy",
+    )
+
+    LOCAL_TRUSTED_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def _is_trusted_http_origin(self, request) -> bool:
+        if request.is_secure():
+            return True
+        host = request.get_host().split(":", 1)[0].strip().lower()
+        return host in self.LOCAL_TRUSTED_HOSTS
+
+    def __call__(self, request):
+        response = self.get_response(request)
+
+        if self._is_trusted_http_origin(request):
+            return response
+
+        for header in self.STRIPPED_HEADERS:
+            if header in response:
+                del response[header]
+
+        return response
