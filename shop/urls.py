@@ -4,6 +4,7 @@ from . import views
 app_name = 'shop'
 
 urlpatterns = [
+    path('shop/dashboard-ui/', views.shop_dashboard_ui_view, name='shop_dashboard_ui'),
     # Public shops list (for customers)
     path('shops/', views.public_shops_list_view, name='public_shops_list'),
     path('shops/shop-categories/', views.public_shop_categories_list_view, name='public_shop_categories_list'),

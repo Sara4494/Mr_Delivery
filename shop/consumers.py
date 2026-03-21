@@ -4,7 +4,7 @@ from channels.db import database_sync_to_async
 from django.utils import timezone
 from .models import Order, ChatMessage, Customer, Employee, Driver
 from user.models import ShopOwner
-from .serializers import ChatMessageSerializer
+from .serializers import OrderSerializer
 from user.utils import build_message_fields
 
 
@@ -90,11 +90,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
             # إرسال الرسائل السابقة
             previous_messages = await self.get_previous_messages()
-            if previous_messages:
-                await self.send(text_data=json.dumps({
-                    'type': 'previous_messages',
-                    'messages': previous_messages
-                }))
+            await self.send(text_data=json.dumps({
+                'type': 'previous_messages',
+                'messages': previous_messages
+            }))
                 
         except Exception as e:
             print(f"[ChatConsumer.connect] error: {e}")
@@ -109,42 +108,61 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """استقبال رسالة من العميل"""
         try:
             data = json.loads(text_data)
-            message_type = data.get('type', 'chat_message')
+            event_type = data.get('type', 'chat_message')
+            request_id = data.get('request_id')
             
-            if message_type == 'chat_message':
-                await self.handle_chat_message(data)
-            elif message_type == 'mark_read':
-                await self.handle_mark_read()
-            elif message_type == 'typing':
+            if event_type in ['chat_message', 'send_message']:
+                if data.get('message_type') == 'location':
+                    await self.handle_location(data, request_id=request_id, action=event_type)
+                else:
+                    await self.handle_chat_message(data, request_id=request_id, action=event_type)
+            elif event_type == 'mark_read':
+                await self.handle_mark_read(request_id=request_id)
+            elif event_type == 'typing':
                 await self.handle_typing(data)
-            elif message_type == 'location':
-                await self.handle_location(data)
+            elif event_type == 'location':
+                await self.handle_location(data, request_id=request_id, action=event_type)
+            else:
+                await self.send_error_event(
+                    code='UNKNOWN_EVENT',
+                    message='نوع الحدث غير مدعوم',
+                    request_id=request_id,
+                    details={'type': event_type},
+                )
                 
         except json.JSONDecodeError:
-            await self.send(text_data=json.dumps(_with_localized_message(
-                {'type': 'error'},
-                'تنسيق البيانات غير صحيح'
-            )))
+            await self.send_error_event(
+                code='INVALID_JSON',
+                message='تنسيق البيانات غير صحيح',
+            )
         except Exception as e:
             print(f"[ChatConsumer.receive] error: {e}")
-            await self.send(text_data=json.dumps(_with_localized_message(
-                {
-                    'type': 'error',
-                    'error_detail': str(e)
-                },
-                'حدث خطأ غير متوقع'
-            )))
+            await self.send_error_event(
+                code='UNEXPECTED_ERROR',
+                message='حدث خطأ غير متوقع',
+                details={'error_detail': str(e)},
+            )
     
-    async def handle_chat_message(self, data):
+    async def handle_chat_message(self, data, request_id=None, action='chat_message'):
         """معالجة رسالة الشات"""
         content = data.get('content', '')
         msg_type = data.get('message_type', 'text')
+
+        if msg_type not in ['text', 'location']:
+            await self.send_error_event(
+                code='UNSUPPORTED_MESSAGE_TYPE',
+                message='هذا النوع من الرسائل غير مدعوم عبر الـ WebSocket',
+                request_id=request_id,
+                details={'message_type': msg_type},
+            )
+            return
         
         if msg_type == 'text' and not content:
-            await self.send(text_data=json.dumps(_with_localized_message(
-                {'type': 'error'},
-                'محتوى الرسالة مطلوب'
-            )))
+            await self.send_error_event(
+                code='MESSAGE_CONTENT_REQUIRED',
+                message='محتوى الرسالة مطلوب',
+                request_id=request_id,
+            )
             return
         
         # حفظ الرسالة
@@ -166,18 +184,36 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'message': serialized
                 }
             )
+            await self.broadcast_new_message_notification(serialized)
+            await self.send_ack(
+                action=action,
+                request_id=request_id,
+                data={
+                    'message_id': message.id,
+                    'order_id': int(self.order_id),
+                    'chat_type': self.chat_type,
+                },
+            )
+            return
+
+        await self.send_error_event(
+            code='MESSAGE_SAVE_FAILED',
+            message='تعذر حفظ الرسالة',
+            request_id=request_id,
+        )
     
-    async def handle_location(self, data):
+    async def handle_location(self, data, request_id=None, action='location'):
         """معالجة رسالة الموقع"""
         latitude = data.get('latitude')
         longitude = data.get('longitude')
         content = data.get('content', 'موقعي الحالي')
         
-        if not latitude or not longitude:
-            await self.send(text_data=json.dumps(_with_localized_message(
-                {'type': 'error'},
-                'الإحداثيات مطلوبة'
-            )))
+        if latitude is None or longitude is None:
+            await self.send_error_event(
+                code='LOCATION_COORDINATES_REQUIRED',
+                message='الإحداثيات مطلوبة',
+                request_id=request_id,
+            )
             return
         
         message = await self.save_message(
@@ -196,18 +232,45 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'message': serialized
                 }
             )
+            await self.broadcast_new_message_notification(serialized)
+            await self.send_ack(
+                action=action,
+                request_id=request_id,
+                data={
+                    'message_id': message.id,
+                    'order_id': int(self.order_id),
+                    'chat_type': self.chat_type,
+                },
+            )
+            return
+
+        await self.send_error_event(
+            code='MESSAGE_SAVE_FAILED',
+            message='تعذر حفظ رسالة الموقع',
+            request_id=request_id,
+        )
     
-    async def handle_mark_read(self):
+    async def handle_mark_read(self, request_id=None):
         """تعليم الرسائل كمقروءة"""
-        await self.mark_messages_as_read()
+        marked_count = await self.mark_messages_as_read()
         
         await self.channel_layer.group_send(
             self.room_group_name,
             {
                 'type': 'messages_read',
                 'order_id': self.order_id,
-                'reader_type': self.user_type
+                'reader_type': self.user_type,
+                'count': marked_count,
             }
+        )
+        await self.broadcast_order_snapshot_update()
+        await self.send_ack(
+            action='mark_read',
+            request_id=request_id,
+            data={
+                'order_id': int(self.order_id),
+                'count': marked_count,
+            },
         )
     
     async def handle_typing(self, data):
@@ -238,7 +301,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type': 'messages_read',
             'order_id': event['order_id'],
-            'reader_type': event['reader_type']
+            'reader_type': event['reader_type'],
+            'count': event.get('count', 0),
         }))
     
     async def typing_indicator(self, event):
@@ -249,6 +313,59 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'user_name': event['user_name'],
             'is_typing': event['is_typing']
         }))
+
+    async def send_ack(self, action, request_id=None, data=None, message='تم تنفيذ الطلب بنجاح'):
+        payload = {
+            'type': 'ack',
+            'action': action,
+            'success': True,
+            'data': data or {},
+        }
+        if request_id is not None:
+            payload['request_id'] = request_id
+        await self.send(text_data=json.dumps(_with_localized_message(payload, message)))
+
+    async def send_error_event(self, code, message, request_id=None, details=None):
+        payload = {
+            'type': 'error',
+            'success': False,
+            'code': code,
+        }
+        if request_id is not None:
+            payload['request_id'] = request_id
+        if details:
+            payload['details'] = details
+        await self.send(text_data=json.dumps(_with_localized_message(payload, message)))
+
+    async def broadcast_new_message_notification(self, message_payload):
+        notification_payload = await self.build_order_message_notification(message_payload)
+        if not notification_payload:
+            return
+
+        group_names = await self.get_order_channel_targets()
+        for group_name in group_names:
+            await self.channel_layer.group_send(
+                group_name,
+                {
+                    'type': 'new_message',
+                    'data': notification_payload,
+                }
+            )
+
+    async def broadcast_order_snapshot_update(self):
+        order_snapshot = await self.get_order_snapshot()
+        if not order_snapshot:
+            return
+
+        group_names = await self.get_order_channel_targets()
+        for group_name in group_names:
+            await self.channel_layer.group_send(
+                group_name,
+                {
+                    'type': 'order_update',
+                    'data': order_snapshot,
+                }
+            )
     
     # ==================== Database Operations ====================
     
@@ -338,13 +455,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             for msg in messages:
                 result.append({
                     'id': msg.id,
+                    'order_id': msg.order_id,
                     'chat_type': msg.chat_type,
                     'sender_type': msg.sender_type,
                     'sender_name': msg.sender_name,
+                    'sender_id': self._get_sender_id(msg),
                     'message_type': msg.message_type,
                     'content': msg.content,
-                    'latitude': str(msg.latitude) if msg.latitude else None,
-                    'longitude': str(msg.longitude) if msg.longitude else None,
+                    'latitude': str(msg.latitude) if msg.latitude is not None else None,
+                    'longitude': str(msg.longitude) if msg.longitude is not None else None,
                     'is_read': msg.is_read,
                     'created_at': msg.created_at.isoformat(),
                     'audio_file_url': msg.audio_file.url if msg.audio_file else None,
@@ -360,13 +479,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """تحويل الرسالة إلى JSON"""
         return {
             'id': message.id,
+            'order_id': message.order_id,
             'chat_type': message.chat_type,
             'sender_type': message.sender_type,
             'sender_name': message.sender_name,
+            'sender_id': self._get_sender_id(message),
             'message_type': message.message_type,
             'content': message.content,
-            'latitude': str(message.latitude) if message.latitude else None,
-            'longitude': str(message.longitude) if message.longitude else None,
+            'latitude': str(message.latitude) if message.latitude is not None else None,
+            'longitude': str(message.longitude) if message.longitude is not None else None,
             'is_read': message.is_read,
             'created_at': message.created_at.isoformat(),
             'audio_file_url': message.audio_file.url if message.audio_file else None,
@@ -381,7 +502,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
             # تحديد الرسائل التي يجب تعليمها كمقروءة
             # (الرسائل التي ليست من المستخدم الحالي)
-            ChatMessage.objects.filter(
+            marked_count = ChatMessage.objects.filter(
                 order=order,
                 chat_type=self.chat_type,
                 is_read=False
@@ -395,9 +516,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     sender_type='customer'
                 ).count()
                 order.save()
+
+            return marked_count
                 
         except Exception as e:
             print(f"[ChatConsumer.mark_messages_as_read] error: {e}")
+            return 0
     
     @database_sync_to_async
     def get_user_name(self):
@@ -411,6 +535,61 @@ class ChatConsumer(AsyncWebsocketConsumer):
         elif self.user_type == 'driver':
             return self.user.name
         return 'غير معروف'
+
+    @database_sync_to_async
+    def get_order_channel_targets(self):
+        try:
+            order = Order.objects.get(id=self.order_id)
+        except Order.DoesNotExist:
+            return []
+
+        group_names = set()
+        if self.chat_type == 'shop_customer':
+            if order.shop_owner_id:
+                group_names.add(f'shop_orders_{order.shop_owner_id}')
+            if order.customer_id:
+                group_names.add(f'customer_orders_{order.customer_id}')
+        elif self.chat_type == 'driver_customer':
+            if order.customer_id:
+                group_names.add(f'customer_orders_{order.customer_id}')
+            if order.driver_id:
+                group_names.add(f'driver_{order.driver_id}')
+
+        return list(group_names)
+
+    @database_sync_to_async
+    def build_order_message_notification(self, message_payload):
+        try:
+            order = Order.objects.select_related('customer', 'employee', 'driver').get(id=self.order_id)
+        except Order.DoesNotExist:
+            return None
+
+        return {
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'chat_type': self.chat_type,
+            'message': message_payload,
+            'order': OrderSerializer(order).data,
+        }
+
+    @database_sync_to_async
+    def get_order_snapshot(self):
+        try:
+            order = Order.objects.select_related('customer', 'employee', 'driver').get(id=self.order_id)
+        except Order.DoesNotExist:
+            return None
+        return OrderSerializer(order).data
+
+    def _get_sender_id(self, message):
+        if message.sender_type == 'customer' and message.sender_customer_id:
+            return message.sender_customer_id
+        if message.sender_type == 'shop_owner' and message.sender_shop_owner_id:
+            return message.sender_shop_owner_id
+        if message.sender_type == 'employee' and message.sender_employee_id:
+            return message.sender_employee_id
+        if message.sender_type == 'driver' and message.sender_driver_id:
+            return message.sender_driver_id
+        return None
 
 
 class OrderConsumer(AsyncWebsocketConsumer):
@@ -487,6 +666,20 @@ class OrderConsumer(AsyncWebsocketConsumer):
         """إشعار برسالة جديدة"""
         await self.send(text_data=json.dumps({
             'type': 'new_message',
+            'data': event['data']
+        }))
+
+    async def store_status_updated(self, event):
+        """تحديث حالة المتجر في الوقت الحقيقي"""
+        await self.send(text_data=json.dumps({
+            'type': 'store_status_updated',
+            'data': event['data']
+        }))
+
+    async def driver_status_updated(self, event):
+        """تحديث حالة السائق في الوقت الحقيقي"""
+        await self.send(text_data=json.dumps({
+            'type': 'driver_status_updated',
             'data': event['data']
         }))
 

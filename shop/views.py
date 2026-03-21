@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 import json
+from django.shortcuts import render
 from django.db import IntegrityError
 from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
@@ -72,7 +73,14 @@ from .websocket_utils import (
     notify_new_order,
     broadcast_chat_message_to_order,
     broadcast_chat_message,
+    notify_shop_status_updated,
+    notify_driver_status_updated,
 )
+
+
+def shop_dashboard_ui_view(request):
+    """واجهة تجريبية/تشغيلية للوحة المحل (Shop frontend)."""
+    return render(request, 'shop/dashboard_ui.html')
 
 
 class OrderPagination(PageNumberPagination):
@@ -1002,6 +1010,10 @@ def staff_view(request):
                 status__in=['new', 'preparing', 'on_way']
             ).count()
             staff_member.save()
+            try:
+                notify_driver_status_updated(staff_member)
+            except Exception as e:
+                print(f"driver_status_updated WebSocket error: {e}")
 
         return success_response(
             data=_serialize_staff_member(staff_member, staff_type, request),
@@ -1072,6 +1084,10 @@ def staff_block_view(request, staff_type, staff_id):
         elif staff_member.status == 'offline':
             staff_member.status = 'available'
         staff_member.save()
+        try:
+            notify_driver_status_updated(staff_member)
+        except Exception as e:
+            print(f"driver_status_updated WebSocket error: {e}")
 
     response_data = _serialize_staff_member(staff_member, staff_type, request)
     response_data['blocked'] = blocked
@@ -1187,6 +1203,10 @@ def driver_invitation_respond_view(request):
 
     shop_driver.status = 'active'
     shop_driver.save(update_fields=['status'])
+    try:
+        notify_driver_status_updated(driver)
+    except Exception as e:
+        print(f"driver_status_updated WebSocket error: {e}")
 
     return success_response(
         data={
@@ -1230,6 +1250,16 @@ def shop_status_view(request):
         serializer = ShopStatusSerializer(status_obj, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            try:
+                notify_shop_status_updated(
+                    shop_owner.id,
+                    {
+                        'shop_owner_id': shop_owner.id,
+                        **serializer.data,
+                    }
+                )
+            except Exception as e:
+                print(f"store_status_updated WebSocket error: {e}")
             return success_response(
                 data=serializer.data,
                 message=t(request, 'shop_status_updated_successfully'),
@@ -1940,6 +1970,13 @@ def order_detail_view(request, order_id):
             # إذا تم تعيين سائق جديد، إشعاره
             if order.driver and (not old_driver or old_driver.id != order.driver.id):
                 notify_driver_assigned(order.driver.id, order_data)
+
+            notified_driver_ids = set()
+            if old_driver:
+                notify_driver_status_updated(old_driver.id)
+                notified_driver_ids.add(old_driver.id)
+            if order.driver and order.driver.id not in notified_driver_ids:
+                notify_driver_status_updated(order.driver.id)
         except Exception as e:
             print(f"WebSocket notification error: {e}")
         

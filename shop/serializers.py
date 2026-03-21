@@ -381,7 +381,18 @@ class OrderSerializer(serializers.ModelSerializer):
 class ShopOrderListSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     customer_phone_number = serializers.CharField(source='customer.phone_number', read_only=True)
+    customer_profile_image_url = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    def get_customer_profile_image_url(self, obj):
+        customer = getattr(obj, 'customer', None)
+        if not customer or not customer.profile_image:
+            return None
+
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(customer.profile_image.url)
+        return customer.profile_image.url
 
     class Meta:
         model = Order
@@ -390,6 +401,7 @@ class ShopOrderListSerializer(serializers.ModelSerializer):
             'order_number',
             'customer_name',
             'customer_phone_number',
+            'customer_profile_image_url',
             'address',
             'status',
             'status_display',

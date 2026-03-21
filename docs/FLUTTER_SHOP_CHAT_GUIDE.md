@@ -1,5 +1,7 @@
 # Flutter Shop Chat Guide (Shop Owner / Employee)
 
+For the latest backend event contract, use [WEBSOCKET_CONTRACT.md](./WEBSOCKET_CONTRACT.md) together with this Flutter-focused guide.
+
 ## 1) Scope
 This guide is for the **shop-side app** (shop owner or employee) in Flutter.
 
@@ -41,6 +43,8 @@ Used for:
 - `new_order`
 - `order_update`
 - `new_message`
+- `store_status_updated`
+- `driver_status_updated`
 
 ### B) Order Chat channel (chat screen)
 URL:
@@ -57,11 +61,14 @@ On connect, server sends:
 ### Send text message
 ```json
 {
-  "type": "chat_message",
+  "type": "send_message",
   "message_type": "text",
   "content": "Your order is being prepared."
 }
 ```
+
+Compatibility note:
+- `chat_message` is still accepted for text payloads, but `send_message` is the recommended client event name.
 
 ### Send typing state
 ```json

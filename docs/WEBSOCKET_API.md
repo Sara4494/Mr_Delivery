@@ -1,5 +1,7 @@
 # 🔌 WebSocket API Reference
 
+Legacy note: use [WEBSOCKET_CONTRACT.md](./WEBSOCKET_CONTRACT.md) for the current supported contract.
+
 Real-time communication using Django Channels and WebSocket.
 
 ---
