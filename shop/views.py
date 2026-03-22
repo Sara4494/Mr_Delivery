@@ -3097,7 +3097,7 @@ def _build_public_shop_payload(shop, request, published_images=None):
             'key': status_value,
             'label': live_status_label,
             'is_open_now': is_open_now,
-            'work_badge': live_status_label,
+       
         },
         'rating': {
             'average': average_rating if ratings_count else 0,
@@ -3181,7 +3181,7 @@ def _build_public_shop_profile_summary_payload(shop, request):
                 'key': status_value,
                 'label': live_status_label,
                 'is_open_now': is_open_now,
-                'work_badge': live_status_label,
+                 
                 'shop_status_label': status_label,
             },
             'rating': {
