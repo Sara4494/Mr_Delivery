@@ -2923,6 +2923,16 @@ def _build_today_hours_label(today_schedule):
     return f'{start_time} - {end_time}'
 
 
+def _build_live_shop_status_label(status_value, is_open_now):
+    if not is_open_now:
+        return 'مغلق الآن'
+    if status_value == 'busy':
+        return 'مشغول الآن'
+    if status_value == 'open':
+        return 'مفتوح الآن'
+    return 'مفتوح الآن'
+
+
 def _safe_shop_status(shop):
     try:
         return shop.shop_status
@@ -3070,6 +3080,7 @@ def _build_public_shop_payload(shop, request, published_images=None):
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
     is_open_now = _is_open_now(status_value, today_schedule)
+    live_status_label = _build_live_shop_status_label(status_value, is_open_now)
 
     average_rating, ratings_count = _get_shop_rating_stats(shop)
 
@@ -3092,9 +3103,9 @@ def _build_public_shop_payload(shop, request, published_images=None):
         ),
         'status': {
             'key': status_value,
-            'label': status_display,
+            'label': live_status_label,
             'is_open_now': is_open_now,
-            'work_badge': 'مفتوح الآن' if is_open_now else 'مغلق الآن',
+            'work_badge': live_status_label,
         },
         'rating': {
             'average': average_rating if ratings_count else 0,
@@ -3162,6 +3173,7 @@ def _build_public_shop_profile_summary_payload(shop, request):
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
     is_open_now = _is_open_now(status_value, today_schedule)
+    live_status_label = _build_live_shop_status_label(status_value, is_open_now)
     average_rating, ratings_count = _get_shop_rating_stats(shop)
     category_name = shop.shop_category.name if shop.shop_category else None
     created_since_label = _build_relative_time_label(shop.created_at)
@@ -3175,8 +3187,9 @@ def _build_public_shop_profile_summary_payload(shop, request):
             'created_since_label': created_since_label,
             'status': {
                 'key': status_value,
-                'label': 'مفتوح الآن' if is_open_now else 'مغلق الآن',
+                'label': live_status_label,
                 'is_open_now': is_open_now,
+                'work_badge': live_status_label,
                 'shop_status_label': status_label,
             },
             'rating': {

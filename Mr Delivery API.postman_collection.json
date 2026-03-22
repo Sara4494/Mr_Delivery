@@ -976,7 +976,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"name\": \"أحمد محمد الجديد\",\n    \"phone_number\": \"01012345678\",\n    \"current_password\": \"password123\",\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
+                  "raw": "{\n    \"name\": \"أحمد محمد الجديد\",\n    \"current_password\": \"password123\",\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/customer/profile/",
@@ -990,7 +990,7 @@
                     ""
                   ]
                 },
-                "description": "تحديث بيانات العميل من نفس endpoint: الاسم، رقم الهاتف، وتغيير كلمة المرور. يدعم PUT أو PATCH بصيغة application/json."
+                "description": "تحديث بيانات العميل من نفس endpoint: الاسم وتغيير كلمة المرور. تغيير رقم الهاتف أصبح عبر OTP endpoints منفصلة."
               },
               "response": []
             },
@@ -1013,12 +1013,6 @@
                       "value": "أحمد محمد الجديد",
                       "type": "text",
                       "description": "الاسم الكامل"
-                    },
-                    {
-                      "key": "phone_number",
-                      "value": "01012345678",
-                      "type": "text",
-                      "description": "رقم الهاتف الجديد"
                     },
                     {
                       "key": "current_password",
@@ -1058,7 +1052,98 @@
                     ""
                   ]
                 },
-                "description": "مثال multipart/form-data لتحديث صورة العميل مع أي حقول نصية مطلوبة من نفس endpoint."
+                "description": "مثال multipart/form-data لتحديث صورة العميل مع أي حقول نصية مطلوبة من نفس endpoint. تغيير رقم الهاتف أصبح عبر OTP endpoints منفصلة."
+              },
+              "response": []
+            },
+            {
+              "name": "إرسال OTP لتغيير رقم الهاتف (عميل)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"new_phone_number\": \"01012345678\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/customer/profile/phone/send-otp/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "profile",
+                    "phone",
+                    "send-otp",
+                    ""
+                  ]
+                },
+                "description": "إرسال OTP إلى رقم الهاتف الجديد قبل تنفيذ تغيير رقم هاتف العميل."
+              },
+              "response": []
+            },
+            {
+              "name": "التحقق من OTP وتأكيد تغيير رقم الهاتف (عميل)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data) {",
+                      "        if (jsonData.data.access) pm.environment.set(\"customer_token\", jsonData.data.access);",
+                      "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"new_phone_number\": \"01012345678\",\n    \"otp\": \"123456\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/customer/profile/phone/verify-otp/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "profile",
+                    "phone",
+                    "verify-otp",
+                    ""
+                  ]
+                },
+                "description": "التحقق من OTP لإتمام تغيير رقم الهاتف. عند النجاح يتم تحديث customer_token و refresh_token من الاستجابة."
               },
               "response": []
             }
@@ -1110,7 +1195,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"title\": \"المنزل\",\n    \"address_type\": \"home\",\n    \"full_address\": \"الرياض، حي النخيل، شارع الملك فهد\",\n    \"building_number\": \"15\",\n    \"floor\": \"2\",\n    \"apartment\": \"5\",\n    \"is_default\": true\n}"
+                  "raw": "{\n    \"title\": \"المنزل\",\n    \"address_type\": \"home\",\n    \"area\": \"حي النخيل\",\n    \"street_name\": \"شارع الملك فهد\",\n    \"landmark\": \"بجوار المدرسة الدولية\",\n    \"building_number\": \"15\",\n    \"floor\": \"2\",\n    \"apartment\": \"5\",\n    \"notes\": \"الجرس عطلان\",\n    \"is_default\": true\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/customer/addresses/",
@@ -1123,7 +1208,8 @@
                     "addresses",
                     ""
                   ]
-                }
+                },
+                "description": "يدعم العنوان الآن full_address أو الحقول التفصيلية area و street_name و landmark. إذا لم ترسل full_address فسيتم تكوينه تلقائيًا من الباك إند."
               },
               "response": []
             },
@@ -1144,7 +1230,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"title\": \"العمل\",\n    \"address_type\": \"work\"\n}"
+                  "raw": "{\n    \"title\": \"العمل\",\n    \"address_type\": \"work\",\n    \"area\": \"وسط البلد\",\n    \"street_name\": \"شارع الجامعة\",\n    \"landmark\": \"بجوار بنك مصر\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/customer/addresses/1/",
@@ -1158,7 +1244,8 @@
                     "1",
                     ""
                   ]
-                }
+                },
+                "description": "يمكن تحديث الحقول التفصيلية الجديدة للعنوان أو تحديث full_address مباشرة."
               },
               "response": []
             },
@@ -1309,6 +1396,61 @@
                     ""
                   ]
                 }
+              },
+              "response": []
+            },
+            {
+              "name": "قائمة محادثات المحلات",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/shops-conversations/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "shops-conversations",
+                    ""
+                  ]
+                },
+                "description": "قائمة المحلات التي لدى العميل معها طلبات أو محادثات، مع آخر رسالة وآخر تواصل."
+              },
+              "response": []
+            },
+            {
+              "name": "قائمة طلبات في الطريق",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/customer/orders/on-way/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "customer",
+                    "orders",
+                    "on-way",
+                    ""
+                  ]
+                },
+                "description": "الطلبات النشطة للعميل مع بيانات المحل والمندوب وخيارات التتبع والمحادثة."
               },
               "response": []
             },

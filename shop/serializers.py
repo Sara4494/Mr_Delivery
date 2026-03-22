@@ -113,6 +113,21 @@ class CustomerSerializer(serializers.ModelSerializer):
     def get_unread_messages_count(self, obj):
         """عدد الرسائل غير المقروءة للعميل"""
         return sum(order.unread_messages_count for order in obj.orders.all())
+
+    @staticmethod
+    def _build_last_message_preview(last_message):
+        content = (last_message.content or '').strip()
+        if content:
+            return content[:50] + '...' if len(content) > 50 else content
+
+        message_type = getattr(last_message, 'message_type', None)
+        preview_map = {
+            'audio': 'رسالة صوتية',
+            'image': 'صورة',
+            'location': 'موقع',
+            'text': '',
+        }
+        return preview_map.get(message_type, '')
     
     def get_last_message(self, obj):
         """آخر رسالة من العميل"""
@@ -121,7 +136,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             last_message = last_order.messages.order_by('-created_at').first()
             if last_message:
                 return {
-                    'content': last_message.content[:50] + '...' if len(last_message.content) > 50 else last_message.content,
+                    'content': self._build_last_message_preview(last_message),
                     'created_at': last_message.created_at.isoformat() if last_message.created_at else None
                 }
         return None
