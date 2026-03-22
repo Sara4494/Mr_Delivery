@@ -2615,10 +2615,11 @@ def _build_customer_shop_conversation_item(order, request):
         'shop_name': order.shop_owner.shop_name,
         'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image),
         'subtitle': 'تم التواصل مؤخراً' if last_message else 'لا يوجد تواصل بعد',
-        'order_id': order.id,
-        'chat_type': 'shop_customer',
-        'action_label': 'تواصل',
-        'action_enabled': True,
+        'chat': {
+            'order_id': order.id,
+            'chat_type': 'shop_customer',
+            'shop_id': order.shop_owner_id,
+        },
     }
 
 
@@ -2630,14 +2631,21 @@ def _build_customer_on_way_order_item(order, request):
         'order_id': order.id,
         'status_key': order.status,
         'status_label': _get_customer_friendly_delivery_status(order),
+        'shop_id': order.shop_owner_id,
         'shop_name': order.shop_owner.shop_name,
         'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image),
+        'driver_id': driver.id if driver else None,
         'driver_name': driver.name if driver else None,
         'driver_image_url': _build_file_url(request, driver.profile_image) if driver else None,
         'driver_role_label': 'مندوب التوصيل' if driver else None,
-        'chat_type': 'driver_customer',
-        'action_label': 'تواصل مع المندوب' if can_chat_with_driver else 'المحادثة مغلقة',
-        'action_enabled': can_chat_with_driver,
+        'chat': (
+            {
+                'order_id': order.id,
+                'chat_type': 'driver_customer',
+                'driver_id': driver.id,
+            }
+            if can_chat_with_driver and driver else None
+        ),
     }
 
 
