@@ -118,6 +118,30 @@ def broadcast_chat_message_to_order(order_id, message_payload):
     broadcast_chat_message(order_id, 'shop_customer', message_payload)
 
 
+def broadcast_chat_message_to_customer(order_id, chat_type, message_payload):
+    """
+    إرسال رسالة تلقائية للعميل:
+    - تظهر داخل غرفة الشات الحالية
+    - وتظهر على قناة customer_orders فقط
+    - بدون دفع new_message إلى لوحة المحل
+    """
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            f'chat_order_{order_id}_{chat_type}',
+            {'type': 'chat_message', 'message': message_payload}
+        )
+
+    try:
+        order = Order.objects.select_related('customer', 'employee', 'driver').get(id=order_id)
+    except Order.DoesNotExist:
+        return
+
+    notification_payload = _build_message_notification_payload(order, chat_type, message_payload)
+    if order.customer_id:
+        send_to_group(f'customer_orders_{order.customer_id}', 'new_message', notification_payload)
+
+
 # ==================== Driver Location ====================
 
 def broadcast_driver_location(driver_id, customer_ids, latitude, longitude):

@@ -64,10 +64,14 @@ urlpatterns = [
     path('customer/register/', views.customer_register_view, name='customer_register'),
     path('customer/login/', views.customer_login_view, name='customer_login'),
     path('customer/profile/', views.customer_profile_view, name='customer_profile'),
+    path('customer/profile/phone/send-otp/', views.customer_profile_phone_send_otp_view, name='customer_profile_phone_send_otp'),
+    path('customer/profile/phone/verify-otp/', views.customer_profile_phone_verify_otp_view, name='customer_profile_phone_verify_otp'),
     path('customer/select-shop/', views.customer_select_shop_view, name='customer_select_shop'),
     
     # ==================== Customer Orders (طلب أوردر - البند 1، 2، 3، ...) ====================
     path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
+    path('customer/shops-conversations/', views.customer_shops_conversations_view, name='customer_shops_conversations'),
+    path('customer/orders/on-way/', views.customer_on_way_orders_view, name='customer_orders_on_way'),
     path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
     path('customer/orders/<int:order_id>/reject/', views.customer_order_reject_view, name='customer_order_reject'),
     

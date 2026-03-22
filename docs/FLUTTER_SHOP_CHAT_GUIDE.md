@@ -1,6 +1,6 @@
 # Flutter Shop Chat Guide (Shop Owner / Employee)
 
-For the latest backend event contract, use [WEBSOCKET_CONTRACT.md](./WEBSOCKET_CONTRACT.md) together with this Flutter-focused guide.
+For the latest backend event contract, use [WEBSOCKET_SHOP_CONTRACT.md](./WEBSOCKET_SHOP_CONTRACT.md) for the shop-only websocket flow, together with [WEBSOCKET_CONTRACT.md](./WEBSOCKET_CONTRACT.md) for the broader system contract.
 
 ## 1) Scope
 This guide is for the **shop-side app** (shop owner or employee) in Flutter.

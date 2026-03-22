@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "1178077b-e6dd-4f57-8e69-2b0d24fe14be",
+    "_postman_id": "eb2ff63a-4487-46de-87c4-fe58f5bf5629",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-1178077b-e6dd-4f57-8e69-2b0d24fe14be?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-eb2ff63a-4487-46de-87c4-fe58f5bf5629?source=collection_link"
   },
   "item": [
     {

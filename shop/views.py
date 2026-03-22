@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 import json
 from django.shortcuts import render
+from django.core.cache import cache
 from django.db import IntegrityError
 from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
@@ -65,13 +66,14 @@ from user.models import (
     WORK_SCHEDULE_DAY_LABELS,
     default_work_schedule,
 )
-from user.utils import success_response, error_response, build_message_fields, t
+from user.utils import success_response, error_response, build_message_fields, t, localize_message
 from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 from .websocket_utils import (
     notify_order_update,
     notify_driver_assigned,
     notify_new_order,
     broadcast_chat_message_to_order,
+    broadcast_chat_message_to_customer,
     broadcast_chat_message,
     notify_shop_status_updated,
     notify_driver_status_updated,
@@ -2460,6 +2462,13 @@ def _get_customer_from_request(request):
         return None
 
 
+CUSTOMER_PHONE_CHANGE_OTP_TTL_SECONDS = 600
+
+
+def _customer_phone_change_cache_key(customer_id):
+    return f"customer_phone_change:{customer_id}"
+
+
 def _normalize_order_items(items):
     normalized_items = []
     for item in items or []:
@@ -2506,6 +2515,145 @@ def _chat_message_payload(message, request=None):
         'image_file_url': message.image_file.url if message.image_file else None,
         'latitude': str(message.latitude) if message.latitude is not None else None,
         'longitude': str(message.longitude) if message.longitude is not None else None,
+    }
+
+
+def _get_prefetched_latest_message(order):
+    prefetched_messages = getattr(order, 'prefetched_messages', None)
+    if prefetched_messages is not None:
+        return prefetched_messages[0] if prefetched_messages else None
+    return order.messages.order_by('-created_at').first()
+
+
+def _build_customer_shop_summary_payload(shop, request):
+    status_obj = _safe_shop_status(shop)
+    status_value = status_obj.status if status_obj else 'closed'
+    status_display = status_obj.get_status_display() if status_obj else 'مغلق'
+    category = shop.shop_category
+
+    return {
+        'id': shop.id,
+        'shop_name': shop.shop_name,
+        'shop_number': shop.shop_number,
+        'owner_name': shop.owner_name,
+        'phone_number': shop.phone_number,
+        'profile_image_url': _build_file_url(request, shop.profile_image),
+        'shop_category': (
+            {'id': category.id, 'name': category.name}
+            if category else None
+        ),
+        'status': {
+            'key': status_value,
+            'label': status_display,
+        },
+    }
+
+
+def _build_customer_message_summary_payload(message, request):
+    if not message:
+        return None
+
+    serialized = ChatMessageSerializer(message, context={'request': request}).data
+    return {
+        'id': serialized.get('id'),
+        'chat_type': serialized.get('chat_type'),
+        'sender_type': serialized.get('sender_type'),
+        'sender_name': serialized.get('sender_name'),
+        'message_type': serialized.get('message_type'),
+        'content': serialized.get('content'),
+        'audio_file_url': serialized.get('audio_file_url'),
+        'image_file_url': serialized.get('image_file_url'),
+        'latitude': serialized.get('latitude'),
+        'longitude': serialized.get('longitude'),
+        'is_read': serialized.get('is_read'),
+        'created_at': serialized.get('created_at'),
+    }
+
+
+def _build_customer_order_brief_payload(order):
+    return {
+        'id': order.id,
+        'order_number': order.order_number,
+        'status': order.status,
+        'status_display': order.get_status_display(),
+        'created_at': order.created_at.isoformat() if order.created_at else None,
+        'updated_at': order.updated_at.isoformat() if order.updated_at else None,
+    }
+
+
+def _get_customer_friendly_delivery_status(order):
+    mapping = {
+        'confirmed': 'تم الاستلام',
+        'preparing': 'تم الاستلام',
+        'on_way': 'في الطريق',
+    }
+    return mapping.get(order.status, order.get_status_display())
+
+
+def _build_customer_driver_payload(order, request):
+    driver = order.driver
+    if not driver:
+        return None
+
+    return {
+        'id': driver.id,
+        'name': driver.name,
+        'phone_number': driver.phone_number,
+        'profile_image_url': _build_file_url(request, driver.profile_image),
+        'status': driver.status,
+        'status_display': driver.get_status_display(),
+        'current_latitude': str(driver.current_latitude) if driver.current_latitude is not None else None,
+        'current_longitude': str(driver.current_longitude) if driver.current_longitude is not None else None,
+        'location_updated_at': driver.location_updated_at.isoformat() if driver.location_updated_at else None,
+    }
+
+
+def _build_customer_shop_conversation_item(order, request):
+    last_message = _get_prefetched_latest_message(order)
+    last_contact_at = last_message.created_at if last_message else order.updated_at
+
+    return {
+        'shop': _build_customer_shop_summary_payload(order.shop_owner, request),
+        'latest_order': _build_customer_order_brief_payload(order),
+        'last_message': _build_customer_message_summary_payload(last_message, request),
+        'last_contact_at': last_contact_at.isoformat() if last_contact_at else None,
+        'last_contact_label': _build_relative_time_label(last_contact_at),
+        'contact_subtitle': 'تم التواصل مؤخراً' if last_message else 'لا يوجد تواصل بعد',
+        'unread_messages_count': int(order.unread_messages_count or 0),
+        'contact_action': {
+            'enabled': True,
+            'order_id': order.id,
+            'chat_type': 'shop_customer',
+        },
+    }
+
+
+def _build_customer_on_way_order_item(order, request):
+    can_chat_with_driver = bool(order.driver_id and order.status in {'preparing', 'on_way'})
+    can_track_driver = bool(order.driver_id and order.status in {'preparing', 'on_way'})
+
+    return {
+        'order': {
+            **_build_customer_order_brief_payload(order),
+            'customer_status_display': _get_customer_friendly_delivery_status(order),
+            'total_amount': str(order.total_amount),
+            'delivery_fee': str(order.delivery_fee),
+            'address': order.address,
+            'estimated_delivery_time': order.estimated_delivery_time.isoformat() if order.estimated_delivery_time else None,
+        },
+        'shop': _build_customer_shop_summary_payload(order.shop_owner, request),
+        'driver': _build_customer_driver_payload(order, request),
+        'driver_chat': {
+            'enabled': can_chat_with_driver,
+            'label': 'تواصل مع المندوب' if can_chat_with_driver else 'المحادثة مغلقة',
+            'order_id': order.id,
+            'chat_type': 'driver_customer',
+        },
+        'tracking': {
+            'enabled': can_track_driver,
+            'endpoint': f'/api/orders/{order.id}/track/',
+        },
+        'updated_at': order.updated_at.isoformat() if order.updated_at else None,
     }
 
 
@@ -3819,6 +3967,24 @@ def customer_orders_list_create_view(request):
                 notify_new_order(order.shop_owner_id, response_serializer.data)
             except Exception as e:
                 print(f"new_order WebSocket error: {e}")
+
+            try:
+                received_msg = ChatMessage.objects.create(
+                    order=order,
+                    chat_type='shop_customer',
+                    sender_type='shop_owner',
+                    sender_shop_owner=order.shop_owner,
+                    message_type='text',
+                    content=t(request, 'order_received_wait_for_invoice'),
+                )
+                broadcast_chat_message_to_customer(
+                    order.id,
+                    'shop_customer',
+                    _chat_message_payload(received_msg)
+                )
+            except Exception as e:
+                print(f"order received chat message error: {e}")
+
             return success_response(
                 data=response_serializer.data,
                 message=t(request, 'order_created_successfully'),
@@ -3829,6 +3995,87 @@ def customer_orders_list_create_view(request):
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
+
+
+@api_view(['GET'])
+@permission_classes([IsCustomer])
+def customer_shops_conversations_view(request):
+    """
+    قائمة المحلات التي لدى العميل معها محادثات/طلبات.
+    GET /api/customer/shops-conversations/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    orders = (
+        Order.objects
+        .filter(customer=customer)
+        .select_related('shop_owner', 'shop_owner__shop_category')
+        .prefetch_related(
+            Prefetch(
+                'messages',
+                queryset=ChatMessage.objects.order_by('-created_at'),
+                to_attr='prefetched_messages',
+            )
+        )
+        .order_by('-updated_at', '-created_at')
+    )
+
+    grouped_by_shop = {}
+    for order in orders:
+        if not order.shop_owner_id:
+            continue
+
+        shop_id = order.shop_owner_id
+        if shop_id not in grouped_by_shop:
+            grouped_by_shop[shop_id] = _build_customer_shop_conversation_item(order, request)
+            grouped_by_shop[shop_id]['orders_count'] = 1
+            continue
+
+        grouped_by_shop[shop_id]['orders_count'] += 1
+        grouped_by_shop[shop_id]['unread_messages_count'] += int(order.unread_messages_count or 0)
+
+    results = list(grouped_by_shop.values())
+    return success_response(
+        data={
+            'count': len(results),
+            'results': results,
+        },
+        message='shops_conversations_retrieved_successfully',
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsCustomer])
+def customer_on_way_orders_view(request):
+    """
+    الطلبات النشطة الخاصة بالعميل في التوصيل.
+    GET /api/customer/orders/on-way/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    orders = (
+        Order.objects
+        .filter(customer=customer, status__in=['confirmed', 'preparing', 'on_way'])
+        .select_related('shop_owner', 'shop_owner__shop_category', 'driver')
+        .order_by('-updated_at', '-created_at')
+    )
+
+    results = [_build_customer_on_way_order_item(order, request) for order in orders]
+    return success_response(
+        data={
+            'count': len(results),
+            'results': results,
+        },
+        message='orders_retrieved_successfully',
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
 
 
 @api_view(['POST'])
@@ -3991,7 +4238,18 @@ def customer_profile_view(request):
 
         phone_value = request.data.get('phone_number', request.data.get('phone'))
         if phone_value is not None:
-            payload['phone_number'] = phone_value
+            normalized_phone = normalize_phone(phone_value)
+            if normalized_phone != customer.phone_number:
+                return error_response(
+                    message=t(request, 'phone_number_change_requires_otp_verification'),
+                    errors={
+                        'phone_number': [
+                            t(request, 'phone_number_change_requires_otp_verification')
+                        ]
+                    },
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            payload['phone_number'] = normalized_phone
 
         current_password = (
             request.data.get('current_password')
@@ -4043,6 +4301,138 @@ def customer_profile_view(request):
         return success_response(data=serializer.data, message=t(request, 'profile_updated_successfully'))
 
 
+@api_view(['POST'])
+@permission_classes([IsCustomer])
+def customer_profile_phone_send_otp_view(request):
+    """
+    Request OTP before changing the customer's phone number.
+    POST /api/customer/profile/phone/send-otp/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    new_phone_number = request.data.get('new_phone_number', request.data.get('phone_number'))
+    if not new_phone_number:
+        return error_response(
+            message=t(request, 'phone_number_is_required'),
+            errors={'phone_number': [t(request, 'phone_number_is_required')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    normalized_phone = normalize_phone(new_phone_number)
+    if normalized_phone == customer.phone_number:
+        return error_response(
+            message=t(request, 'new_phone_number_matches_current_phone_number'),
+            errors={'phone_number': [t(request, 'new_phone_number_matches_current_phone_number')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    phone_variants = CustomerProfileUpdateSerializer._phone_variants(new_phone_number)
+    existing_customer = Customer.objects.filter(phone_number__in=phone_variants).exclude(pk=customer.pk)
+    if existing_customer.exists():
+        return error_response(
+            message=t(request, 'phone_number_is_already_registered'),
+            errors={'phone_number': [t(request, 'phone_number_is_already_registered')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    send_ok, send_msg = otp_send(normalized_phone)
+    if not send_ok:
+        return error_response(
+            message=localize_message(request, send_msg),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    cache.set(
+        _customer_phone_change_cache_key(customer.id),
+        {'phone_number': normalized_phone},
+        CUSTOMER_PHONE_CHANGE_OTP_TTL_SECONDS,
+    )
+
+    return success_response(
+        data={
+            'new_phone_number': normalized_phone,
+            'expires_in_seconds': CUSTOMER_PHONE_CHANGE_OTP_TTL_SECONDS,
+        },
+        message=t(request, 'phone_number_change_otp_sent_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsCustomer])
+def customer_profile_phone_verify_otp_view(request):
+    """
+    Verify OTP and complete the customer's phone number change.
+    POST /api/customer/profile/phone/verify-otp/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    otp_code = request.data.get('otp')
+    new_phone_number = request.data.get('new_phone_number', request.data.get('phone_number'))
+    if not new_phone_number:
+        return error_response(
+            message=t(request, 'phone_number_is_required'),
+            errors={'phone_number': [t(request, 'phone_number_is_required')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if not otp_code:
+        return error_response(
+            message=t(request, 'verification_code_is_required'),
+            errors={'otp': [t(request, 'verification_code_is_required')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    normalized_phone = normalize_phone(new_phone_number)
+    pending_change = cache.get(_customer_phone_change_cache_key(customer.id))
+    if not pending_change:
+        return error_response(
+            message=t(request, 'phone_number_change_otp_request_not_found'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if normalized_phone != pending_change.get('phone_number'):
+        return error_response(
+            message=t(request, 'phone_number_change_otp_phone_mismatch'),
+            errors={'phone_number': [t(request, 'phone_number_change_otp_phone_mismatch')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    phone_variants = CustomerProfileUpdateSerializer._phone_variants(normalized_phone)
+    existing_customer = Customer.objects.filter(phone_number__in=phone_variants).exclude(pk=customer.pk)
+    if existing_customer.exists():
+        return error_response(
+            message=t(request, 'phone_number_is_already_registered'),
+            errors={'phone_number': [t(request, 'phone_number_is_already_registered')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not otp_verify(normalized_phone, otp_code):
+        return error_response(
+            message=t(request, 'verification_code_is_invalid_or_expired'),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    customer.phone_number = normalized_phone
+    customer.save(update_fields=['phone_number', 'updated_at'])
+    cache.delete(_customer_phone_change_cache_key(customer.id))
+
+    refresh = CustomerTokenObtainPairSerializer.get_token(customer)
+    serializer = CustomerSerializer(customer, context={'request': request})
+    return success_response(
+        data={
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'customer': serializer.data,
+        },
+        message=t(request, 'phone_number_updated_successfully_after_otp_verification'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
 # ==================== Customer Address APIs ====================
 
 @api_view(['GET', 'POST'])
@@ -4061,11 +4451,11 @@ def customer_address_list_view(request):
     
     if request.method == 'GET':
         addresses = customer.addresses.all()
-        serializer = CustomerAddressSerializer(addresses, many=True)
+        serializer = CustomerAddressSerializer(addresses, many=True, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'addresses_retrieved_successfully'))
     
     elif request.method == 'POST':
-        serializer = CustomerAddressSerializer(data=request.data)
+        serializer = CustomerAddressSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save(customer=customer)
             return success_response(data=serializer.data, message=t(request, 'address_added_successfully'), status_code=status.HTTP_201_CREATED)
@@ -4086,11 +4476,11 @@ def customer_address_detail_view(request, address_id):
         return error_response(message=t(request, 'address_not_found'), status_code=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':
-        serializer = CustomerAddressSerializer(address)
+        serializer = CustomerAddressSerializer(address, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'address_retrieved_successfully'))
     
     elif request.method == 'PUT':
-        serializer = CustomerAddressSerializer(address, data=request.data, partial=True)
+        serializer = CustomerAddressSerializer(address, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return success_response(data=serializer.data, message=t(request, 'address_updated_successfully'))

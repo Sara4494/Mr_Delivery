@@ -40,10 +40,43 @@ class CustomerAddressSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CustomerAddress
-        fields = ['id', 'title', 'address_type', 'address_type_display', 'full_address', 
-                  'latitude', 'longitude', 'building_number', 'floor', 'apartment', 
-                  'notes', 'is_default', 'created_at']
+        fields = ['id', 'title', 'address_type', 'address_type_display', 'full_address',
+                  'area', 'street_name', 'landmark', 'latitude', 'longitude',
+                  'building_number', 'floor', 'apartment', 'notes', 'is_default', 'created_at']
         read_only_fields = ['id', 'created_at']
+
+    @staticmethod
+    def _compose_full_address(values, instance=None):
+        def pick(key):
+            if key in values:
+                return str(values.get(key) or '').strip()
+            if instance is not None:
+                return str(getattr(instance, key, '') or '').strip()
+            return ''
+
+        explicit_full_address = pick('full_address')
+        if explicit_full_address:
+            return explicit_full_address
+
+        address_parts = [
+            pick('area'),
+            pick('street_name'),
+            f"رقم المبنى {pick('building_number')}" if pick('building_number') else '',
+            f"الطابق {pick('floor')}" if pick('floor') else '',
+            f"الشقة {pick('apartment')}" if pick('apartment') else '',
+            pick('landmark'),
+        ]
+        composed = ' - '.join(part for part in address_parts if part)
+        return composed.strip()
+
+    def validate(self, attrs):
+        full_address = self._compose_full_address(attrs, instance=self.instance)
+        if not full_address:
+            raise serializers.ValidationError({
+                'full_address': ['يجب إرسال full_address أو حقول العنوان التفصيلية.']
+            })
+        attrs['full_address'] = full_address
+        return attrs
 
 
 class CustomerSerializer(serializers.ModelSerializer):
