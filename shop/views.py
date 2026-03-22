@@ -2610,50 +2610,34 @@ def _build_customer_driver_payload(order, request):
 
 def _build_customer_shop_conversation_item(order, request):
     last_message = _get_prefetched_latest_message(order)
-    last_contact_at = last_message.created_at if last_message else order.updated_at
-
     return {
-        'shop': _build_customer_shop_summary_payload(order.shop_owner, request),
-        'latest_order': _build_customer_order_brief_payload(order),
-        'last_message': _build_customer_message_summary_payload(last_message, request),
-        'last_contact_at': last_contact_at.isoformat() if last_contact_at else None,
-        'last_contact_label': _build_relative_time_label(last_contact_at),
-        'contact_subtitle': 'تم التواصل مؤخراً' if last_message else 'لا يوجد تواصل بعد',
-        'unread_messages_count': int(order.unread_messages_count or 0),
-        'contact_action': {
-            'enabled': True,
-            'order_id': order.id,
-            'chat_type': 'shop_customer',
-        },
+        'shop_id': order.shop_owner_id,
+        'shop_name': order.shop_owner.shop_name,
+        'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image),
+        'subtitle': 'تم التواصل مؤخراً' if last_message else 'لا يوجد تواصل بعد',
+        'order_id': order.id,
+        'chat_type': 'shop_customer',
+        'action_label': 'تواصل',
+        'action_enabled': True,
     }
 
 
 def _build_customer_on_way_order_item(order, request):
+    driver = order.driver
     can_chat_with_driver = bool(order.driver_id and order.status in {'preparing', 'on_way'})
-    can_track_driver = bool(order.driver_id and order.status in {'preparing', 'on_way'})
 
     return {
-        'order': {
-            **_build_customer_order_brief_payload(order),
-            'customer_status_display': _get_customer_friendly_delivery_status(order),
-            'total_amount': str(order.total_amount),
-            'delivery_fee': str(order.delivery_fee),
-            'address': order.address,
-            'estimated_delivery_time': order.estimated_delivery_time.isoformat() if order.estimated_delivery_time else None,
-        },
-        'shop': _build_customer_shop_summary_payload(order.shop_owner, request),
-        'driver': _build_customer_driver_payload(order, request),
-        'driver_chat': {
-            'enabled': can_chat_with_driver,
-            'label': 'تواصل مع المندوب' if can_chat_with_driver else 'المحادثة مغلقة',
-            'order_id': order.id,
-            'chat_type': 'driver_customer',
-        },
-        'tracking': {
-            'enabled': can_track_driver,
-            'endpoint': f'/api/orders/{order.id}/track/',
-        },
-        'updated_at': order.updated_at.isoformat() if order.updated_at else None,
+        'order_id': order.id,
+        'status_key': order.status,
+        'status_label': _get_customer_friendly_delivery_status(order),
+        'shop_name': order.shop_owner.shop_name,
+        'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image),
+        'driver_name': driver.name if driver else None,
+        'driver_image_url': _build_file_url(request, driver.profile_image) if driver else None,
+        'driver_role_label': 'مندوب التوصيل' if driver else None,
+        'chat_type': 'driver_customer',
+        'action_label': 'تواصل مع المندوب' if can_chat_with_driver else 'المحادثة مغلقة',
+        'action_enabled': can_chat_with_driver,
     }
 
 
@@ -4043,11 +4027,7 @@ def customer_shops_conversations_view(request):
         shop_id = order.shop_owner_id
         if shop_id not in grouped_by_shop:
             grouped_by_shop[shop_id] = _build_customer_shop_conversation_item(order, request)
-            grouped_by_shop[shop_id]['orders_count'] = 1
             continue
-
-        grouped_by_shop[shop_id]['orders_count'] += 1
-        grouped_by_shop[shop_id]['unread_messages_count'] += int(order.unread_messages_count or 0)
 
     results = list(grouped_by_shop.values())
     return success_response(
