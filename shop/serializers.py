@@ -36,14 +36,56 @@ class ShopStatusSerializer(serializers.ModelSerializer):
 
 class CustomerAddressSerializer(serializers.ModelSerializer):
     """Serializer لعنوان العميل"""
+    title = serializers.CharField(required=False, allow_blank=True)
+    full_address = serializers.CharField(required=False, allow_blank=True)
+    city = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    area = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    street_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    landmark = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    building_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    floor = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    apartment = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     address_type_display = serializers.CharField(source='get_address_type_display', read_only=True)
     
     class Meta:
         model = CustomerAddress
         fields = ['id', 'title', 'address_type', 'address_type_display', 'full_address',
-                  'area', 'street_name', 'landmark', 'latitude', 'longitude',
+                  'city', 'area', 'street_name', 'landmark', 'latitude', 'longitude',
                   'building_number', 'floor', 'apartment', 'notes', 'is_default', 'created_at']
         read_only_fields = ['id', 'created_at']
+        extra_kwargs = {
+            'title': {'required': False, 'allow_blank': True},
+            'address_type': {'required': False},
+            'full_address': {'required': False, 'allow_blank': True},
+        }
+
+    @staticmethod
+    def _compose_title(values, instance=None):
+        def pick(key):
+            if key in values:
+                return str(values.get(key) or '').strip()
+            if instance is not None:
+                return str(getattr(instance, key, '') or '').strip()
+            return ''
+
+        explicit_title = pick('title')
+        if explicit_title:
+            return explicit_title
+
+        city = pick('city')
+        area = pick('area')
+        landmark = pick('landmark')
+        address_type = pick('address_type') or 'home'
+        type_label_map = {
+            'home': 'المنزل',
+            'work': 'العمل',
+            'other': 'عنوان',
+        }
+
+        for candidate in [city, area, landmark]:
+            if candidate:
+                return candidate
+        return type_label_map.get(address_type, 'عنوان')
 
     @staticmethod
     def _compose_full_address(values, instance=None):
@@ -59,12 +101,13 @@ class CustomerAddressSerializer(serializers.ModelSerializer):
             return explicit_full_address
 
         address_parts = [
+            pick('city'),
             pick('area'),
+            pick('landmark'),
             pick('street_name'),
             f"رقم المبنى {pick('building_number')}" if pick('building_number') else '',
             f"الطابق {pick('floor')}" if pick('floor') else '',
             f"الشقة {pick('apartment')}" if pick('apartment') else '',
-            pick('landmark'),
         ]
         composed = ' - '.join(part for part in address_parts if part)
         return composed.strip()
@@ -76,6 +119,7 @@ class CustomerAddressSerializer(serializers.ModelSerializer):
                 'full_address': ['يجب إرسال full_address أو حقول العنوان التفصيلية.']
             })
         attrs['full_address'] = full_address
+        attrs['title'] = self._compose_title(attrs, instance=self.instance)
         return attrs
 
 

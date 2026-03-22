@@ -85,6 +85,7 @@ class CustomerAddress(models.Model):
     title = models.CharField(max_length=100, verbose_name="عنوان مختصر")
     address_type = models.CharField(max_length=20, choices=ADDRESS_TYPE_CHOICES, default='home', verbose_name="نوع العنوان")
     full_address = models.TextField(verbose_name="العنوان الكامل")
+    city = models.CharField(max_length=150, blank=True, null=True, verbose_name="المدينة")
     area = models.CharField(max_length=150, blank=True, null=True, verbose_name="المنطقة")
     street_name = models.CharField(max_length=150, blank=True, null=True, verbose_name="اسم الشارع")
     landmark = models.CharField(max_length=150, blank=True, null=True, verbose_name="أقرب علامة مميزة")

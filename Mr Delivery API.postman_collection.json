@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "eb2ff63a-4487-46de-87c4-fe58f5bf5629",
+    "_postman_id": "849b691d-03a1-40d6-b4e2-acc2407a663f",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-eb2ff63a-4487-46de-87c4-fe58f5bf5629?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-849b691d-03a1-40d6-b4e2-acc2407a663f?source=collection_link"
   },
   "item": [
     {
@@ -505,7 +505,13 @@
               "name": "Shop Profile (Customer)",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
                 "url": {
                   "raw": "{{base_url}}/api/shops/2/profile/",
                   "host": [
@@ -1195,7 +1201,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"title\": \"المنزل\",\n    \"address_type\": \"home\",\n    \"area\": \"حي النخيل\",\n    \"street_name\": \"شارع الملك فهد\",\n    \"landmark\": \"بجوار المدرسة الدولية\",\n    \"building_number\": \"15\",\n    \"floor\": \"2\",\n    \"apartment\": \"5\",\n    \"notes\": \"الجرس عطلان\",\n    \"is_default\": true\n}"
+                  "raw": "{\n    \"city\": \"المدينة المنورة\",\n    \"area\": \"حي العيون\",\n    \"landmark\": \"بجوار محطة الوقود\",\n    \"street_name\": \"السلام\",\n    \"building_number\": \"1\",\n    \"floor\": \"5\",\n    \"is_default\": true\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/customer/addresses/",
@@ -1209,7 +1215,7 @@
                     ""
                   ]
                 },
-                "description": "يدعم العنوان الآن full_address أو الحقول التفصيلية area و street_name و landmark. إذا لم ترسل full_address فسيتم تكوينه تلقائيًا من الباك إند."
+                "description": "الفرونت يمكنه إرسال الحقول الظاهرة في شاشة العنوان مثل city و area و landmark و street_name و building_number و floor فقط. الباك إند سيكوّن full_address ويولد title تلقائيًا إذا لم يُرسل."
               },
               "response": []
             },
@@ -1230,7 +1236,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"title\": \"العمل\",\n    \"address_type\": \"work\",\n    \"area\": \"وسط البلد\",\n    \"street_name\": \"شارع الجامعة\",\n    \"landmark\": \"بجوار بنك مصر\"\n}"
+                  "raw": "{\n    \"city\": \"المدينة المنورة\",\n    \"area\": \"حي العيون\",\n    \"landmark\": \"بجوار محطة الوقود\",\n    \"street_name\": \"سنترال\",\n    \"building_number\": \"1\",\n    \"floor\": \"5\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/customer/addresses/1/",
@@ -1245,7 +1251,7 @@
                     ""
                   ]
                 },
-                "description": "يمكن تحديث الحقول التفصيلية الجديدة للعنوان أو تحديث full_address مباشرة."
+                "description": "يمكن تحديث حقول العنوان الظاهرة في الشاشة مباشرة، والباك إند سيحدث full_address و title تلقائيًا إذا لزم الأمر."
               },
               "response": []
             },
