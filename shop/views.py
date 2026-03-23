@@ -1266,14 +1266,50 @@ def staff_delete_view(request, staff_type, staff_id):
             status_code=status.HTTP_404_NOT_FOUND
         )
 
+    if staff_type == STAFF_TYPE_DRIVER:
+        active_orders_count = Order.objects.filter(
+            shop_owner=request.user,
+            driver=staff_member,
+            status__in=['confirmed', 'preparing', 'on_way'],
+        ).count()
+        if active_orders_count > 0:
+            return error_response(
+                message=t(request, 'driver_cannot_be_removed_from_shop_with_active_orders'),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        shop_driver_relation = ShopDriver.objects.filter(
+            shop_owner=request.user,
+            driver=staff_member,
+        ).first()
+        if shop_driver_relation:
+            shop_driver_relation.delete()
+
+        remaining_active_shops_count = ShopDriver.objects.filter(
+            driver=staff_member,
+            status='active',
+        ).count()
+        if remaining_active_shops_count == 0 and staff_member.status != 'offline':
+            staff_member.status = 'offline'
+            staff_member.save(update_fields=['status', 'updated_at'])
+            try:
+                notify_driver_status_updated(staff_member)
+            except Exception as e:
+                print(f"driver_status_updated WebSocket error: {e}")
+
+        return success_response(
+            data={
+                'driver_id': staff_member.id,
+                'shop_id': request.user.id,
+                'remaining_active_shops_count': remaining_active_shops_count,
+            },
+            message=t(request, 'driver_removed_from_shop_successfully'),
+            status_code=status.HTTP_200_OK
+        )
+
     staff_member.delete()
-    deleted_message = (
-        'employee_deleted_successfully'
-        if staff_type == STAFF_TYPE_EMPLOYEE
-        else 'driver_deleted_successfully'
-    )
     return success_response(
-        message=t(request, deleted_message),
+        message=t(request, 'employee_deleted_successfully'),
         status_code=status.HTTP_200_OK
     )
 
