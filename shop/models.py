@@ -184,6 +184,10 @@ class Driver(models.Model):
         ('busy', 'مشغول'),
         ('offline', 'غير متصل'),
     ]
+    VEHICLE_TYPE_CHOICES = [
+        ('motorcycle', 'دراجة نارية'),
+        ('bicycle', 'دراجة'),
+    ]
     
     # تم تغيير العلاقة لدعم تعدد المتاجر، السائق يمكنه العمل في أكثر من محل
     shops = models.ManyToManyField(ShopOwner, through='ShopDriver', related_name='drivers', verbose_name="المتاجر")
@@ -192,6 +196,14 @@ class Driver(models.Model):
     phone_number = models.CharField(max_length=20, unique=True, verbose_name="رقم الهاتف")
     password = models.CharField(max_length=128, verbose_name="كلمة المرور", blank=True, null=True)  # إضافة password للسائق
     profile_image = models.ImageField(upload_to='driver_profiles/', blank=True, null=True, verbose_name="صورة السائق")
+    vehicle_type = models.CharField(
+        max_length=20,
+        choices=VEHICLE_TYPE_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name="نوع المركبة",
+    )
+    is_verified = models.BooleanField(default=True, verbose_name="تم التحقق")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='offline', verbose_name="الحالة التشغيلية")
     current_orders_count = models.IntegerField(default=0, verbose_name="عدد الطلبات الحالية")
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0, verbose_name="التقييم")

@@ -4450,6 +4450,258 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Delivery App",
+      "item": [
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Register Driver (Step 1)",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "سائق جديد",
+                      "type": "text"
+                    },
+                    {
+                      "key": "phone_number",
+                      "value": "01012345678",
+                      "type": "text"
+                    },
+                    {
+                      "key": "vehicle_type",
+                      "value": "motorcycle",
+                      "type": "text"
+                    },
+                    {
+                      "key": "password",
+                      "value": "123123",
+                      "type": "text"
+                    },
+                    {
+                      "key": "confirm_password",
+                      "value": "123123",
+                      "type": "text"
+                    },
+                    {
+                      "key": "profile_image",
+                      "type": "file",
+                      "value": null
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/register/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "register",
+                    ""
+                  ]
+                },
+                "description": "الخطوة 1 لتسجيل سائق جديد في تطبيق الدليفري."
+              },
+              "response": []
+            },
+            {
+              "name": "Send OTP - Register Driver",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"01012345678\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/register/send-otp/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "register",
+                    "send-otp",
+                    ""
+                  ]
+                },
+                "description": "إرسال OTP لتفعيل حساب السائق بعد التسجيل."
+              },
+              "response": []
+            },
+            {
+              "name": "Verify OTP - Register Driver",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data && jsonData.data.access) {",
+                      "        pm.environment.set(\"driver_token\", jsonData.data.access);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/register/verify-otp/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "register",
+                    "verify-otp",
+                    ""
+                  ]
+                },
+                "description": "تأكيد OTP لتفعيل الحساب. عند النجاح يتم حفظ driver_token."
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Login",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data && jsonData.data.access) {",
+                      "        pm.environment.set(\"driver_token\", jsonData.data.access);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"password\": \"123123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/login/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "login",
+                    ""
+                  ]
+                },
+                "description": "تسجيل دخول السائق. عند النجاح يتم حفظ driver_token."
+              },
+              "response": []
+            },
+            {
+              "name": "Send OTP - Reset Driver Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"01012345678\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/password/send-otp/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "password",
+                    "send-otp",
+                    ""
+                  ]
+                },
+                "description": "إرسال OTP لاستعادة كلمة مرور السائق."
+              },
+              "response": []
+            },
+            {
+              "name": "Reset Driver Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/password/reset/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "password",
+                    "reset",
+                    ""
+                  ]
+                },
+                "description": "إعادة تعيين كلمة مرور السائق بعد التحقق من OTP."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [

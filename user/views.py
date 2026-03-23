@@ -262,46 +262,54 @@ def unified_login_view(request):
             )
         
         from shop.models import Driver
-        try:
-            driver = Driver.objects.get(phone_number=phone_number)
-            if not driver.check_password(password):
-                return error_response(
-                    message=t(request, 'phone_number_or_password_is_incorrect'),
-                    status_code=status.HTTP_401_UNAUTHORIZED
-                )
-            
-            # إنشاء التوكن
-            refresh = RefreshToken()
-            active_shop_ids = list(
-                driver.shops.filter(shop_drivers__status='active').values_list('id', flat=True)
-            )
-            primary_shop_id = active_shop_ids[0] if active_shop_ids else None
-            refresh['driver_id'] = driver.id
-            refresh['phone_number'] = driver.phone_number
-            refresh['user_type'] = 'driver'
-            refresh['shop_owner_id'] = primary_shop_id
-            
-            return success_response(
-                data={
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token),
-                    'user': {
-                        'id': driver.id,
-                        'name': driver.name,
-                        'phone_number': driver.phone_number,
-                        'status': driver.status,
-                        'shop_owner_id': primary_shop_id,
-                        'active_shop_ids': active_shop_ids,
-                    },
-                    'role': 'driver'
-                },
-                message=t(request, 'login_successful')
-            )
-        except Driver.DoesNotExist:
+        queryset = Driver.objects.filter(phone_number__in=_phone_variants(phone_number)).order_by('-updated_at')
+        driver = None
+        for candidate in queryset:
+            if candidate.password and candidate.check_password(password):
+                driver = candidate
+                break
+
+        if not driver:
             return error_response(
                 message=t(request, 'phone_number_or_password_is_incorrect'),
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
+
+        if not driver.is_verified:
+            return error_response(
+                message=t(request, 'account_is_not_verified_complete_otp_verification'),
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # إنشاء التوكن
+        refresh = RefreshToken()
+        active_shop_ids = list(
+            driver.shops.filter(shop_drivers__status='active').values_list('id', flat=True)
+        )
+        primary_shop_id = active_shop_ids[0] if active_shop_ids else None
+        refresh['driver_id'] = driver.id
+        refresh['phone_number'] = driver.phone_number
+        refresh['user_type'] = 'driver'
+        refresh['shop_owner_id'] = primary_shop_id
+        
+        return success_response(
+            data={
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'id': driver.id,
+                    'name': driver.name,
+                    'phone_number': driver.phone_number,
+                    'status': driver.status,
+                    'vehicle_type': driver.vehicle_type,
+                    'is_verified': driver.is_verified,
+                    'shop_owner_id': primary_shop_id,
+                    'active_shop_ids': active_shop_ids,
+                },
+                'role': 'driver'
+            },
+            message=t(request, 'login_successful')
+        )
     
     else:
         return error_response(

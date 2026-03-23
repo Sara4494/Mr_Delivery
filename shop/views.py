@@ -26,7 +26,9 @@ from .serializers import (
     CustomerAddressSerializer,
     CustomerAppAddressSerializer,
     DriverSerializer,
+    DriverAppSerializer,
     DriverCreateSerializer,
+    DriverRegisterSerializer,
     DriverLocationUpdateSerializer,
     OrderSerializer,
     ShopOrderListSerializer,
@@ -748,6 +750,19 @@ def _driver_phone_variants(phone_number):
         variants.add(normalized[1:])  # 20xxxxxxxxxx
         variants.add('0' + normalized[3:])  # 01xxxxxxxxx
     return [v for v in variants if v]
+
+
+def _find_driver_by_phone(phone_number):
+    normalized_phone = normalize_phone(phone_number)
+    if not normalized_phone:
+        return None
+
+    return (
+        Driver.objects
+        .filter(phone_number__in=_driver_phone_variants(normalized_phone))
+        .order_by('-updated_at')
+        .first()
+    )
 
 
 def _invite_driver(request, shop_owner, payload):
@@ -2373,22 +2388,262 @@ def driver_login_view(request):
         "password": "كلمة المرور"
     }
     """
-    serializer = DriverTokenObtainPairSerializer(data=request.data)
+    serializer = DriverTokenObtainPairSerializer(data=request.data, context={'request': request})
     
     try:
         serializer.is_valid(raise_exception=True)
     except Exception as e:
         errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
+        detail_message = None
+        if isinstance(errors, dict):
+            detail_value = errors.get('detail')
+            if isinstance(detail_value, list) and detail_value:
+                detail_message = detail_value[0]
+            elif isinstance(detail_value, str):
+                detail_message = detail_value
         return error_response(
-            message=t(request, 'login_failed'),
+            message=detail_message or t(request, 'login_failed'),
             errors=errors,
-            status_code=status.HTTP_400_BAD_REQUEST
+            status_code=status.HTTP_401_UNAUTHORIZED if detail_message else status.HTTP_400_BAD_REQUEST
         )
     
     return success_response(
         data=serializer.validated_data,
         message=t(request, 'login_successful'),
         status_code=status.HTTP_200_OK
+    )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def driver_register_view(request):
+    """
+    Create a delivery-app driver account.
+    POST /api/driver/register/
+    """
+    payload = request.data.copy()
+
+    profile_image = (
+        request.FILES.get('profile_image')
+        or request.FILES.get('avatar')
+        or request.FILES.get('image')
+    )
+    if profile_image is not None:
+        payload['profile_image'] = profile_image
+
+    serializer = DriverRegisterSerializer(data=payload, context={'request': request})
+    if not serializer.is_valid():
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    driver = serializer.save()
+    response_serializer = DriverAppSerializer(driver, context={'request': request})
+    return success_response(
+        data={'driver': response_serializer.data},
+        message=t(request, 'account_created_successfully_complete_otp_verification'),
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def driver_register_send_otp_view(request):
+    """
+    Send OTP to activate a newly created driver account.
+    POST /api/driver/register/send-otp/
+    """
+    phone_number = request.data.get('phone_number')
+    if not phone_number:
+        return error_response(
+            message=t(request, 'phone_number_is_required'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    driver = _find_driver_by_phone(phone_number)
+    if not driver:
+        return error_response(
+            message=t(request, 'phone_number_is_not_registered_please_register_first'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    if driver.is_verified:
+        return error_response(
+            message=t(request, 'account_is_already_verified_use_login'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    normalized_phone = normalize_phone(phone_number)
+    send_ok, send_msg = otp_send(normalized_phone)
+    if not send_ok:
+        return error_response(
+            message=localize_message(request, send_msg),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return success_response(
+        message=t(request, 'verification_code_sent_to_your_whatsapp'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def driver_register_verify_otp_view(request):
+    """
+    Verify OTP and activate the driver account.
+    POST /api/driver/register/verify-otp/
+    """
+    phone_number = request.data.get('phone_number')
+    otp_code = request.data.get('otp')
+
+    if not phone_number:
+        return error_response(
+            message=t(request, 'phone_number_is_required'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if not otp_code:
+        return error_response(
+            message=t(request, 'verification_code_is_required'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    driver = _find_driver_by_phone(phone_number)
+    if not driver:
+        return error_response(
+            message=t(request, 'phone_number_is_not_registered_please_register_first'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    if driver.is_verified:
+        return error_response(
+            message=t(request, 'account_is_already_verified_use_login'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    normalized_phone = normalize_phone(phone_number)
+    if not otp_verify(normalized_phone, otp_code):
+        return error_response(
+            message=t(request, 'verification_code_is_invalid_or_expired'),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    driver.is_verified = True
+    driver.save(update_fields=['is_verified', 'updated_at'])
+
+    refresh = DriverTokenObtainPairSerializer.get_token(driver)
+    response_serializer = DriverAppSerializer(driver, context={'request': request})
+    return success_response(
+        data={
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'driver': response_serializer.data,
+        },
+        message=t(request, 'verification_successful'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def driver_password_send_otp_view(request):
+    """
+    Send OTP before resetting the driver's password.
+    POST /api/driver/password/send-otp/
+    """
+    phone_number = request.data.get('phone_number')
+    if not phone_number:
+        return error_response(
+            message=t(request, 'phone_number_is_required'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    driver = _find_driver_by_phone(phone_number)
+    if not driver:
+        return error_response(
+            message=t(request, 'phone_number_is_not_registered_please_register_first'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    if not driver.is_verified:
+        return error_response(
+            message=t(request, 'account_is_not_verified_complete_otp_verification'),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    normalized_phone = normalize_phone(phone_number)
+    send_ok, send_msg = otp_send(normalized_phone)
+    if not send_ok:
+        return error_response(
+            message=localize_message(request, send_msg),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return success_response(
+        message=t(request, 'verification_code_sent_to_your_whatsapp'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def driver_password_reset_view(request):
+    """
+    Reset the driver's password using OTP.
+    POST /api/driver/password/reset/
+    """
+    phone_number = request.data.get('phone_number')
+    otp_code = request.data.get('otp')
+    new_password = request.data.get('new_password')
+    confirm_password = (
+        request.data.get('confirm_password')
+        or request.data.get('confirm_new_password')
+        or request.data.get('new_password_confirmation')
+    )
+
+    errors = {}
+    if not phone_number:
+        errors['phone_number'] = [t(request, 'phone_number_is_required')]
+    if not otp_code:
+        errors['otp'] = [t(request, 'verification_code_is_required')]
+    if not new_password:
+        errors['new_password'] = [t(request, 'new_password_is_required')]
+    elif len(new_password) < 6:
+        errors['new_password'] = [t(request, 'password_must_be_at_least_6_characters')]
+    if not confirm_password:
+        errors['confirm_password'] = [t(request, 'confirm_password_is_required')]
+    elif new_password and confirm_password != new_password:
+        errors['confirm_password'] = [t(request, 'new_password_confirmation_does_not_match')]
+    if errors:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    driver = _find_driver_by_phone(phone_number)
+    if not driver:
+        return error_response(
+            message=t(request, 'phone_number_is_not_registered_please_register_first'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    if not driver.is_verified:
+        return error_response(
+            message=t(request, 'account_is_not_verified_complete_otp_verification'),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    normalized_phone = normalize_phone(phone_number)
+    if not otp_verify(normalized_phone, otp_code):
+        return error_response(
+            message=t(request, 'verification_code_is_invalid_or_expired'),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    driver.set_password(new_password)
+    driver.save()
+    return success_response(
+        message=t(request, 'password_changed_successfully'),
+        status_code=status.HTTP_200_OK,
     )
 
 

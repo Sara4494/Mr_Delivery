@@ -57,7 +57,12 @@ urlpatterns = [
     
     # ==================== Login APIs ====================
     path('employee/login/', views.employee_login_view, name='employee_login'),
+    path('driver/register/', views.driver_register_view, name='driver_register'),
+    path('driver/register/send-otp/', views.driver_register_send_otp_view, name='driver_register_send_otp'),
+    path('driver/register/verify-otp/', views.driver_register_verify_otp_view, name='driver_register_verify_otp'),
     path('driver/login/', views.driver_login_view, name='driver_login'),
+    path('driver/password/send-otp/', views.driver_password_send_otp_view, name='driver_password_send_otp'),
+    path('driver/password/reset/', views.driver_password_reset_view, name='driver_password_reset'),
     path('driver/invitation/respond/', views.driver_invitation_respond_view, name='driver_invitation_respond'),
     
     # ==================== Customer Auth ====================

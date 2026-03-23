@@ -381,10 +381,12 @@ class DriverSerializer(serializers.ModelSerializer):
     """Serializer للسائق"""
     profile_image_url = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    vehicle_type_display = serializers.CharField(source='get_vehicle_type_display', read_only=True)
     
     class Meta:
         model = Driver
-        fields = ['id', 'name', 'phone_number', 'profile_image', 'profile_image_url', 
+        fields = ['id', 'name', 'phone_number', 'profile_image', 'profile_image_url',
+                  'vehicle_type', 'vehicle_type_display', 'is_verified',
                   'status', 'status_display', 'current_orders_count', 'rating', 'total_rides', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
@@ -404,7 +406,7 @@ class DriverCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Driver
-        fields = ['name', 'phone_number', 'password', 'profile_image', 'status']
+        fields = ['name', 'phone_number', 'password', 'profile_image', 'vehicle_type', 'status']
     
     def create(self, validated_data):
         """إنشاء سائق جديد"""
@@ -421,6 +423,130 @@ class DriverCreateSerializer(serializers.ModelSerializer):
         if shop_owner:
             ShopDriver.objects.create(shop_owner=shop_owner, driver=driver, status='active')
             
+        return driver
+
+
+class DriverAppSerializer(serializers.ModelSerializer):
+    """Compact driver payload for the delivery app."""
+
+    profile_image_url = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    vehicle_type_display = serializers.CharField(source='get_vehicle_type_display', read_only=True)
+    active_shops = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Driver
+        fields = [
+            'id',
+            'name',
+            'phone_number',
+            'profile_image',
+            'profile_image_url',
+            'vehicle_type',
+            'vehicle_type_display',
+            'is_verified',
+            'status',
+            'status_display',
+            'active_shops',
+        ]
+        read_only_fields = fields
+
+    def get_profile_image_url(self, obj):
+        if obj.profile_image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.profile_image.url)
+            return obj.profile_image.url
+        return None
+
+    def get_active_shops(self, obj):
+        shops = obj.shops.filter(shop_drivers__status='active').values('id', 'shop_name', 'shop_number')
+        return list(shops)
+
+
+class DriverRegisterSerializer(serializers.ModelSerializer):
+    """Serializer for self-registering a driver account in the delivery app."""
+
+    name = serializers.CharField(required=False)
+    phone_number = serializers.CharField(required=False)
+    vehicle_type = serializers.CharField(required=False)
+    password = serializers.CharField(write_only=True, required=False)
+    confirm_password = serializers.CharField(write_only=True, required=False)
+    profile_image = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = Driver
+        fields = ['name', 'phone_number', 'vehicle_type', 'password', 'confirm_password', 'profile_image']
+
+    @staticmethod
+    def _phone_variants(phone_number):
+        raw = str(phone_number or '').strip()
+        normalized = normalize_phone(raw)
+        variants = {raw, normalized}
+        if normalized.startswith('+20'):
+            variants.add(normalized[1:])
+            variants.add(normalized[3:])
+            variants.add('0' + normalized[3:])
+        return [variant for variant in variants if variant]
+
+    def validate_name(self, value):
+        request = self.context.get('request')
+        name = str(value or '').strip()
+        if not name:
+            raise serializers.ValidationError(t(request, 'name_is_required'))
+        return name
+
+    def validate_phone_number(self, value):
+        request = self.context.get('request')
+        normalized_phone = normalize_phone(value)
+        if not normalized_phone:
+            raise serializers.ValidationError(t(request, 'phone_number_is_required'))
+
+        existing_driver = Driver.objects.filter(
+            phone_number__in=self._phone_variants(normalized_phone)
+        ).order_by('-updated_at').first()
+        if existing_driver and existing_driver.is_verified:
+            raise serializers.ValidationError(t(request, 'phone_number_is_already_registered_and_verified'))
+        if existing_driver and not existing_driver.is_verified:
+            raise serializers.ValidationError(t(request, 'driver_account_exists_but_not_verified'))
+        return normalized_phone
+
+    def validate_vehicle_type(self, value):
+        request = self.context.get('request')
+        if not value:
+            raise serializers.ValidationError(t(request, 'vehicle_type_is_required'))
+        if value not in {choice[0] for choice in Driver.VEHICLE_TYPE_CHOICES}:
+            raise serializers.ValidationError(t(request, 'invalid_vehicle_type'))
+        return value
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        if not str(attrs.get('name') or '').strip():
+            raise serializers.ValidationError({'name': [t(request, 'name_is_required')]})
+        if not str(attrs.get('phone_number') or '').strip():
+            raise serializers.ValidationError({'phone_number': [t(request, 'phone_number_is_required')]})
+        if not attrs.get('vehicle_type'):
+            raise serializers.ValidationError({'vehicle_type': [t(request, 'vehicle_type_is_required')]})
+
+        password = attrs.get('password')
+        confirm_password = attrs.pop('confirm_password', None)
+
+        if not password:
+            raise serializers.ValidationError({'password': [t(request, 'password_is_required')]})
+        if len(password) < 6:
+            raise serializers.ValidationError({'password': [t(request, 'password_must_be_at_least_6_characters')]})
+        if not confirm_password:
+            raise serializers.ValidationError({'confirm_password': [t(request, 'confirm_password_is_required')]})
+        if password != confirm_password:
+            raise serializers.ValidationError({'confirm_password': [t(request, 'new_password_confirmation_does_not_match')]})
+
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        driver = Driver.objects.create(is_verified=False, **validated_data)
+        driver.set_password(password)
+        driver.save()
         return driver
 
 
@@ -1163,17 +1289,31 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
         token['user_type'] = 'driver'
         return token
 
+    @staticmethod
+    def _phone_variants(phone_number):
+        raw = str(phone_number or '').strip()
+        normalized = normalize_phone(raw)
+        variants = {raw, normalized}
+        if normalized.startswith('+20'):
+            variants.add(normalized[1:])
+            variants.add(normalized[3:])
+            variants.add('0' + normalized[3:])
+        return [variant for variant in variants if variant]
+
     def validate(self, attrs):
         """
         التحقق من بيانات تسجيل الدخول وإرجاع token
         """
+        request = self.context.get('request')
         phone_number = attrs.get('phone_number')
         password = attrs.get('password')
 
-        queryset = Driver.objects.filter(phone_number=phone_number).order_by('-updated_at')
+        queryset = Driver.objects.filter(
+            phone_number__in=self._phone_variants(phone_number)
+        ).order_by('-updated_at')
         if not queryset.exists():
             raise serializers.ValidationError({
-                'phone_number': 'رقم الهاتف غير صحيح'
+                'phone_number': t(request, 'phone_number_or_password_is_incorrect')
             })
 
         driver = None
@@ -1184,25 +1324,20 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
 
         if not driver:
             raise serializers.ValidationError({
-                'password': 'كلمة المرور غير صحيحة أو غير معينة'
+                'password': t(request, 'phone_number_or_password_is_incorrect')
+            })
+
+        if not driver.is_verified:
+            raise serializers.ValidationError({
+                'detail': t(request, 'account_is_not_verified_complete_otp_verification')
             })
 
         refresh = self.get_token(driver)
-        
-        # جلب المحلات النشطة للسائق
-        active_shops = driver.shops.filter(shop_drivers__status='active').values('id', 'shop_name', 'shop_number')
 
         return {
             'refresh': str(refresh),
             'access': str(refresh.access_token),
-            'driver': {
-                'id': driver.id,
-                'name': driver.name,
-                'phone_number': driver.phone_number,
-                'status': driver.status,
-                'status_display': driver.get_status_display(),
-                'active_shops': list(active_shops),
-            }
+            'driver': DriverAppSerializer(driver, context=self.context).data,
         }
 
 class DriverInvitationRespondSerializer(serializers.Serializer):
