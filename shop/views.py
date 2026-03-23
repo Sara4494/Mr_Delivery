@@ -694,6 +694,24 @@ def _serialize_staff_member(member, staff_type, request):
     return data
 
 
+def _active_shop_drivers_queryset(shop_owner):
+    return (
+        Driver.objects
+        .filter(driver_shops__shop_owner=shop_owner, driver_shops__status='active')
+        .distinct()
+    )
+
+
+def _get_shop_driver_relation(shop_owner, staff_id, relation_statuses=None):
+    queryset = ShopDriver.objects.select_related('driver').filter(
+        shop_owner=shop_owner,
+        driver_id=staff_id,
+    )
+    if relation_statuses is not None:
+        queryset = queryset.filter(status__in=relation_statuses)
+    return queryset.first()
+
+
 def _get_staff_member(shop_owner, staff_type, staff_id):
     if staff_type == STAFF_TYPE_EMPLOYEE:
         try:
@@ -701,10 +719,10 @@ def _get_staff_member(shop_owner, staff_type, staff_id):
         except Employee.DoesNotExist:
             return None, 'employee_not_found'
 
-    try:
-        return Driver.objects.get(id=staff_id, shops=shop_owner), None
-    except Driver.DoesNotExist:
-        return None, 'driver_not_found'
+    relation = _get_shop_driver_relation(shop_owner, staff_id, relation_statuses=['active'])
+    if relation:
+        return relation.driver, None
+    return None, 'driver_not_found'
 
 
 def _coerce_staff_id(value):
@@ -1094,7 +1112,7 @@ def staff_view(request):
 
         staff_items = []
         requested_types = VALID_STAFF_TYPES if staff_type == 'all' else {staff_type}
-        driver_base_queryset = Driver.objects.filter(shops=shop_owner).distinct()
+        driver_base_queryset = _active_shop_drivers_queryset(shop_owner)
 
         if STAFF_TYPE_EMPLOYEE in requested_types:
             employee_queryset = Employee.objects.filter(shop_owner=shop_owner).order_by('-updated_at')
@@ -1261,6 +1279,26 @@ def staff_delete_view(request, staff_type, staff_id):
 
     staff_member, not_found_message = _get_staff_member(request.user, staff_type, staff_id)
     if not staff_member:
+        if staff_type == STAFF_TYPE_DRIVER:
+            pending_or_non_active_relation = _get_shop_driver_relation(
+                request.user,
+                staff_id,
+                relation_statuses=['pending', 'blocked', 'rejected'],
+            )
+            if pending_or_non_active_relation:
+                pending_or_non_active_relation.delete()
+                return success_response(
+                    data={
+                        'driver_id': staff_id,
+                        'shop_id': request.user.id,
+                        'remaining_active_shops_count': ShopDriver.objects.filter(
+                            driver_id=staff_id,
+                            status='active',
+                        ).count(),
+                    },
+                    message=t(request, 'driver_removed_from_shop_successfully'),
+                    status_code=status.HTTP_200_OK
+                )
         return error_response(
             message=t(request, not_found_message),
             status_code=status.HTTP_404_NOT_FOUND
@@ -2271,9 +2309,13 @@ def order_detail_view(request, order_id):
             driver_id = request.data['driver_id']
             if driver_id:
                 try:
-                    driver = Driver.objects.get(id=driver_id, shops=shop_owner)
-                    order.driver = driver
-                except Driver.DoesNotExist:
+                    relation = ShopDriver.objects.select_related('driver').get(
+                        shop_owner=shop_owner,
+                        driver_id=driver_id,
+                        status='active',
+                    )
+                    order.driver = relation.driver
+                except ShopDriver.DoesNotExist:
                     return error_response(
                         message=t(request, 'driver_not_found'),
                         status_code=status.HTTP_404_NOT_FOUND
@@ -2576,8 +2618,9 @@ def shop_dashboard_statistics_view(request):
 
     orders_by_status = orders_qs.values('status').annotate(count=Count('id'))
     total_customers = Customer.objects.filter(shop_owner=shop_owner).count()
-    total_drivers = Driver.objects.filter(shops=shop_owner).distinct().count()
-    available_drivers = Driver.objects.filter(shops=shop_owner, status='available').distinct().count()
+    active_shop_drivers = _active_shop_drivers_queryset(shop_owner)
+    total_drivers = active_shop_drivers.count()
+    available_drivers = active_shop_drivers.filter(status='available').count()
 
     previous_total_orders = previous_orders_qs.count()
     previous_invoices_count = previous_invoices_qs.count()

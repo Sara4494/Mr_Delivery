@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "8e208dc8-c9c8-45df-a4f3-1710cc414b6b",
+    "_postman_id": "3fe5af42-d406-442d-8a44-c6118ad21190",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-8e208dc8-c9c8-45df-a4f3-1710cc414b6b?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-3fe5af42-d406-442d-8a44-c6118ad21190?source=collection_link"
   },
   "item": [
     {
@@ -3058,7 +3058,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"phone_number\": \"01024305308\"\n}"
+                  "raw": "{\n  \"phone_number\": \"01024305305\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/shop/staff/",
@@ -3222,7 +3222,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/shop/staff/driver/1/delete/",
+                  "raw": "{{base_url}}/api/shop/staff/driver/2/delete/",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -3231,7 +3231,7 @@
                     "shop",
                     "staff",
                     "driver",
-                    "1",
+                    "2",
                     "delete",
                     ""
                   ]
@@ -4472,7 +4472,7 @@
                     },
                     {
                       "key": "phone_number",
-                      "value": "01012345678",
+                      "value": "01024305305",
                       "type": "text"
                     },
                     {
@@ -4482,12 +4482,12 @@
                     },
                     {
                       "key": "password",
-                      "value": "123123",
+                      "value": "Etony@010",
                       "type": "text"
                     },
                     {
                       "key": "confirm_password",
-                      "value": "123123",
+                      "value": "Etony@010",
                       "type": "text"
                     },
                     {
@@ -4550,7 +4550,6 @@
                 {
                   "listen": "test",
                   "script": {
-                    "type": "text/javascript",
                     "exec": [
                       "if (pm.response.code === 200) {",
                       "    var jsonData = pm.response.json();",
@@ -4558,7 +4557,10 @@
                       "        pm.environment.set(\"driver_token\", jsonData.data.access);",
                       "    }",
                       "}"
-                    ]
+                    ],
+                    "type": "text/javascript",
+                    "packages": {},
+                    "requests": {}
                   }
                 }
               ],
@@ -4572,7 +4574,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\"\n}"
+                  "raw": "{\n    \"phone_number\": \"+201024305305\",\n    \"otp\": \"123456\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/driver/register/verify-otp/",
@@ -4712,7 +4714,6 @@
                 {
                   "listen": "test",
                   "script": {
-                    "type": "text/javascript",
                     "exec": [
                       "if (pm.response.code === 200) {",
                       "    var jsonData = pm.response.json();",
@@ -4721,7 +4722,10 @@
                       "        pm.collectionVariables.set(\"driver_invitation_id\", String(invitations[0].invitation_id));",
                       "    }",
                       "}"
-                    ]
+                    ],
+                    "type": "text/javascript",
+                    "packages": {},
+                    "requests": {}
                   }
                 }
               ],
