@@ -765,6 +765,209 @@ def _find_driver_by_phone(phone_number):
     )
 
 
+def _get_driver_from_request(request):
+    user = request.user
+    if isinstance(user, Driver):
+        return user
+    try:
+        return Driver.objects.get(id=user.id)
+    except (Driver.DoesNotExist, AttributeError):
+        return None
+
+
+def _coerce_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+
+    normalized = str(value).strip().lower()
+    if normalized in {'1', 'true', 'yes', 'on'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off'}:
+        return False
+    return None
+
+
+def _humanize_elapsed_label(dt_value):
+    if not dt_value:
+        return None
+
+    now_value = timezone.now()
+    if timezone.is_naive(dt_value):
+        dt_value = timezone.make_aware(dt_value, timezone.get_current_timezone())
+    delta = now_value - dt_value
+    total_minutes = max(int(delta.total_seconds() // 60), 0)
+
+    if total_minutes < 1:
+        return 'الآن'
+    if total_minutes < 60:
+        return f'منذ {total_minutes} دقيقة'
+
+    total_hours = total_minutes // 60
+    if total_hours < 24:
+        return f'منذ {total_hours} ساعة'
+
+    total_days = total_hours // 24
+    if total_days < 7:
+        return f'منذ {total_days} يوم'
+
+    return dt_value.strftime('%Y-%m-%d')
+
+
+def _build_driver_branch_label(shop_owner):
+    description = str(getattr(shop_owner, 'description', '') or '').strip()
+    if description:
+        return description
+
+    if getattr(shop_owner, 'shop_category', None):
+        return shop_owner.shop_category.name
+
+    if getattr(shop_owner, 'phone_number', None):
+        return shop_owner.phone_number
+
+    return shop_owner.shop_number
+
+
+def _build_driver_status_panel(driver, active_orders_count):
+    is_online = driver.status != 'offline'
+    can_receive_orders = driver.status == 'available'
+
+    if driver.status == 'busy':
+        title = 'أنت مشغول الآن'
+        subtitle = 'لديك طلبات جارية حتى الآن.'
+    elif is_online:
+        title = 'أنت متصل الآن'
+        subtitle = 'جاهز لاستقبال الطلبات الجديدة.'
+    else:
+        title = 'أنت غير متصل الآن'
+        subtitle = 'فعّل الاتصال لتبدأ استقبال الطلبات.'
+
+    return {
+        'is_online': is_online,
+        'can_receive_orders': can_receive_orders,
+        'status': driver.status,
+        'status_display': driver.get_status_display(),
+        'active_orders_count': active_orders_count,
+        'title': title,
+        'subtitle': subtitle,
+    }
+
+
+def _build_driver_invitation_item(shop_driver, request):
+    shop_owner = shop_driver.shop_owner
+    category = getattr(shop_owner, 'shop_category', None)
+
+    return {
+        'invitation_id': shop_driver.id,
+        'status': shop_driver.status,
+        'message': 'دعوة للانضمام كمندوب توصيل معتمد للطلبات عبر التطبيق.',
+        'invited_at': shop_driver.joined_at.isoformat() if shop_driver.joined_at else None,
+        'invited_since_label': _humanize_elapsed_label(shop_driver.joined_at),
+        'shop': {
+            'id': shop_owner.id,
+            'shop_name': shop_owner.shop_name,
+            'shop_number': shop_owner.shop_number,
+            'shop_logo_url': _build_file_url(request, shop_owner.profile_image),
+            'branch_label': _build_driver_branch_label(shop_owner),
+            'category': (
+                {'id': category.id, 'name': category.name}
+                if category else None
+            ),
+        },
+    }
+
+
+def _build_driver_shop_overview_item(shop_owner, request):
+    new_orders_count = int(getattr(shop_owner, 'new_orders_count', 0) or 0)
+    status_obj = _safe_shop_status(shop_owner)
+
+    if new_orders_count <= 0:
+        new_orders_label = 'لا توجد طلبات'
+    elif new_orders_count == 1:
+        new_orders_label = '1 طلب جديد'
+    else:
+        new_orders_label = f'{new_orders_count} طلبات جديدة'
+
+    return {
+        'shop_id': shop_owner.id,
+        'shop_name': shop_owner.shop_name,
+        'shop_number': shop_owner.shop_number,
+        'shop_logo_url': _build_file_url(request, shop_owner.profile_image),
+        'branch_label': _build_driver_branch_label(shop_owner),
+        'new_orders_count': new_orders_count,
+        'new_orders_label': new_orders_label,
+        'has_new_orders': new_orders_count > 0,
+        'shop_status': {
+            'key': status_obj.status if status_obj else 'closed',
+            'label': status_obj.get_status_display() if status_obj else 'مغلق',
+        },
+    }
+
+
+def _respond_to_driver_invitation(request, shop_driver, driver, action, normalized_phone=None):
+    shop_owner = shop_driver.shop_owner
+    normalized_phone = normalize_phone(normalized_phone or driver.phone_number or '')
+
+    if action == 'reject':
+        shop_driver.status = 'rejected'
+        shop_driver.save(update_fields=['status'])
+        return success_response(
+            data={
+                'action': 'reject',
+                'invitation_id': shop_driver.id,
+                'shop': {
+                    'id': shop_owner.id,
+                    'shop_name': shop_owner.shop_name,
+                    'shop_number': shop_owner.shop_number,
+                },
+                'pending_invitations_count': ShopDriver.objects.filter(driver=driver, status='pending').count(),
+            },
+            message=t(request, 'driver_invitation_rejected_successfully'),
+            status_code=status.HTTP_200_OK,
+        )
+
+    if not driver.password:
+        return error_response(
+            message=t(request, 'driver_account_not_ready_contact_support'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    driver_update_fields = []
+    if normalized_phone and driver.phone_number != normalized_phone:
+        driver.phone_number = normalized_phone
+        driver_update_fields.append('phone_number')
+    if driver.status == 'offline':
+        driver.status = 'available'
+        driver_update_fields.append('status')
+    if driver_update_fields:
+        driver.save(update_fields=driver_update_fields)
+
+    shop_driver.status = 'active'
+    shop_driver.save(update_fields=['status'])
+    try:
+        notify_driver_status_updated(driver)
+    except Exception as e:
+        print(f"driver_status_updated WebSocket error: {e}")
+
+    return success_response(
+        data={
+            'action': 'accept',
+            'invitation_id': shop_driver.id,
+            'shop': {
+                'id': shop_owner.id,
+                'shop_name': shop_owner.shop_name,
+                'shop_number': shop_owner.shop_number,
+            },
+            'driver': DriverAppSerializer(driver, context={'request': request}).data,
+            'pending_invitations_count': ShopDriver.objects.filter(driver=driver, status='pending').count(),
+            'active_shops_count': ShopDriver.objects.filter(driver=driver, status='active').count(),
+        },
+        message=t(request, 'driver_invitation_accepted_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
 def _invite_driver(request, shop_owner, payload):
     phone_number = payload.get('phone_number')
     if not phone_number:
@@ -778,7 +981,7 @@ def _invite_driver(request, shop_owner, payload):
     if not normalized_phone:
         return error_response(
             message=t(request, 'invalid_data'),
-            errors={'phone_number': ['Invalid phone number.']},
+            errors={'phone_number': [t(request, 'invalid_phone_number')]},
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
@@ -1137,11 +1340,11 @@ def driver_invitation_respond_view(request):
 
     errors = {}
     if not phone_number:
-        errors['phone_number'] = ['phone_number is required.']
+        errors['phone_number'] = [t(request, 'phone_number_is_required')]
     if not otp_code:
-        errors['otp'] = ['otp is required.']
+        errors['otp'] = [t(request, 'otp_is_required')]
     if action not in {'accept', 'reject'}:
-        errors['action'] = ['action must be accept or reject.']
+        errors['action'] = [t(request, 'driver_invitation_action_must_be_accept_or_reject')]
     if errors:
         return error_response(
             message=t(request, 'invalid_data'),
@@ -1153,7 +1356,7 @@ def driver_invitation_respond_view(request):
     if not normalized_phone:
         return error_response(
             message=t(request, 'invalid_data'),
-            errors={'phone_number': ['Invalid phone number.']},
+            errors={'phone_number': [t(request, 'invalid_phone_number')]},
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
@@ -1189,39 +1392,180 @@ def driver_invitation_respond_view(request):
             message='No pending driver invitation found.',
             status_code=status.HTTP_404_NOT_FOUND
         )
-    shop_owner = shop_driver.shop_owner
+    return _respond_to_driver_invitation(
+        request=request,
+        shop_driver=shop_driver,
+        driver=driver,
+        action=action,
+        normalized_phone=normalized_phone,
+    )
 
-    if action == 'reject':
-        shop_driver.status = 'rejected'
-        shop_driver.save(update_fields=['status'])
-        return success_response(
-            data={
-                'action': 'reject',
-                'phone_number': normalized_phone,
-                'shop_number': shop_owner.shop_number
-            },
-            message='Driver invitation rejected successfully.',
-            status_code=status.HTTP_200_OK
-        )
 
-    if not driver.password:
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_invitations_view(request):
+    """
+    List pending invitations for the logged-in driver.
+    GET /api/driver/invitations/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    invitations = (
+        ShopDriver.objects
+        .filter(driver=driver, status='pending')
+        .select_related('shop_owner', 'shop_owner__shop_category')
+        .order_by('-joined_at', '-id')
+    )
+
+    return success_response(
+        data={
+            'pending_count': invitations.count(),
+            'invitations': [_build_driver_invitation_item(item, request) for item in invitations],
+        },
+        message=t(request, 'driver_invitations_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_invitation_action_view(request, invitation_id):
+    """
+    Accept or reject a pending invitation for the logged-in driver.
+    POST /api/driver/invitations/{invitation_id}/respond/
+    Body: { "action": "accept|reject" }
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    action = str(request.data.get('action', '')).strip().lower()
+    if action not in {'accept', 'reject'}:
         return error_response(
-            message='Driver account not ready. Please contact support.',
-            status_code=status.HTTP_400_BAD_REQUEST
+            message=t(request, 'invalid_data'),
+            errors={'action': [t(request, 'driver_invitation_action_must_be_accept_or_reject')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    driver_update_fields = []
-    if driver.phone_number != normalized_phone:
-        driver.phone_number = normalized_phone
-        driver_update_fields.append('phone_number')
-    if driver.status == 'offline':
-        driver.status = 'available'
-        driver_update_fields.append('status')
-    if driver_update_fields:
-        driver.save(update_fields=driver_update_fields)
+    try:
+        shop_driver = ShopDriver.objects.select_related('shop_owner').get(
+            id=invitation_id,
+            driver=driver,
+            status='pending',
+        )
+    except ShopDriver.DoesNotExist:
+        return error_response(
+            message=t(request, 'driver_invitation_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
 
-    shop_driver.status = 'active'
-    shop_driver.save(update_fields=['status'])
+    return _respond_to_driver_invitation(
+        request=request,
+        shop_driver=shop_driver,
+        driver=driver,
+        action=action,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_dashboard_view(request):
+    """
+    Driver home dashboard payload.
+    GET /api/driver/dashboard/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    active_orders_qs = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way'])
+    in_delivery_orders_qs = driver.orders.filter(status__in=['preparing', 'on_way'])
+    completed_orders_qs = driver.orders.filter(status='delivered')
+    pending_invitations_count = ShopDriver.objects.filter(driver=driver, status='pending').count()
+    unread_notifications_count = Notification.objects.filter(driver=driver, is_read=False).count()
+
+    active_shops = (
+        ShopOwner.objects
+        .filter(shop_drivers__driver=driver, shop_drivers__status='active')
+        .select_related('shop_category')
+        .annotate(new_orders_count=Count('orders', filter=Q(orders__status='new'), distinct=True))
+        .distinct()
+        .order_by('-new_orders_count', 'shop_name')
+    )
+
+    return success_response(
+        data={
+            'driver': DriverAppSerializer(driver, context={'request': request}).data,
+            'notifications': {
+                'unread_count': unread_notifications_count,
+            },
+            'availability': _build_driver_status_panel(driver, active_orders_qs.count()),
+            'stats': {
+                'current_deliveries_count': in_delivery_orders_qs.count(),
+                'active_orders_count': active_orders_qs.count(),
+                'completed_orders_count': completed_orders_qs.count(),
+            },
+            'counts': {
+                'active_shops_count': active_shops.count(),
+                'pending_invitations_count': pending_invitations_count,
+            },
+            'shops': [_build_driver_shop_overview_item(shop, request) for shop in active_shops],
+        },
+        message=t(request, 'driver_dashboard_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['PATCH'])
+@permission_classes([IsDriver])
+def driver_status_view(request):
+    """
+    Toggle driver online/offline status from the delivery app.
+    PATCH /api/driver/status/
+    Body: { "is_online": true|false } or { "status": "available|offline" }
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    requested_status = request.data.get('status')
+    requested_online = _coerce_bool(request.data.get('is_online'))
+
+    if requested_status is None and requested_online is None:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'is_online': [t(request, 'driver_status_or_is_online_is_required')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if requested_status is not None:
+        target_status = str(requested_status).strip().lower()
+        if target_status not in {'available', 'offline'}:
+            return error_response(
+                message=t(request, 'invalid_driver_status'),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        target_status = 'available' if requested_online else 'offline'
+
+    active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
+    in_delivery_count = driver.orders.filter(status__in=['preparing', 'on_way']).count()
+
+    if target_status == 'offline' and active_orders_count > 0:
+        return error_response(
+            message=t(request, 'driver_cannot_go_offline_with_active_orders'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    new_status = target_status
+    if target_status == 'available' and in_delivery_count > 0:
+        new_status = 'busy'
+
+    driver.status = new_status
+    driver.save(update_fields=['status', 'updated_at'])
+
     try:
         notify_driver_status_updated(driver)
     except Exception as e:
@@ -1229,16 +1573,14 @@ def driver_invitation_respond_view(request):
 
     return success_response(
         data={
-            'action': 'accept',
-            'shop': {
-                'id': shop_owner.id,
-                'shop_name': shop_owner.shop_name,
-                'shop_number': shop_owner.shop_number,
-            },
-            'driver': DriverSerializer(driver, context={'request': request}).data
+            'driver_id': driver.id,
+            'status': driver.status,
+            'status_display': driver.get_status_display(),
+            'is_online': driver.status != 'offline',
+            'can_receive_orders': driver.status == 'available',
         },
-        message='Driver invitation accepted successfully.',
-        status_code=status.HTTP_200_OK
+        message=t(request, 'driver_status_updated_successfully'),
+        status_code=status.HTTP_200_OK,
     )
 
 

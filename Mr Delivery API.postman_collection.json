@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "849b691d-03a1-40d6-b4e2-acc2407a663f",
+    "_postman_id": "8e208dc8-c9c8-45df-a4f3-1710cc414b6b",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-849b691d-03a1-40d6-b4e2-acc2407a663f?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-8e208dc8-c9c8-45df-a4f3-1710cc414b6b?source=collection_link"
   },
   "item": [
     {
@@ -4597,7 +4597,6 @@
                 {
                   "listen": "test",
                   "script": {
-                    "type": "text/javascript",
                     "exec": [
                       "if (pm.response.code === 200) {",
                       "    var jsonData = pm.response.json();",
@@ -4605,7 +4604,10 @@
                       "        pm.environment.set(\"driver_token\", jsonData.data.access);",
                       "    }",
                       "}"
-                    ]
+                    ],
+                    "type": "text/javascript",
+                    "packages": {},
+                    "requests": {}
                   }
                 }
               ],
@@ -4619,7 +4621,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"password\": \"123123\"\n}"
+                  "raw": "{\n    \"phone_number\": \"01024305305\",\n    \"password\": \"Etony@010\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/driver/login/",
@@ -4680,7 +4682,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n    \"phone_number\": \"01012345678\",\n    \"otp\": \"123456\",\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
+                  "raw": "{\n    \"phone_number\": \"01024305305\",\n    \"otp\": \"123456\",\n    \"new_password\": \"Etony@010\",\n    \"confirm_password\": \"Etony@010\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/driver/password/reset/",
@@ -4696,6 +4698,225 @@
                   ]
                 },
                 "description": "إعادة تعيين كلمة مرور السائق بعد التحقق من OTP."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Invitations",
+          "item": [
+            {
+              "name": "List Driver Invitations",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    var invitations = (((jsonData || {}).data || {}).invitations) || [];",
+                      "    if (invitations.length && invitations[0].invitation_id) {",
+                      "        pm.collectionVariables.set(\"driver_invitation_id\", String(invitations[0].invitation_id));",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/invitations/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "invitations",
+                    ""
+                  ]
+                },
+                "description": "جلب دعوات العمل المعلقة للسائق. عند النجاح يتم حفظ أول driver_invitation_id تلقائياً داخل collection variables."
+              },
+              "response": []
+            },
+            {
+              "name": "Accept Driver Invitation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"action\": \"accept\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/invitations/{{driver_invitation_id}}/respond/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "invitations",
+                    "{{driver_invitation_id}}",
+                    "respond",
+                    ""
+                  ]
+                },
+                "description": "قبول دعوة عمل محددة للسائق باستخدام driver_invitation_id."
+              },
+              "response": []
+            },
+            {
+              "name": "Reject Driver Invitation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"action\": \"reject\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/invitations/{{driver_invitation_id}}/respond/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "invitations",
+                    "{{driver_invitation_id}}",
+                    "respond",
+                    ""
+                  ]
+                },
+                "description": "رفض دعوة عمل محددة للسائق باستخدام driver_invitation_id."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Dashboard",
+          "item": [
+            {
+              "name": "Driver Dashboard",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/dashboard/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "dashboard",
+                    ""
+                  ]
+                },
+                "description": "جلب بيانات الصفحة الرئيسية للسائق: الحالة، الإحصائيات، الإشعارات، والمتاجر المرتبطة به."
+              },
+              "response": []
+            },
+            {
+              "name": "Set Driver Online",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"is_online\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/status/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "status",
+                    ""
+                  ]
+                },
+                "description": "تحويل حالة السائق إلى متصل لاستقبال الطلبات الجديدة."
+              },
+              "response": []
+            },
+            {
+              "name": "Set Driver Offline",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"is_online\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/status/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "status",
+                    ""
+                  ]
+                },
+                "description": "تحويل حالة السائق إلى غير متصل إذا لم يكن لديه طلبات جارية."
               },
               "response": []
             }
@@ -4733,6 +4954,11 @@
     {
       "key": "driver_token",
       "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driver_invitation_id",
+      "value": "1",
       "type": "string"
     }
   ]
