@@ -20,9 +20,11 @@ from .serializers import (
     ShopCategorySerializer,
     ShopStatusSerializer,
     CustomerSerializer,
+    CustomerAppProfileSerializer,
     CustomerProfileUpdateSerializer,
     CustomerCreateSerializer,
     CustomerAddressSerializer,
+    CustomerAppAddressSerializer,
     DriverSerializer,
     DriverCreateSerializer,
     DriverLocationUpdateSerializer,
@@ -4227,7 +4229,7 @@ def customer_profile_view(request):
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':
-        serializer = CustomerSerializer(customer, context={'request': request})
+        serializer = CustomerAppProfileSerializer(customer, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'profile_retrieved_successfully'))
     
     elif request.method in ('PUT', 'PATCH'):
@@ -4298,8 +4300,8 @@ def customer_profile_view(request):
             )
 
         serializer.save()
-        serializer = CustomerSerializer(customer, context={'request': request})
-        return success_response(data=serializer.data, message=t(request, 'profile_updated_successfully'))
+        response_serializer = CustomerAppProfileSerializer(customer, context={'request': request})
+        return success_response(data=response_serializer.data, message=t(request, 'profile_updated_successfully'))
 
 
 @api_view(['POST'])
@@ -4422,7 +4424,7 @@ def customer_profile_phone_verify_otp_view(request):
     cache.delete(_customer_phone_change_cache_key(customer.id))
 
     refresh = CustomerTokenObtainPairSerializer.get_token(customer)
-    serializer = CustomerSerializer(customer, context={'request': request})
+    serializer = CustomerAppProfileSerializer(customer, context={'request': request})
     return success_response(
         data={
             'refresh': str(refresh),
@@ -4452,14 +4454,15 @@ def customer_address_list_view(request):
     
     if request.method == 'GET':
         addresses = customer.addresses.all()
-        serializer = CustomerAddressSerializer(addresses, many=True, context={'request': request})
+        serializer = CustomerAppAddressSerializer(addresses, many=True, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'addresses_retrieved_successfully'))
     
     elif request.method == 'POST':
         serializer = CustomerAddressSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            serializer.save(customer=customer)
-            return success_response(data=serializer.data, message=t(request, 'address_added_successfully'), status_code=status.HTTP_201_CREATED)
+            address = serializer.save(customer=customer)
+            response_serializer = CustomerAppAddressSerializer(address, context={'request': request})
+            return success_response(data=response_serializer.data, message=t(request, 'address_added_successfully'), status_code=status.HTTP_201_CREATED)
         return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
 
 
@@ -4477,14 +4480,15 @@ def customer_address_detail_view(request, address_id):
         return error_response(message=t(request, 'address_not_found'), status_code=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':
-        serializer = CustomerAddressSerializer(address, context={'request': request})
+        serializer = CustomerAppAddressSerializer(address, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'address_retrieved_successfully'))
     
     elif request.method == 'PUT':
         serializer = CustomerAddressSerializer(address, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
-            return success_response(data=serializer.data, message=t(request, 'address_updated_successfully'))
+            response_serializer = CustomerAppAddressSerializer(address, context={'request': request})
+            return success_response(data=response_serializer.data, message=t(request, 'address_updated_successfully'))
         return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
     
     elif request.method == 'DELETE':

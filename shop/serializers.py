@@ -186,6 +186,58 @@ class CustomerSerializer(serializers.ModelSerializer):
         return None
 
 
+class CustomerAppAddressSerializer(serializers.ModelSerializer):
+    """Compact address payload for the customer app."""
+
+    class Meta:
+        model = CustomerAddress
+        fields = [
+            'id',
+            'title',
+            'city',
+            'area',
+            'street_name',
+            'building_number',
+            'floor',
+            'is_default',
+        ]
+        read_only_fields = fields
+
+
+class CustomerAppProfileSerializer(serializers.ModelSerializer):
+    """Compact customer profile payload for the customer app."""
+
+    profile_image_url = serializers.SerializerMethodField()
+    default_address = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Customer
+        fields = [
+            'id',
+            'name',
+            'phone_number',
+            'profile_image',
+            'profile_image_url',
+            'is_verified',
+            'default_address',
+        ]
+        read_only_fields = fields
+
+    def get_profile_image_url(self, obj):
+        if obj.profile_image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.profile_image.url)
+            return obj.profile_image.url
+        return None
+
+    def get_default_address(self, obj):
+        addr = obj.addresses.filter(is_default=True).first()
+        if addr:
+            return CustomerAppAddressSerializer(addr, context=self.context).data
+        return None
+
+
 class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
     """Serializer لتحديث ملف العميل من نفس endpoint."""
 
