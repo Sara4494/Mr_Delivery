@@ -3604,33 +3604,21 @@ def _build_customer_order_request_message(customer, address, items):
 
 
 def _chat_message_payload(message, request=None):
-    if request is not None:
-        serialized = ChatMessageSerializer(message, context={'request': request}).data
-        return {
-            'id': serialized.get('id'),
-            'sender_type': serialized.get('sender_type'),
-            'sender_name': serialized.get('sender_name'),
-            'message_type': serialized.get('message_type'),
-            'content': serialized.get('content'),
-            'is_read': serialized.get('is_read'),
-            'created_at': serialized.get('created_at'),
-            'audio_file_url': serialized.get('audio_file_url'),
-            'image_file_url': serialized.get('image_file_url'),
-            'latitude': serialized.get('latitude'),
-            'longitude': serialized.get('longitude'),
-        }
+    context = {'request': request} if request is not None else {}
+    serialized = ChatMessageSerializer(message, context=context).data
     return {
-        'id': message.id,
-        'sender_type': message.sender_type,
-        'sender_name': message.sender_name,
-        'message_type': message.message_type,
-        'content': message.content,
-        'is_read': message.is_read,
-        'created_at': message.created_at.isoformat(),
-        'audio_file_url': message.audio_file.url if message.audio_file else None,
-        'image_file_url': message.image_file.url if message.image_file else None,
-        'latitude': str(message.latitude) if message.latitude is not None else None,
-        'longitude': str(message.longitude) if message.longitude is not None else None,
+        'id': serialized.get('id'),
+        'sender_type': serialized.get('sender_type'),
+        'sender_name': serialized.get('sender_name'),
+        'message_type': serialized.get('message_type'),
+        'content': serialized.get('content'),
+        'is_read': serialized.get('is_read'),
+        'created_at': serialized.get('created_at'),
+        'audio_file_url': serialized.get('audio_file_url'),
+        'image_file_url': serialized.get('image_file_url'),
+        'latitude': serialized.get('latitude'),
+        'longitude': serialized.get('longitude'),
+        'invoice': serialized.get('invoice'),
     }
 
 

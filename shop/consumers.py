@@ -5,7 +5,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 from .models import Order, ChatMessage, Customer, Employee, Driver
 from user.models import ShopOwner
-from .serializers import OrderSerializer
+from .serializers import ChatMessageSerializer, OrderSerializer
 from user.utils import build_message_fields
 
 
@@ -460,25 +460,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 order_id=self.order_id,
                 chat_type=self.chat_type
             ).order_by('created_at')[:50]
-            
-            from user.utils import localize_message
+
             result = []
             for msg in messages:
+                serialized = ChatMessageSerializer(msg, context={'lang': self.lang}).data
                 result.append({
-                    'id': msg.id,
+                    'id': serialized.get('id'),
                     'order_id': msg.order_id,
-                    'chat_type': msg.chat_type,
-                    'sender_type': msg.sender_type,
-                    'sender_name': msg.sender_name,
+                    'chat_type': serialized.get('chat_type'),
+                    'sender_type': serialized.get('sender_type'),
+                    'sender_name': serialized.get('sender_name'),
                     'sender_id': self._get_sender_id(msg),
-                    'message_type': msg.message_type,
-                    'content': localize_message(None, msg.content, lang=self.lang),
-                    'latitude': str(msg.latitude) if msg.latitude is not None else None,
-                    'longitude': str(msg.longitude) if msg.longitude is not None else None,
-                    'is_read': msg.is_read,
-                    'created_at': msg.created_at.isoformat(),
-                    'audio_file_url': msg.audio_file.url if msg.audio_file else None,
-                    'image_file_url': msg.image_file.url if msg.image_file else None,
+                    'message_type': serialized.get('message_type'),
+                    'content': serialized.get('content'),
+                    'latitude': serialized.get('latitude'),
+                    'longitude': serialized.get('longitude'),
+                    'invoice': serialized.get('invoice'),
+                    'is_read': serialized.get('is_read'),
+                    'created_at': serialized.get('created_at'),
+                    'audio_file_url': serialized.get('audio_file_url'),
+                    'image_file_url': serialized.get('image_file_url'),
                 })
             return result
         except Exception as e:
@@ -488,22 +489,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def serialize_message(self, message):
         """تحويل الرسالة إلى JSON"""
-        from user.utils import localize_message
+        serialized = ChatMessageSerializer(message, context={'lang': self.lang}).data
         return {
-            'id': message.id,
+            'id': serialized.get('id'),
             'order_id': message.order_id,
-            'chat_type': message.chat_type,
-            'sender_type': message.sender_type,
-            'sender_name': message.sender_name,
+            'chat_type': serialized.get('chat_type'),
+            'sender_type': serialized.get('sender_type'),
+            'sender_name': serialized.get('sender_name'),
             'sender_id': self._get_sender_id(message),
-            'message_type': message.message_type,
-            'content': localize_message(None, message.content, lang=self.lang),
-            'latitude': str(message.latitude) if message.latitude is not None else None,
-            'longitude': str(message.longitude) if message.longitude is not None else None,
-            'is_read': message.is_read,
-            'created_at': message.created_at.isoformat(),
-            'audio_file_url': message.audio_file.url if message.audio_file else None,
-            'image_file_url': message.image_file.url if message.image_file else None,
+            'message_type': serialized.get('message_type'),
+            'content': serialized.get('content'),
+            'latitude': serialized.get('latitude'),
+            'longitude': serialized.get('longitude'),
+            'invoice': serialized.get('invoice'),
+            'is_read': serialized.get('is_read'),
+            'created_at': serialized.get('created_at'),
+            'audio_file_url': serialized.get('audio_file_url'),
+            'image_file_url': serialized.get('image_file_url'),
         }
     
     @database_sync_to_async

@@ -550,6 +550,30 @@ class DriverRegisterSerializer(serializers.ModelSerializer):
         return driver
 
 
+def _build_chat_message_invoice_payload(obj):
+    from user.utils import _resolve_message_key
+
+    message_key = _resolve_message_key(obj.content)
+    if message_key not in {'order_priced_please_confirm', 'invoice_modified_waiting_for_confirmation'}:
+        return None
+
+    order = getattr(obj, 'order', None)
+    if not order:
+        return None
+
+    return {
+        'order_id': order.id,
+        'order_number': order.order_number,
+        'status': order.status,
+        'status_display': order.get_status_display(),
+        'items': _order_items_to_representation(order.items),
+        'delivery_fee': str(order.delivery_fee) if order.delivery_fee is not None else None,
+        'total_amount': str(order.total_amount) if order.total_amount is not None else None,
+        'address': order.address,
+        'notes': order.notes,
+    }
+
+
 class ChatMessageSerializer(serializers.ModelSerializer):
     """Serializer لرسائل المحادثة"""
     sender_type_display = serializers.CharField(source='get_sender_type_display', read_only=True)
@@ -560,19 +584,24 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     audio_file_url = serializers.SerializerMethodField()
     image_file_url = serializers.SerializerMethodField()
     content = serializers.SerializerMethodField()
+    invoice = serializers.SerializerMethodField()
     
     class Meta:
         model = ChatMessage
         fields = ['id', 'chat_type', 'chat_type_display', 'sender_type', 'sender_type_display',
                   'sender_name', 'sender_id', 'message_type', 'message_type_display',
                   'content', 'audio_file', 'audio_file_url', 'image_file', 'image_file_url',
-                  'latitude', 'longitude', 'is_read', 'created_at']
+                  'latitude', 'longitude', 'invoice', 'is_read', 'created_at']
         read_only_fields = ['id', 'created_at']
     
     def get_content(self, obj):
         from user.utils import localize_message
         request = self.context.get('request')
-        return localize_message(request, obj.content)
+        lang = self.context.get('lang')
+        return localize_message(request, obj.content, lang=lang)
+
+    def get_invoice(self, obj):
+        return _build_chat_message_invoice_payload(obj)
 
     def get_sender_id(self, obj):
         """إرجاع ID المرسل"""
