@@ -9,10 +9,10 @@ from .serializers import OrderSerializer
 from user.utils import build_message_fields
 
 
-def _with_localized_message(payload, message):
+def _with_localized_message(payload, message, lang=None):
     return {
         **payload,
-        **build_message_fields(message),
+        **build_message_fields(message, lang=lang),
     }
 
 
@@ -47,6 +47,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 chat_type_param = query_string.split('chat_type=')[-1].split('&')[0]
                 if chat_type_param in ['shop_customer', 'driver_customer']:
                     self.chat_type = chat_type_param
+
+            # استخراج lang من query string
+            self.lang = 'ar'
+            if 'lang=' in query_string:
+                self.lang = query_string.split('lang=')[-1].split('&')[0]
             
             self.room_group_name = f'chat_order_{self.order_id}_{self.chat_type}'
             
@@ -90,7 +95,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'chat_type': self.chat_type,
                     'user_type': self.user_type
                 },
-                'تم الاتصال بنجاح'
+                'تم الاتصال بنجاح',
+                lang=self.lang
             )))
             
             # إرسال الرسائل السابقة
@@ -103,10 +109,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             print(f"[ChatConsumer.connect] error: {e}")
             await self.close(code=1011)
-    
-    async def disconnect(self, close_code):
-        """قطع الاتصال"""
-        if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
     
     async def receive(self, text_data):
@@ -328,7 +330,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }
         if request_id is not None:
             payload['request_id'] = request_id
-        await self.send(text_data=_json_dumps(_with_localized_message(payload, message)))
+        await self.send(text_data=_json_dumps(_with_localized_message(payload, message, lang=getattr(self, 'lang', None))))
 
     async def send_error_event(self, code, message, request_id=None, details=None):
         payload = {
@@ -340,7 +342,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             payload['request_id'] = request_id
         if details:
             payload['details'] = details
-        await self.send(text_data=_json_dumps(_with_localized_message(payload, message)))
+        await self.send(text_data=_json_dumps(_with_localized_message(payload, message, lang=getattr(self, 'lang', None))))
 
     async def broadcast_new_message_notification(self, message_payload):
         notification_payload = await self.build_order_message_notification(message_payload)
@@ -457,6 +459,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             ).order_by('created_at')[:50]
             
             from user.utils import localize_message
+            result = []
             for msg in messages:
                 result.append({
                     'id': msg.id,
@@ -466,9 +469,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'sender_name': msg.sender_name,
                     'sender_id': self._get_sender_id(msg),
                     'message_type': msg.message_type,
-                    'content': msg.content,
-                    'content_ar': localize_message(None, msg.content, lang='ar'),
-                    'content_en': localize_message(None, msg.content, lang='en'),
+                    'content': localize_message(None, msg.content, lang=self.lang),
                     'latitude': str(msg.latitude) if msg.latitude is not None else None,
                     'longitude': str(msg.longitude) if msg.longitude is not None else None,
                     'is_read': msg.is_read,
@@ -493,9 +494,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'sender_name': message.sender_name,
             'sender_id': self._get_sender_id(message),
             'message_type': message.message_type,
-            'content': message.content,
-            'content_ar': localize_message(None, message.content, lang='ar'),
-            'content_en': localize_message(None, message.content, lang='en'),
+            'content': localize_message(None, message.content, lang=self.lang),
             'latitude': str(message.latitude) if message.latitude is not None else None,
             'longitude': str(message.longitude) if message.longitude is not None else None,
             'is_read': message.is_read,

@@ -559,24 +559,20 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     sender_id = serializers.SerializerMethodField()
     audio_file_url = serializers.SerializerMethodField()
     image_file_url = serializers.SerializerMethodField()
-    content_ar = serializers.SerializerMethodField()
-    content_en = serializers.SerializerMethodField()
+    content = serializers.SerializerMethodField()
     
     class Meta:
         model = ChatMessage
         fields = ['id', 'chat_type', 'chat_type_display', 'sender_type', 'sender_type_display',
                   'sender_name', 'sender_id', 'message_type', 'message_type_display',
-                  'content', 'content_ar', 'content_en', 'audio_file', 'audio_file_url', 'image_file', 'image_file_url',
+                  'content', 'audio_file', 'audio_file_url', 'image_file', 'image_file_url',
                   'latitude', 'longitude', 'is_read', 'created_at']
         read_only_fields = ['id', 'created_at']
     
-    def get_content_ar(self, obj):
+    def get_content(self, obj):
         from user.utils import localize_message
-        return localize_message(None, obj.content, lang='ar')
-
-    def get_content_en(self, obj):
-        from user.utils import localize_message
-        return localize_message(None, obj.content, lang='en')
+        request = self.context.get('request')
+        return localize_message(request, obj.content)
 
     def get_sender_id(self, obj):
         """إرجاع ID المرسل"""

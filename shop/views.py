@@ -4006,19 +4006,21 @@ def _to_hhmm_time(value):
         return None
 
 
-def _is_open_now(status_value, today_schedule):
-    if status_value == 'closed':
-        return False
+def _is_within_today_schedule(today_schedule):
     if not today_schedule.get('is_working'):
         return False
-
     start_time = _to_hhmm_time(today_schedule.get('start_time'))
     end_time = _to_hhmm_time(today_schedule.get('end_time'))
     if not start_time or not end_time:
-        return status_value in {'open', 'busy'}
+        return False
 
     now_time = _shop_schedule_localtime().time().replace(second=0, microsecond=0)
     return start_time <= now_time <= end_time
+
+
+def _is_open_now(status_value, today_schedule):
+    _ = today_schedule
+    return status_value in {'open', 'busy'}
 
 
 def _build_today_hours_label(today_schedule):
@@ -4188,6 +4190,7 @@ def _build_public_shop_payload(shop, request, published_images=None):
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
     is_open_now = _is_open_now(status_value, today_schedule)
+    within_schedule_now = _is_within_today_schedule(today_schedule)
     live_status_label = _build_live_shop_status_label(status_value, is_open_now)
 
     average_rating, ratings_count = _get_shop_rating_stats(shop)
@@ -4213,6 +4216,7 @@ def _build_public_shop_payload(shop, request, published_images=None):
             'key': status_value,
             'label': live_status_label,
             'is_open_now': is_open_now,
+            'within_schedule_now': within_schedule_now,
        
         },
         'rating': {
@@ -4281,6 +4285,7 @@ def _build_public_shop_profile_summary_payload(shop, request):
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
     is_open_now = _is_open_now(status_value, today_schedule)
+    within_schedule_now = _is_within_today_schedule(today_schedule)
     live_status_label = _build_live_shop_status_label(status_value, is_open_now)
     average_rating, ratings_count = _get_shop_rating_stats(shop)
     category_name = shop.shop_category.name if shop.shop_category else None
@@ -4297,6 +4302,7 @@ def _build_public_shop_profile_summary_payload(shop, request):
                 'key': status_value,
                 'label': live_status_label,
                 'is_open_now': is_open_now,
+                'within_schedule_now': within_schedule_now,
                  
                 'shop_status_label': status_label,
             },
@@ -4554,6 +4560,7 @@ def public_shop_schedule_view(request, shop_id):
         'label': status_obj.get_status_display() if status_obj else 'مغلق',
     }
     schedule_payload['is_open_now'] = _is_open_now(status_value, schedule_payload.get('today', {}))
+    schedule_payload['within_schedule_now'] = _is_within_today_schedule(schedule_payload.get('today', {}))
 
     return success_response(
         data=schedule_payload,
