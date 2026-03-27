@@ -456,7 +456,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 chat_type=self.chat_type
             ).order_by('created_at')[:50]
             
-            result = []
+            from user.utils import localize_message
             for msg in messages:
                 result.append({
                     'id': msg.id,
@@ -467,6 +467,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'sender_id': self._get_sender_id(msg),
                     'message_type': msg.message_type,
                     'content': msg.content,
+                    'content_ar': localize_message(None, msg.content, lang='ar'),
+                    'content_en': localize_message(None, msg.content, lang='en'),
                     'latitude': str(msg.latitude) if msg.latitude is not None else None,
                     'longitude': str(msg.longitude) if msg.longitude is not None else None,
                     'is_read': msg.is_read,
@@ -482,6 +484,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def serialize_message(self, message):
         """تحويل الرسالة إلى JSON"""
+        from user.utils import localize_message
         return {
             'id': message.id,
             'order_id': message.order_id,
@@ -491,6 +494,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'sender_id': self._get_sender_id(message),
             'message_type': message.message_type,
             'content': message.content,
+            'content_ar': localize_message(None, message.content, lang='ar'),
+            'content_en': localize_message(None, message.content, lang='en'),
             'latitude': str(message.latitude) if message.latitude is not None else None,
             'longitude': str(message.longitude) if message.longitude is not None else None,
             'is_read': message.is_read,

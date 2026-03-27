@@ -147,6 +147,8 @@ def build_message_fields(message, request=None, lang=None, **kwargs):
     """
     return {
         "message": localize_message(request, message, lang=lang, **kwargs),
+        "message_ar": localize_message(request, message, lang='ar', **kwargs),
+        "message_en": localize_message(request, message, lang='en', **kwargs),
     }
 
 

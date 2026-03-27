@@ -10,6 +10,7 @@ from django.db import IntegrityError
 from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, ShopReview, PaymentMethod,
@@ -87,6 +88,16 @@ from .websocket_utils import (
 def shop_dashboard_ui_view(request):
     """واجهة تجريبية/تشغيلية للوحة المحل (Shop frontend)."""
     return render(request, 'shop/dashboard_ui.html')
+
+
+def driver_dashboard_ui_view(request):
+    """Experimental operational UI for the delivery dashboard."""
+    return render(request, 'shop/driver_dashboard_ui.html')
+
+
+def customer_dashboard_ui_view(request):
+    """Experimental operational UI for the customer dashboard."""
+    return render(request, 'shop/customer_dashboard_ui.html')
 
 
 class OrderPagination(PageNumberPagination):
@@ -389,6 +400,19 @@ def _build_dashboard_card(*, key, label, value, trend_percentage, is_currency=Fa
 STAFF_TYPE_EMPLOYEE = 'employee'
 STAFF_TYPE_DRIVER = 'driver'
 VALID_STAFF_TYPES = {STAFF_TYPE_EMPLOYEE, STAFF_TYPE_DRIVER}
+DRIVER_APP_ORDER_STATUSES = {'confirmed', 'preparing', 'on_way'}
+DRIVER_TRANSFER_REASONS = [
+    {'key': 'vehicle_issue', 'label': 'عطل في المركبة', 'requires_note': False},
+    {'key': 'emergency', 'label': 'ظرف طارئ / حادث', 'requires_note': False},
+    {'key': 'store_delay', 'label': 'تأخير كبير من المتجر', 'requires_note': False},
+    {'key': 'other', 'label': 'سبب آخر', 'requires_note': True},
+]
+DRIVER_CHAT_QUICK_REPLIES = [
+    'دقيق؟',
+    'أنا تحت العمارة',
+    'أنا وصلت',
+    'أنا في الطريق',
+]
 PY_WEEKDAY_TO_WORK_DAY = {
     0: 'monday',
     1: 'tuesday',
@@ -398,6 +422,18 @@ PY_WEEKDAY_TO_WORK_DAY = {
     5: 'saturday',
     6: 'sunday',
 }
+
+# Shop schedules are entered in Egypt local time, so availability checks
+# should not use the project's UTC default timezone.
+SHOP_SCHEDULE_TIMEZONE = ZoneInfo('Africa/Cairo')
+
+
+def _shop_schedule_localdate():
+    return timezone.localdate(timezone=SHOP_SCHEDULE_TIMEZONE)
+
+
+def _shop_schedule_localtime():
+    return timezone.localtime(timezone=SHOP_SCHEDULE_TIMEZONE)
 
 
 def _parse_schedule_time(value):
@@ -527,7 +563,7 @@ def _build_work_schedule_response(schedule):
             'end_time': day_data.get('end_time'),
         })
 
-    today_key = PY_WEEKDAY_TO_WORK_DAY.get(timezone.localdate().weekday(), 'monday')
+    today_key = PY_WEEKDAY_TO_WORK_DAY.get(_shop_schedule_localdate().weekday(), 'monday')
     today_data = normalized_schedule.get(today_key, {'is_working': False, 'start_time': None, 'end_time': None})
 
     return {
@@ -921,6 +957,153 @@ def _build_driver_shop_overview_item(shop_owner, request):
             'label': status_obj.get_status_display() if status_obj else 'مغلق',
         },
     }
+
+
+def _get_driver_order_status_label(order):
+    if order.status in DRIVER_APP_ORDER_STATUSES:
+        return 'قيد التوصيل'
+    return order.get_status_display()
+
+
+def _to_float_or_none(value):
+    try:
+        if value is None or value == '':
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_driver_order_items(items_value):
+    parsed_items = items_value
+    if isinstance(items_value, str):
+        try:
+            parsed_items = json.loads(items_value)
+        except (TypeError, ValueError):
+            parsed_items = [items_value]
+
+    if not isinstance(parsed_items, list):
+        parsed_items = [parsed_items]
+
+    results = []
+    for index, item in enumerate(parsed_items, start=1):
+        if isinstance(item, dict):
+            name = str(
+                item.get('name')
+                or item.get('title')
+                or item.get('product_name')
+                or item.get('item_name')
+                or f'بند {index}'
+            ).strip()
+            quantity = item.get('quantity', item.get('qty', item.get('count', 1)))
+            try:
+                quantity = int(float(quantity))
+            except (TypeError, ValueError):
+                quantity = 1
+
+            line_total = _to_float_or_none(
+                item.get('line_total', item.get('total_price', item.get('subtotal', item.get('total'))))
+            )
+            if line_total is None:
+                unit_price = _to_float_or_none(item.get('unit_price', item.get('price')))
+                if unit_price is not None:
+                    line_total = round(unit_price * quantity, 2)
+        else:
+            name = str(item or '').strip()
+            if not name:
+                continue
+            quantity = 1
+            line_total = None
+
+        results.append({
+            'name': name,
+            'quantity': quantity,
+            'line_total': line_total,
+        })
+
+    return results
+
+
+def _build_driver_order_address_text(order):
+    raw_address = str(getattr(order, 'address', '') or '').strip()
+    if raw_address:
+        return raw_address
+
+    delivery_address = getattr(order, 'delivery_address', None)
+    if not delivery_address:
+        return ''
+
+    address_parts = [
+        str(delivery_address.full_address or '').strip(),
+        str(delivery_address.city or '').strip(),
+        str(delivery_address.area or '').strip(),
+        str(delivery_address.street_name or '').strip(),
+    ]
+    return next((part for part in address_parts if part), '')
+
+
+def _build_driver_order_list_item(order):
+    return {
+        'order_id': order.id,
+        'order_number': order.order_number,
+        'since_label': _humanize_elapsed_label(order.created_at),
+        'customer_name': order.customer.name if order.customer_id else None,
+        'address_text': _build_driver_order_address_text(order),
+        'amount_to_collect': _to_float_or_none(order.total_amount) or 0.0,
+        'payment_method': order.payment_method,
+    }
+
+
+def _build_driver_order_invoice_payload(order):
+    return {
+        'items': _parse_driver_order_items(order.items),
+        'payment_method': order.payment_method,
+        'amount_to_collect': _to_float_or_none(order.total_amount) or 0.0,
+    }
+
+
+def _build_driver_order_detail_payload(order, request):
+    customer = order.customer
+    return {
+        'order_number': order.order_number,
+        'status_label': _get_driver_order_status_label(order),
+        'customer': {
+            'name': customer.name if customer else None,
+            'phone_number': customer.phone_number if customer else None,
+            'profile_image_url': _build_file_url(request, customer.profile_image) if customer else None,
+            'is_online': bool(customer.is_online) if customer else False,
+        },
+        'address_text': _build_driver_order_address_text(order),
+        'invoice': _build_driver_order_invoice_payload(order),
+    }
+
+
+def _build_driver_order_chat_message_payload(message, request, driver):
+    payload = {
+        'id': message.id,
+        'message_type': message.message_type,
+        'content': message.content,
+        'created_at': message.created_at.isoformat() if message.created_at else None,
+        'is_mine': message.sender_type == 'driver' and message.sender_driver_id == driver.id,
+    }
+    if message.audio_file:
+        payload['audio_file_url'] = _build_file_url(request, message.audio_file)
+    if message.image_file:
+        payload['image_file_url'] = _build_file_url(request, message.image_file)
+    if message.message_type == 'location':
+        payload['latitude'] = str(message.latitude) if message.latitude is not None else None
+        payload['longitude'] = str(message.longitude) if message.longitude is not None else None
+    return payload
+
+
+def _get_driver_order_or_none(driver, order_id, statuses=None):
+    queryset = Order.objects.select_related('shop_owner', 'customer', 'delivery_address').filter(
+        id=order_id,
+        driver=driver,
+    )
+    if statuses is not None:
+        queryset = queryset.filter(status__in=statuses)
+    return queryset.first()
 
 
 def _respond_to_driver_invitation(request, shop_driver, driver, action, normalized_phone=None):
@@ -1658,6 +1841,261 @@ def driver_status_view(request):
     )
 
 
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_orders_view(request):
+    """
+    Active assigned orders for the driver app, grouped by shop.
+    GET /api/driver/orders/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    orders = (
+        Order.objects
+        .filter(driver=driver, status__in=DRIVER_APP_ORDER_STATUSES)
+        .select_related('shop_owner', 'shop_owner__shop_category', 'customer', 'delivery_address')
+        .order_by('-updated_at', '-created_at')
+    )
+
+    grouped_results = []
+    grouped_map = {}
+    for order in orders:
+        shop = order.shop_owner
+        if not shop:
+            continue
+
+        group = grouped_map.get(shop.id)
+        if group is None:
+            group = {
+                'shop_name': shop.shop_name,
+                'shop_logo_url': _build_file_url(request, shop.profile_image),
+                'branch_label': _build_driver_branch_label(shop),
+                'orders_count': 0,
+                'orders': [],
+            }
+            grouped_map[shop.id] = group
+            grouped_results.append(group)
+
+        group['orders'].append(_build_driver_order_list_item(order))
+        group['orders_count'] += 1
+
+    return success_response(
+        data={
+            'results': grouped_results,
+        },
+        message=t(request, 'driver_orders_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_order_detail_view(request, order_id):
+    """
+    Driver order detail with compact delivery payload.
+    GET /api/driver/orders/{id}/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
+    if not order:
+        return error_response(
+            message=t(request, 'driver_order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    return success_response(
+        data=_build_driver_order_detail_payload(order, request),
+        message=t(request, 'driver_order_details_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_order_transfer_reasons_view(request):
+    """
+    Static transfer reasons shown in the driver app.
+    GET /api/driver/orders/transfer-reasons/
+    """
+    return success_response(
+        data={
+            'warning_message': 'يرجى العلم أن كثرة تحويل الطلبات بدون مبرر قد تؤثر على تقييمك في التطبيق.',
+            'reasons': DRIVER_TRANSFER_REASONS,
+        },
+        message=t(request, 'driver_transfer_reasons_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_order_transfer_view(request, order_id):
+    """
+    Driver transfers an assigned order back for reassignment.
+    POST /api/driver/orders/{id}/transfer/
+    Body: { "reason_key": "...", "note": "..." }
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
+    if not order:
+        return error_response(
+            message=t(request, 'driver_order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    reason_key = str(request.data.get('reason_key') or request.data.get('reason') or '').strip()
+    if not reason_key:
+        return error_response(
+            message=t(request, 'driver_transfer_reason_is_required'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    selected_reason = next((item for item in DRIVER_TRANSFER_REASONS if item['key'] == reason_key), None)
+    if not selected_reason:
+        return error_response(
+            message=t(request, 'invalid_driver_transfer_reason'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    note = str(request.data.get('note') or '').strip()
+    if selected_reason.get('requires_note') and not note:
+        return error_response(
+            message=t(request, 'driver_transfer_note_is_required'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if order.status not in DRIVER_APP_ORDER_STATUSES:
+        return error_response(
+            message=t(request, 'driver_order_cannot_be_transferred_in_current_status'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    old_driver = order.driver
+    if order.status in {'preparing', 'on_way'}:
+        order.status = 'confirmed'
+    order.driver = None
+    order.save(update_fields=['driver', 'status', 'updated_at'])
+
+    if old_driver:
+        old_driver.current_orders_count = old_driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
+        old_driver.save(update_fields=['current_orders_count'])
+
+    Notification.objects.create(
+        shop_owner=order.shop_owner,
+        notification_type='system',
+        title='تحويل طلب',
+        message=f'الطلب #{order.order_number} يحتاج إعادة تعيين لمندوب آخر.',
+        data={
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'reason_key': selected_reason['key'],
+            'reason_label': selected_reason['label'],
+            'note': note or None,
+            'driver_id': driver.id,
+        },
+    )
+
+    try:
+        order_data = OrderSerializer(order, context={'request': request}).data
+        notify_order_update(
+            shop_owner_id=order.shop_owner_id,
+            customer_id=order.customer_id,
+            driver_id=None,
+            order_data=order_data,
+        )
+        if old_driver:
+            notify_driver_status_updated(old_driver)
+    except Exception as e:
+        print(f"driver_order_transfer WebSocket error: {e}")
+
+    return success_response(
+        data={},
+        message=t(request, 'driver_order_transferred_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsDriver])
+def driver_order_chat_view(request, order_id):
+    """
+    Driver-customer chat for an assigned order.
+    GET /api/driver/orders/{id}/chat/
+    POST /api/driver/orders/{id}/chat/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
+    if not order:
+        return error_response(
+            message=t(request, 'driver_order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == 'GET':
+        ChatMessage.objects.filter(
+            order=order,
+            chat_type='driver_customer',
+            sender_type='customer',
+            is_read=False,
+        ).update(is_read=True)
+
+        messages = list(
+            ChatMessage.objects
+            .filter(order=order, chat_type='driver_customer')
+            .order_by('created_at')
+        )
+        return success_response(
+            data={
+                'customer': _build_driver_order_detail_payload(order, request)['customer'],
+                'invoice': _build_driver_order_invoice_payload(order),
+                'messages': [
+                    _build_driver_order_chat_message_payload(message, request, driver)
+                    for message in messages
+                ],
+                'quick_replies': DRIVER_CHAT_QUICK_REPLIES,
+            },
+            message=t(request, 'driver_chat_retrieved_successfully'),
+            status_code=status.HTTP_200_OK,
+        )
+
+    content = str(request.data.get('content') or '').strip()
+    if not content:
+        return error_response(
+            message=t(request, 'message_content_is_required'),
+            errors={'content': [t(request, 'message_content_is_required')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    message = ChatMessage.objects.create(
+        order=order,
+        chat_type='driver_customer',
+        sender_type='driver',
+        sender_driver=driver,
+        message_type='text',
+        content=content,
+    )
+
+    payload = _chat_message_payload(message, request=request)
+    broadcast_chat_message(order.id, 'driver_customer', payload)
+
+    return success_response(
+        data=_build_driver_order_chat_message_payload(message, request, driver),
+        message=t(request, 'driver_message_sent_successfully'),
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
 # Shop Status APIs
 @api_view(['GET', 'PUT'])
 @permission_classes([IsShopOwnerOrEmployee])
@@ -2353,9 +2791,9 @@ def order_detail_view(request, order_id):
                 broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg))
             elif new_status == 'pending_customer_confirm':
                 if old_status == 'pending_customer_confirm':
-                    msg_content = 'تم تعديل الفاتورة وإعادة إرسالها للعميل بانتظار الموافقة.'
+                    msg_content = 'invoice_modified_waiting_for_confirmation'
                 else:
-                    msg_content = t(request, 'order_priced_please_confirm')
+                    msg_content = 'order_priced_please_confirm'
                 sys_msg = ChatMessage.objects.create(
                     order=order,
                     chat_type='shop_customer',
@@ -3579,7 +4017,7 @@ def _is_open_now(status_value, today_schedule):
     if not start_time or not end_time:
         return status_value in {'open', 'busy'}
 
-    now_time = timezone.localtime().time().replace(second=0, microsecond=0)
+    now_time = _shop_schedule_localtime().time().replace(second=0, microsecond=0)
     return start_time <= now_time <= end_time
 
 
@@ -4658,7 +5096,7 @@ def customer_orders_list_create_view(request):
                     sender_type='shop_owner',
                     sender_shop_owner=order.shop_owner,
                     message_type='text',
-                    content=t(request, 'order_received_wait_for_invoice'),
+                    content='order_received_wait_for_invoice',
                 )
                 broadcast_chat_message_to_customer(
                     order.id,

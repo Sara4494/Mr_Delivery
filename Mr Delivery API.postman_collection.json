@@ -4925,6 +4925,261 @@
               "response": []
             }
           ]
+        },
+        {
+          "name": "Orders",
+          "item": [
+            {
+              "name": "List Driver Orders",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    var groups = (((jsonData || {}).data || {}).results) || [];",
+                      "    if (groups.length && groups[0].orders && groups[0].orders.length && groups[0].orders[0].order_id) {",
+                      "        pm.collectionVariables.set(\"driver_order_id\", String(groups[0].orders[0].order_id));",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    ""
+                  ]
+                },
+                "description": "جلب طلبات الدليفري الحالية للسائق مع حفظ أول driver_order_id تلقائياً."
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Order Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/{{driver_order_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "{{driver_order_id}}",
+                    ""
+                  ]
+                },
+                "description": "تفاصيل الطلب الخاصة بالدليفري فقط بدون بيانات زائدة."
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Transfer Reasons",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/transfer-reasons/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "transfer-reasons",
+                    ""
+                  ]
+                },
+                "description": "أسباب تحويل الطلب للمندوب الآخر."
+              },
+              "response": []
+            },
+            {
+              "name": "Transfer Driver Order",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"reason_key\": \"store_delay\",\n    \"note\": \"\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/{{driver_order_id}}/transfer/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "{{driver_order_id}}",
+                    "transfer",
+                    ""
+                  ]
+                },
+                "description": "تحويل الطلب من السائق الحالي لإعادة تعيينه."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Chat",
+          "item": [
+            {
+              "name": "Get Driver Order Chat",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/{{driver_order_id}}/chat/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "{{driver_order_id}}",
+                    "chat",
+                    ""
+                  ]
+                },
+                "description": "جلب محادثة السائق مع العميل مع quick replies."
+              },
+              "response": []
+            },
+            {
+              "name": "Send Driver Chat Message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"content\": \"أنا في الطريق\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/{{driver_order_id}}/chat/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "{{driver_order_id}}",
+                    "chat",
+                    ""
+                  ]
+                },
+                "description": "إرسال رسالة نصية من السائق للعميل."
+              },
+              "response": []
+            },
+            {
+              "name": "Send Driver Media Message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "chat_type",
+                      "value": "driver_customer",
+                      "type": "text"
+                    },
+                    {
+                      "key": "message_type",
+                      "value": "image",
+                      "type": "text"
+                    },
+                    {
+                      "key": "image_file",
+                      "type": "file",
+                      "value": null
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/chat/order/{{driver_order_id}}/send-media/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "chat",
+                    "order",
+                    "{{driver_order_id}}",
+                    "send-media",
+                    ""
+                  ]
+                },
+                "description": "رفع صورة أو صوت في شات السائق مع العميل عبر المسار الموجود حالياً."
+              },
+              "response": []
+            }
+          ]
         }
       ]
     }
@@ -4962,6 +5217,11 @@
     },
     {
       "key": "driver_invitation_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "driver_order_id",
       "value": "1",
       "type": "string"
     }

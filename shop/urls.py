@@ -5,6 +5,8 @@ app_name = 'shop'
 
 urlpatterns = [
     path('shop/dashboard-ui/', views.shop_dashboard_ui_view, name='shop_dashboard_ui'),
+    path('driver/dashboard-ui/', views.driver_dashboard_ui_view, name='driver_dashboard_ui'),
+    path('customer/dashboard-ui/', views.customer_dashboard_ui_view, name='customer_dashboard_ui'),
     # Public shops list (for customers)
     path('shops/', views.public_shops_list_view, name='public_shops_list'),
     path('shops/shop-categories/', views.public_shop_categories_list_view, name='public_shop_categories_list'),
@@ -64,6 +66,11 @@ urlpatterns = [
     path('driver/dashboard/', views.driver_dashboard_view, name='driver_dashboard'),
     path('driver/invitations/', views.driver_invitations_view, name='driver_invitations'),
     path('driver/invitations/<int:invitation_id>/respond/', views.driver_invitation_action_view, name='driver_invitation_action'),
+    path('driver/orders/', views.driver_orders_view, name='driver_orders'),
+    path('driver/orders/transfer-reasons/', views.driver_order_transfer_reasons_view, name='driver_order_transfer_reasons'),
+    path('driver/orders/<int:order_id>/', views.driver_order_detail_view, name='driver_order_detail'),
+    path('driver/orders/<int:order_id>/transfer/', views.driver_order_transfer_view, name='driver_order_transfer'),
+    path('driver/orders/<int:order_id>/chat/', views.driver_order_chat_view, name='driver_order_chat'),
     path('driver/status/', views.driver_status_view, name='driver_status'),
     path('driver/password/send-otp/', views.driver_password_send_otp_view, name='driver_password_send_otp'),
     path('driver/password/reset/', views.driver_password_reset_view, name='driver_password_reset'),

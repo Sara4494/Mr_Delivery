@@ -559,15 +559,25 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     sender_id = serializers.SerializerMethodField()
     audio_file_url = serializers.SerializerMethodField()
     image_file_url = serializers.SerializerMethodField()
+    content_ar = serializers.SerializerMethodField()
+    content_en = serializers.SerializerMethodField()
     
     class Meta:
         model = ChatMessage
         fields = ['id', 'chat_type', 'chat_type_display', 'sender_type', 'sender_type_display',
                   'sender_name', 'sender_id', 'message_type', 'message_type_display',
-                  'content', 'audio_file', 'audio_file_url', 'image_file', 'image_file_url',
+                  'content', 'content_ar', 'content_en', 'audio_file', 'audio_file_url', 'image_file', 'image_file_url',
                   'latitude', 'longitude', 'is_read', 'created_at']
         read_only_fields = ['id', 'created_at']
     
+    def get_content_ar(self, obj):
+        from user.utils import localize_message
+        return localize_message(None, obj.content, lang='ar')
+
+    def get_content_en(self, obj):
+        from user.utils import localize_message
+        return localize_message(None, obj.content, lang='en')
+
     def get_sender_id(self, obj):
         """إرجاع ID المرسل"""
         if obj.sender_type == 'customer' and obj.sender_customer:
@@ -748,8 +758,12 @@ class OrderCreateSerializer(serializers.Serializer):
             return value
         shop_owner = self.context['shop_owner']
         try:
-            Driver.objects.get(id=value, shops=shop_owner)
-        except Driver.DoesNotExist:
+            ShopDriver.objects.select_related('driver').get(
+                shop_owner=shop_owner,
+                driver_id=value,
+                status='active',
+            )
+        except ShopDriver.DoesNotExist:
             raise serializers.ValidationError('السائق غير موجود')
         return value
     
@@ -766,7 +780,11 @@ class OrderCreateSerializer(serializers.Serializer):
             employee = Employee.objects.get(id=employee_id, shop_owner=shop_owner)
         driver = None
         if driver_id:
-            driver = Driver.objects.get(id=driver_id, shops=shop_owner)
+            driver = ShopDriver.objects.select_related('driver').get(
+                shop_owner=shop_owner,
+                driver_id=driver_id,
+                status='active',
+            ).driver
         
         # إنشاء رقم طلب تلقائي
         order_number = _generate_short_order_number()
