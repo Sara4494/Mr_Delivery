@@ -298,9 +298,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     async def chat_message(self, event):
         """إرسال رسالة الشات"""
+        from user.utils import localize_message
+        msg_data = dict(event['message'])
+        msg_data['content'] = localize_message(None, msg_data.get('content'), lang=getattr(self, 'lang', 'ar'))
         await self.send(text_data=_json_dumps({
             'type': 'chat_message',
-            'data': event['message']
+            'data': msg_data
         }))
     
     async def messages_read(self, event):
@@ -618,6 +621,11 @@ class OrderConsumer(AsyncWebsocketConsumer):
         self.shop_owner_id = self.scope['url_route']['kwargs'].get('shop_owner_id')
         self.room_group_name = f'shop_orders_{self.shop_owner_id}'
         
+        query_string = self.scope.get('query_string', b'').decode('utf-8')
+        self.lang = 'ar'
+        if 'lang=' in query_string:
+            self.lang = query_string.split('lang=')[-1].split('&')[0]
+        
         user = self.scope.get('user')
         user_type = self.scope.get('user_type')
         
@@ -684,9 +692,16 @@ class OrderConsumer(AsyncWebsocketConsumer):
     
     async def new_message(self, event):
         """إشعار برسالة جديدة"""
+        from user.utils import localize_message
+        notif_data = dict(event['data'])
+        if 'message' in notif_data and isinstance(notif_data['message'], dict):
+            notif_data['message'] = dict(notif_data['message'])
+            notif_data['message']['content'] = localize_message(
+                None, notif_data['message'].get('content'), lang=getattr(self, 'lang', 'ar')
+            )
         await self.send(text_data=_json_dumps({
             'type': 'new_message',
-            'data': event['data']
+            'data': notif_data
         }))
 
     async def store_status_updated(self, event):
@@ -731,6 +746,11 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         self.customer_id = self.scope['url_route']['kwargs'].get('customer_id')
         self.room_group_name = f'customer_orders_{self.customer_id}'
         
+        query_string = self.scope.get('query_string', b'').decode('utf-8')
+        self.lang = 'ar'
+        if 'lang=' in query_string:
+            self.lang = query_string.split('lang=')[-1].split('&')[0]
+        
         user = self.scope.get('user')
         user_type = self.scope.get('user_type')
         
@@ -768,10 +788,17 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         }))
     
     async def new_message(self, event):
-        """رسالة جديدة"""
+        """إشعار برسالة جديدة"""
+        from user.utils import localize_message
+        notif_data = dict(event['data'])
+        if 'message' in notif_data and isinstance(notif_data['message'], dict):
+            notif_data['message'] = dict(notif_data['message'])
+            notif_data['message']['content'] = localize_message(
+                None, notif_data['message'].get('content'), lang=getattr(self, 'lang', 'ar')
+            )
         await self.send(text_data=_json_dumps({
             'type': 'new_message',
-            'data': event['data']
+            'data': notif_data
         }))
 
 
@@ -890,8 +917,15 @@ class DriverConsumer(AsyncWebsocketConsumer):
         }))
     
     async def new_message(self, event):
-        """رسالة جديدة من عميل"""
+        """إشعار برسالة جديدة"""
+        from user.utils import localize_message
+        notif_data = dict(event['data'])
+        if 'message' in notif_data and isinstance(notif_data['message'], dict):
+            notif_data['message'] = dict(notif_data['message'])
+            notif_data['message']['content'] = localize_message(
+                None, notif_data['message'].get('content'), lang=getattr(self, 'lang', 'ar')
+            )
         await self.send(text_data=_json_dumps({
             'type': 'new_message',
-            'data': event['data']
+            'data': notif_data
         }))
