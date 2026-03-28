@@ -2661,7 +2661,7 @@ def order_detail_view(request, order_id):
         old_status = order.status
         new_status = request.data.get('status', old_status)
 
-        locked_after_customer_confirm = {'confirmed', 'preparing', 'on_way', 'delivered'}
+        cancellation_locked_statuses = {'preparing', 'on_way', 'delivered'}
         invoice_closed_statuses = {'cancelled', 'delivered'}
         invoice_fields = {'items', 'total_amount', 'delivery_fee'}
         has_invoice_update = any(field in request.data for field in invoice_fields)
@@ -2682,9 +2682,9 @@ def order_detail_view(request, order_id):
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 
-        if new_status == 'cancelled' and old_status in locked_after_customer_confirm:
+        if new_status == 'cancelled' and old_status in cancellation_locked_statuses:
             return error_response(
-                message='لا يمكن إلغاء الفاتورة بعد تأكيد العميل.',
+                message='لا يمكن إلغاء الفاتورة بعد بدء التجهيز أو خروج الطلب للتوصيل أو بعد اكتماله.',
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 
@@ -2777,6 +2777,8 @@ def order_detail_view(request, order_id):
             if new_status == 'cancelled':
                 if old_status == 'pending_customer_confirm':
                     msg_content = 'تم إلغاء الفاتورة.'
+                elif old_status == 'confirmed':
+                    msg_content = 'تم إلغاء الطلب من المتجر بعد تأكيد الفاتورة.'
                 else:
                     msg_content = 'نأسف لعدم استقبال اوردراتكم في الوقت الحالي يرجى المحاوله في وقت لاحق'
                 sys_msg = ChatMessage.objects.create(

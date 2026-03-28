@@ -1459,7 +1459,7 @@
         }
 
         function canCancelOrder(order) {
-            return order && !['confirmed', 'preparing', 'on_way', 'delivered', 'cancelled'].includes(order.status);
+            return order && !['preparing', 'on_way', 'delivered', 'cancelled'].includes(order.status);
         }
 
         function createMessageBubble(message) {
