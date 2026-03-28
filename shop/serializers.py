@@ -10,7 +10,7 @@ from .models import (
     Notification, Cart, CartItem, ShopDriver
 )
 from user.models import ShopOwner, ShopCategory
-from user.utils import t
+from user.utils import t, build_absolute_file_url
 from user.otp_service import normalize_phone
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -123,6 +123,15 @@ class CustomerAddressSerializer(serializers.ModelSerializer):
         return attrs
 
 
+def _context_file_url(serializer, file_field):
+    return build_absolute_file_url(
+        file_field,
+        request=serializer.context.get('request'),
+        scope=serializer.context.get('scope'),
+        base_url=serializer.context.get('base_url'),
+    )
+
+
 class CustomerSerializer(serializers.ModelSerializer):
     """Serializer للعميل"""
     profile_image_url = serializers.SerializerMethodField()
@@ -141,10 +150,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     def get_profile_image_url(self, obj):
         """إرجاع رابط صورة العميل الكامل"""
         if obj.profile_image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.profile_image.url)
-            return obj.profile_image.url
+            return _context_file_url(self, obj.profile_image)
         return None
     
     def get_default_address(self, obj):
@@ -225,10 +231,7 @@ class CustomerAppProfileSerializer(serializers.ModelSerializer):
 
     def get_profile_image_url(self, obj):
         if obj.profile_image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.profile_image.url)
-            return obj.profile_image.url
+            return _context_file_url(self, obj.profile_image)
         return None
 
     def get_default_address(self, obj):
@@ -393,10 +396,7 @@ class DriverSerializer(serializers.ModelSerializer):
     def get_profile_image_url(self, obj):
         """إرجاع رابط صورة السائق الكامل"""
         if obj.profile_image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.profile_image.url)
-            return obj.profile_image.url
+            return _context_file_url(self, obj.profile_image)
         return None
 
 
@@ -453,10 +453,7 @@ class DriverAppSerializer(serializers.ModelSerializer):
 
     def get_profile_image_url(self, obj):
         if obj.profile_image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.profile_image.url)
-            return obj.profile_image.url
+            return _context_file_url(self, obj.profile_image)
         return None
 
     def get_active_shops(self, obj):
@@ -618,19 +615,13 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     def get_audio_file_url(self, obj):
         """إرجاع رابط الملف الصوتي"""
         if obj.audio_file:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.audio_file.url)
-            return obj.audio_file.url
+            return _context_file_url(self, obj.audio_file)
         return None
     
     def get_image_file_url(self, obj):
         """إرجاع رابط الصورة"""
         if obj.image_file:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.image_file.url)
-            return obj.image_file.url
+            return _context_file_url(self, obj.image_file)
         return None
 
 
@@ -694,10 +685,7 @@ class ShopOrderListSerializer(serializers.ModelSerializer):
         if not customer or not customer.profile_image:
             return None
 
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(customer.profile_image.url)
-        return customer.profile_image.url
+        return _context_file_url(self, customer.profile_image)
 
     class Meta:
         model = Order

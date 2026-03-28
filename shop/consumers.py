@@ -3,11 +3,12 @@ import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Prefetch
 from django.utils import timezone
 from .models import Order, ChatMessage, Customer, Employee, Driver
 from user.models import ShopOwner
 from .serializers import ChatMessageSerializer, OrderSerializer
-from user.utils import build_message_fields
+from user.utils import build_message_fields, resolve_base_url
 
 
 def _with_localized_message(payload, message, lang=None):
@@ -19,6 +20,17 @@ def _with_localized_message(payload, message, lang=None):
 
 def _json_dumps(payload):
     return json.dumps(payload, cls=DjangoJSONEncoder)
+
+
+def _serializer_context(lang=None, scope=None, base_url=None):
+    context = {}
+    if lang is not None:
+        context['lang'] = lang
+    if scope is not None:
+        context['scope'] = scope
+    if base_url:
+        context['base_url'] = base_url
+    return context
 
 
 def _normalize_ring_targets(raw_targets):
@@ -304,6 +316,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 self.lang = query_string.split('lang=')[-1].split('&')[0]
             
             self.room_group_name = f'chat_order_{self.order_id}_{self.chat_type}'
+            self.base_url = resolve_base_url(scope=self.scope)
             
             # Validate the authenticated user.
             user = self.scope.get('user')
@@ -728,7 +741,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
             result = []
             for msg in messages:
-                serialized = ChatMessageSerializer(msg, context={'lang': self.lang}).data
+                serialized = ChatMessageSerializer(
+                    msg,
+                    context=_serializer_context(lang=self.lang, scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+                ).data
                 result.append({
                     'id': serialized.get('id'),
                     'order_id': msg.order_id,
@@ -754,7 +770,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def serialize_message(self, message):
         """Serialize a chat message for WebSocket delivery."""
-        serialized = ChatMessageSerializer(message, context={'lang': self.lang}).data
+        serialized = ChatMessageSerializer(
+            message,
+            context=_serializer_context(lang=self.lang, scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+        ).data
         return {
             'id': serialized.get('id'),
             'order_id': message.order_id,
@@ -847,7 +866,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'order_number': order.order_number,
             'chat_type': self.chat_type,
             'message': message_payload,
-            'order': OrderSerializer(order).data,
+            'order': OrderSerializer(
+                order,
+                context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+            ).data,
         }
 
     @database_sync_to_async
@@ -856,7 +878,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             order = Order.objects.select_related('customer', 'employee', 'driver').get(id=self.order_id)
         except Order.DoesNotExist:
             return None
-        return OrderSerializer(order).data
+        return OrderSerializer(
+            order,
+            context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+        ).data
 
     def _get_sender_id(self, message):
         if message.sender_type == 'customer' and message.sender_customer_id:
@@ -878,6 +903,7 @@ class OrderConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.shop_owner_id = self.scope['url_route']['kwargs'].get('shop_owner_id')
         self.room_group_name = f'shop_orders_{self.shop_owner_id}'
+        self.base_url = resolve_base_url(scope=self.scope)
 
         query_string = self.scope.get('query_string', b'').decode('utf-8')
         self.lang = 'ar'
@@ -1016,7 +1042,11 @@ class OrderConsumer(AsyncWebsocketConsumer):
             .select_related('customer', 'employee', 'driver')
             .order_by('-updated_at')[:50]
         )
-        return OrderSerializer(orders, many=True).data
+        return OrderSerializer(
+            orders,
+            many=True,
+            context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+        ).data
 
 
 class CustomerOrderConsumer(AsyncWebsocketConsumer):
@@ -1027,6 +1057,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.customer_id = self.scope['url_route']['kwargs'].get('customer_id')
         self.room_group_name = f'customer_orders_{self.customer_id}'
+        self.base_url = resolve_base_url(scope=self.scope)
 
         query_string = self.scope.get('query_string', b'').decode('utf-8')
         self.lang = 'ar'
@@ -1052,6 +1083,8 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             lang=self.lang,
         )))
 
+        await self.send_dashboard_snapshots()
+
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
@@ -1064,6 +1097,14 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
 
             if event_type == 'ring':
                 await _handle_ring_request(self, data, request_id=request_id)
+            elif event_type in {'sync_dashboard', 'refresh_dashboard'}:
+                await self.send_dashboard_snapshots(request_id=request_id)
+                await _send_ack(
+                    self,
+                    'sync_dashboard',
+                    request_id=request_id,
+                    message='تمت مزامنة بيانات العميل بنجاح',
+                )
             else:
                 await _send_error_event(
                     self,
@@ -1092,6 +1133,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             'type': 'order_update',
             'data': event['data'],
         }))
+        await self.send_dashboard_snapshots()
 
     async def driver_location(self, event):
         await self.send(text_data=_json_dumps({
@@ -1111,12 +1153,111 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             'type': 'new_message',
             'data': notif_data,
         }))
+        await self.send_dashboard_snapshots()
 
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
             'data': event['data'],
         }))
+
+    async def send_dashboard_snapshots(self, request_id=None):
+        orders_snapshot, shops_snapshot, on_way_snapshot = await _gather_customer_dashboard_snapshots(
+            self.customer_id,
+            base_url=getattr(self, 'base_url', None),
+        )
+
+        snapshot_events = [
+            (
+                'orders_snapshot',
+                {'orders': orders_snapshot},
+                'تمت مزامنة الطلبات بنجاح',
+            ),
+            (
+                'shops_snapshot',
+                shops_snapshot,
+                'تمت مزامنة قائمة المحلات بنجاح',
+            ),
+            (
+                'on_way_snapshot',
+                on_way_snapshot,
+                'تمت مزامنة طلبات الطريق بنجاح',
+            ),
+        ]
+
+        for event_type, data, message in snapshot_events:
+            payload = {
+                'type': event_type,
+                'data': data,
+            }
+            if request_id:
+                payload['request_id'] = request_id
+            await self.send(text_data=_json_dumps(_with_localized_message(
+                payload,
+                message,
+                lang=self.lang,
+            )))
+
+
+@database_sync_to_async
+def _gather_customer_dashboard_snapshots(customer_id, base_url=None):
+    from .views import (
+        _build_customer_on_way_order_item,
+        _build_customer_shop_conversation_item,
+    )
+
+    orders = list(
+        Order.objects
+        .filter(customer_id=customer_id)
+        .select_related('shop_owner', 'employee', 'driver')
+        .order_by('-created_at')
+    )
+    orders_snapshot = OrderSerializer(
+        orders,
+        many=True,
+        context=_serializer_context(base_url=base_url)
+    ).data
+
+    conversation_orders = (
+        Order.objects
+        .filter(customer_id=customer_id)
+        .select_related('shop_owner', 'shop_owner__shop_category')
+        .prefetch_related(
+            Prefetch(
+                'messages',
+                queryset=ChatMessage.objects.order_by('-created_at'),
+                to_attr='prefetched_messages',
+            )
+        )
+        .order_by('-updated_at', '-created_at')
+    )
+    grouped_by_shop = {}
+    for order in conversation_orders:
+        if not order.shop_owner_id:
+            continue
+        if order.shop_owner_id not in grouped_by_shop:
+            grouped_by_shop[order.shop_owner_id] = _build_customer_shop_conversation_item(order, None, base_url=base_url)
+    shops_results = list(grouped_by_shop.values())
+
+    on_way_orders = (
+        Order.objects
+        .filter(customer_id=customer_id, status__in=['confirmed', 'preparing', 'on_way'])
+        .select_related('shop_owner', 'shop_owner__shop_category', 'driver')
+        .order_by('-updated_at', '-created_at')
+    )
+    on_way_results = [_build_customer_on_way_order_item(order, None, base_url=base_url) for order in on_way_orders]
+
+    return (
+        orders_snapshot,
+        {
+            'count': len(shops_results),
+            'results': shops_results,
+        },
+        {
+            'count': len(on_way_results),
+            'results': on_way_results,
+        },
+    )
 
 
 class DriverConsumer(AsyncWebsocketConsumer):
@@ -1127,6 +1268,7 @@ class DriverConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.driver_id = self.scope['url_route']['kwargs'].get('driver_id')
         self.room_group_name = f'driver_{self.driver_id}'
+        self.base_url = resolve_base_url(scope=self.scope)
 
         query_string = self.scope.get('query_string', b'').decode('utf-8')
         self.lang = 'ar'

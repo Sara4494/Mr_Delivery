@@ -1,4 +1,4 @@
-# Customer WebSocket Contract
+﻿# Customer WebSocket Contract
 
 This document is the dedicated source of truth for the customer-side realtime integration only.
 
@@ -8,6 +8,8 @@ It covers:
 - Customer chat with shop
 - Customer chat with driver
 - Driver live location updates
+- Dashboard snapshots for customer tabs
+- Ring / nudge notifications
 - Event names and payload shapes
 - Reconnect behavior
 - Customer-side action mapping
@@ -28,13 +30,18 @@ All customer sockets require a JWT access token in the query string:
 ?token=<JWT_ACCESS_TOKEN>
 ```
 
+Optional query parameters:
+
+- `lang=ar` or `lang=en`
+- `chat_type=shop_customer` or `chat_type=driver_customer` on chat sockets only
+
 Connection close codes used by the backend:
 
-- `4401`: missing or invalid token
+- `4401`: missing or invalid token, or wrong authenticated customer for the orders socket
 - `4403`: authenticated user does not have access to this order/chat
 - `1011`: unexpected server error during connect
 
-Supported user:
+Supported customer-side authenticated user:
 
 - `customer`
 
@@ -56,22 +63,20 @@ What happens on connect:
 
 1. The server accepts the socket.
 2. It sends a `connection` event.
+3. It sends `orders_snapshot`.
+4. It sends `shops_snapshot`.
+5. It sends `on_way_snapshot`.
 
 Important:
 
-- The customer orders socket does not currently send an initial snapshot.
-- Initial orders list should come from REST.
-- Realtime changes then arrive through this socket.
+- The three snapshots are now the source of truth for the customer tabs.
+- The frontend no longer needs REST just to render the orders list, shops-conversations tab, or on-way tab.
+- The same socket also receives incremental events such as `order_update`, `new_message`, and `driver_location`.
 
-Recommended initial REST source:
+Customer list endpoints replaced by the snapshots above:
 
 ```text
 GET /api/customer/orders/
-```
-
-Customer companion endpoints for the app tabs:
-
-```text
 GET /api/customer/shops-conversations/
 GET /api/customer/orders/on-way/
 ```
@@ -130,21 +135,103 @@ Realtime fan-out rules relevant to the customer:
 - `shop_customer` chat messages are broadcast to the chat room and the customer orders channel
 - `driver_customer` chat messages are broadcast to the chat room and the customer orders channel
 - Driver live location updates are pushed to the customer orders channel
+- Order workflow changes are pushed to the customer orders channel as `order_update`
+- Ring events can arrive on the customer orders channel and on the chat channel
 
-## 5. Customer Orders Socket Events
+## 5. Shared Payload Shapes
+
+### 5.1 Chat message object
+
+This shape appears in:
+
+- `previous_messages.messages[]`
+- `chat_message.data`
+- `new_message.data.message`
+
+```json
+{
+  "id": 36,
+  "order_id": 7,
+  "chat_type": "shop_customer",
+  "sender_type": "shop_owner",
+  "sender_name": "برجر كنچ",
+  "sender_id": 2,
+  "message_type": "text",
+  "content": "تم إنشاء الفاتورة",
+  "latitude": null,
+  "longitude": null,
+  "invoice": null,
+  "is_read": false,
+  "created_at": "2026-03-22T00:12:00+02:00",
+  "audio_file_url": null,
+  "image_file_url": null
+}
+```
+
+Notes:
+
+- `message_type` can be `text`, `location`, `audio`, or `image` depending on how the message was created.
+- Audio and image messages are uploaded through REST, then broadcast back over WebSocket.
+- `invoice` may be present for system/invoice-related messages.
+
+### 5.2 Order snapshot object
+
+This shape appears in:
+
+- `orders_snapshot.data.orders[]`
+- `order_update.data`
+- `new_message.data.order`
+
+It uses the same shape as `OrderSerializer`.
+
+Key fields used by the customer frontend include:
+
+- `id`
+- `order_number`
+- `customer`
+- `employee`
+- `driver`
+- `status`
+- `status_display`
+- `items`
+- `total_amount`
+- `delivery_fee`
+- `address`
+- `notes`
+- `unread_messages_count`
+- `last_message`
+- `created_at`
+- `updated_at`
+
+## 6. Customer Orders Socket Events
 
 Server-to-client events on `/ws/orders/customer/{customer_id}/`:
 
 - `connection`
+- `orders_snapshot`
+- `shops_snapshot`
+- `on_way_snapshot`
 - `order_update`
 - `new_message`
 - `driver_location`
+- `ring`
+- `ack`
+- `error`
 
-The customer orders channel does not currently expect any client-to-server events.
+Client-to-server events accepted on `/ws/orders/customer/{customer_id}/`:
 
-### 5.1 `connection`
+- `sync_dashboard`
+- `refresh_dashboard` as an alias of `sync_dashboard`
+- `ring`
 
-Sent once after a successful customer orders socket connect.
+Important:
+
+- After every successful connect, the backend sends the three snapshots.
+- After every `order_update`, the backend re-sends the three snapshots.
+- After every `new_message`, the backend re-sends the three snapshots.
+- `driver_location` is incremental only and does not trigger a full snapshot refresh by itself.
+
+### 6.1 `connection`
 
 ```json
 {
@@ -155,7 +242,98 @@ Sent once after a successful customer orders socket connect.
 }
 ```
 
-### 5.2 `order_update`
+### 6.2 `orders_snapshot`
+
+Sent immediately after connect and after a dashboard resync.
+
+```json
+{
+  "type": "orders_snapshot",
+  "data": {
+    "orders": [
+      {
+        "...": "same shape as OrderSerializer"
+      }
+    ]
+  },
+  "message": "تمت مزامنة الطلبات بنجاح"
+}
+```
+
+### 6.3 `shops_snapshot`
+
+Used for the customer shops-conversations tab.
+
+```json
+{
+  "type": "shops_snapshot",
+  "data": {
+    "count": 2,
+    "results": [
+      {
+        "shop_id": 8,
+        "shop_name": "برجر كنچ",
+        "shop_logo_url": "/media/shops/logo.png",
+        "subtitle": "تم التواصل مؤخراً",
+        "chat": {
+          "order_id": 15,
+          "chat_type": "shop_customer",
+          "shop_id": 8
+        }
+      }
+    ]
+  },
+  "message": "تمت مزامنة قائمة المحلات بنجاح"
+}
+```
+
+### 6.4 `on_way_snapshot`
+
+Used for the customer on-way tab.
+
+```json
+{
+  "type": "on_way_snapshot",
+  "data": {
+    "count": 1,
+    "results": [
+      {
+        "order_id": 15,
+        "status_key": "on_way",
+        "status_label": "في الطريق",
+        "shop_id": 8,
+        "shop_name": "برجر كنچ",
+        "shop_logo_url": "/media/shops/logo.png",
+        "driver_id": 12,
+        "driver_name": "أحمد محمود",
+        "driver_image_url": "/media/drivers/driver.jpg",
+        "driver_role_label": "مندوب التوصيل",
+        "chat": {
+          "order_id": 15,
+          "chat_type": "driver_customer",
+          "driver_id": 12
+        }
+      }
+    ]
+  },
+  "message": "تمت مزامنة طلبات الطريق بنجاح"
+}
+```
+
+### 6.5 Client event: `sync_dashboard`
+
+Requests a fresh set of the three customer dashboard snapshots from the same socket.
+
+```json
+{
+  "type": "sync_dashboard",
+  "request_id": "sync-1001"
+}
+```
+
+`refresh_dashboard` is accepted as an alias and behaves the same way.
+
+### 6.6 `order_update`
 
 Sent when the order snapshot changes.
 
@@ -169,80 +347,11 @@ Typical reasons:
 - delivery status moved to `preparing` or `on_way`
 - unread counters changed after chat read actions
 
-Payload shape:
-
 ```json
 {
   "type": "order_update",
   "data": {
-    "id": 7,
-    "order_number": "ODGRQIZA",
-    "customer": {
-      "id": 4,
-      "name": "محمد علي",
-      "phone_number": "+201069646266",
-      "profile_image": "/media/customer_profile/example.jpg",
-      "profile_image_url": "http://86.48.3.103/media/customer_profile/example.jpg",
-      "addresses": [],
-      "default_address": null,
-      "is_online": false,
-      "is_verified": true,
-      "unread_messages_count": 0,
-      "last_message": {
-        "content": "تمت الموافقة على الفاتورة من العميل",
-        "created_at": "2026-03-22T00:10:00+02:00"
-      },
-      "created_at": "2026-03-21T20:44:00+02:00",
-      "updated_at": "2026-03-22T00:10:00+02:00"
-    },
-    "employee": null,
-    "driver": {
-      "id": 9,
-      "name": "خالد سمير",
-      "phone_number": "01000000000",
-      "profile_image": "/media/drivers/driver.jpg",
-      "profile_image_url": "http://86.48.3.103/media/drivers/driver.jpg",
-      "status": "available",
-      "status_display": "متاح",
-      "current_orders_count": 1,
-      "rating": "4.50",
-      "total_rides": 22,
-      "created_at": "2026-03-21T20:00:00+02:00",
-      "updated_at": "2026-03-22T00:09:00+02:00"
-    },
-    "status": "confirmed",
-    "status_display": "مؤكد",
-    "items": [
-      "Item 1 - price: 60.00",
-      "Item 2 - price: 45.00"
-    ],
-    "total_amount": "120.00",
-    "delivery_fee": "15.00",
-    "address": "TEST - TEST",
-    "notes": "",
-    "unread_messages_count": 0,
-    "last_message": {
-      "id": 35,
-      "chat_type": "shop_customer",
-      "chat_type_display": "محادثة المحل مع العميل",
-      "sender_type": "customer",
-      "sender_type_display": "عميل",
-      "sender_name": "محمد علي",
-      "sender_id": 4,
-      "message_type": "text",
-      "message_type_display": "نص",
-      "content": "تمت الموافقة على الفاتورة من العميل",
-      "audio_file": null,
-      "audio_file_url": null,
-      "image_file": null,
-      "image_file_url": null,
-      "latitude": null,
-      "longitude": null,
-      "is_read": false,
-      "created_at": "2026-03-22T00:10:00+02:00"
-    },
-    "created_at": "2026-03-21T23:08:41+02:00",
-    "updated_at": "2026-03-22T00:10:00+02:00"
+    "...": "same shape as one order inside orders_snapshot.data.orders[]"
   }
 }
 ```
@@ -251,8 +360,9 @@ Important:
 
 - There is no separate `order_cancelled` event.
 - Cancellation is delivered through `order_update` where `data.status == "cancelled"`.
+- After sending `order_update`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 
-### 5.3 `new_message`
+### 6.7 `new_message`
 
 Sent when a new chat message is created for this customer's order.
 
@@ -260,8 +370,6 @@ This can come from:
 
 - `shop_customer` chat
 - `driver_customer` chat
-
-Payload shape:
 
 ```json
 {
@@ -271,39 +379,20 @@ Payload shape:
     "order_number": "ODGRQIZA",
     "chat_type": "shop_customer",
     "message": {
-      "id": 36,
-      "order_id": 7,
-      "chat_type": "shop_customer",
-      "sender_type": "shop_owner",
-      "sender_name": "شاورما",
-      "sender_id": 2,
-      "message_type": "text",
-      "content": "تم إنشاء الفاتورة",
-      "latitude": null,
-      "longitude": null,
-      "is_read": false,
-      "created_at": "2026-03-22T00:12:00+02:00",
-      "audio_file_url": null,
-      "image_file_url": null
+      "...": "same shape as one chat message object"
     },
     "order": {
-      "...OrderSerializer fields": "latest order snapshot after this message"
+      "...": "latest order snapshot after this message"
     }
   }
 }
 ```
 
-Use this event to:
+After sending `new_message`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 
-- Update the last message preview in the customer order list
-- Update unread counters
-- Update the open conversation if the same order and same chat type are active
-
-### 5.4 `driver_location`
+### 6.8 `driver_location`
 
 Sent when the driver updates location while the order is active.
-
-Payload shape:
 
 ```json
 {
@@ -317,12 +406,117 @@ Payload shape:
 }
 ```
 
-Use this event to:
+### 6.9 Client event: `ring`
 
-- Move the live driver marker on the map
-- Refresh delivery tracking UI
+This is a lightweight notification only. It does not open a call.
 
-## 6. Customer Chat Events
+```json
+{
+  "type": "ring",
+  "request_id": "ring-101",
+  "order_id": 15,
+  "target": "shop"
+}
+```
+
+Supported targets when the sender is a customer:
+
+- `shop`
+- `driver`
+
+You can also send multiple targets:
+
+```json
+{
+  "type": "ring",
+  "request_id": "ring-102",
+  "order_id": 15,
+  "targets": ["shop", "driver"]
+}
+```
+
+### 6.10 Server event: `ring`
+
+```json
+{
+  "type": "ring",
+  "data": {
+    "ring_id": "uuid-value",
+    "order_id": 15,
+    "order_number": "OD12345",
+    "sender_type": "customer",
+    "sender_name": "Ahmed",
+    "sender_id": 7,
+    "target": "shop",
+    "targets": ["shop"],
+    "chat_type": null,
+    "notification_kind": "ring",
+    "play_sound_on_frontend": true,
+    "created_at": "2026-03-28T20:15:00+02:00"
+  }
+}
+```
+
+`chat_type` is `null` when the ring is sent from the orders socket, and can be `shop_customer` or `driver_customer` when sent from a chat socket.
+
+### 6.11 Server event: `ack`
+
+Used for successful client actions such as `sync_dashboard` and `ring`.
+
+Example for dashboard sync:
+
+```json
+{
+  "type": "ack",
+  "action": "sync_dashboard",
+  "success": true,
+  "request_id": "sync-1001",
+  "data": {},
+  "message": "تمت مزامنة بيانات العميل بنجاح"
+}
+```
+
+Example for ring:
+
+```json
+{
+  "type": "ack",
+  "action": "ring",
+  "success": true,
+  "request_id": "ring-101",
+  "data": {
+    "order_id": 15,
+    "targets": ["shop"],
+    "unavailable_targets": [],
+    "ring_id": "uuid-value"
+  }
+}
+```
+
+### 6.12 Server event: `error`
+
+Examples of error codes from the current backend:
+
+- `UNKNOWN_EVENT`
+- `INVALID_JSON`
+- `ORDER_NOT_FOUND`
+- `ORDER_ACCESS_DENIED`
+- `RING_TARGET_REQUIRED`
+- `RING_TARGET_NOT_ALLOWED`
+- `RING_TARGET_UNAVAILABLE`
+- `UNEXPECTED_ERROR`
+
+```json
+{
+  "type": "error",
+  "success": false,
+  "code": "RING_TARGET_REQUIRED",
+  "request_id": "ring-101",
+  "message": "يجب تحديد الطرف المطلوب إرسال الرنة له"
+}
+```
+
+## 7. Customer Chat Events
 
 Server-to-client events on both:
 
@@ -336,18 +530,20 @@ Server-to-client events:
 - `chat_message`
 - `messages_read`
 - `typing`
+- `ring`
 - `ack`
 - `error`
 
 Client-to-server events:
 
 - `send_message`
-- `chat_message` (legacy compatibility)
+- `chat_message` as legacy compatibility
 - `location`
 - `mark_read`
 - `typing`
+- `ring`
 
-### 6.1 `connection`
+### 7.1 `connection`
 
 Example for shop chat:
 
@@ -377,13 +573,13 @@ Example for driver chat:
 }
 ```
 
-### 6.2 `previous_messages`
+### 7.2 `previous_messages`
 
 Sent immediately after a successful chat connect.
 
 Current backend behavior:
 
-- Returns up to the last 50 messages
+- Returns up to 50 messages
 - Filtered by `order_id`
 - Filtered by the selected `chat_type`
 - Ordered ascending by `created_at`
@@ -393,26 +589,13 @@ Current backend behavior:
   "type": "previous_messages",
   "messages": [
     {
-      "id": 31,
-      "order_id": 7,
-      "chat_type": "shop_customer",
-      "sender_type": "customer",
-      "sender_name": "محمد علي",
-      "sender_id": 4,
-      "message_type": "text",
-      "content": "السلام عليكم",
-      "latitude": null,
-      "longitude": null,
-      "is_read": false,
-      "created_at": "2026-03-22T00:02:00+02:00",
-      "audio_file_url": null,
-      "image_file_url": null
+      "...": "same shape as one chat message object"
     }
   ]
 }
 ```
 
-### 6.3 Client event: `send_message`
+### 7.3 Client event: `send_message`
 
 Recommended event for sending text messages:
 
@@ -430,7 +613,7 @@ Works on:
 - `chat_type=shop_customer`
 - `chat_type=driver_customer`
 
-### 6.4 Client event: legacy `chat_message`
+### 7.4 Client event: legacy `chat_message`
 
 Still accepted for compatibility:
 
@@ -443,7 +626,7 @@ Still accepted for compatibility:
 }
 ```
 
-### 6.5 Client event: `location`
+### 7.5 Client event: `location`
 
 ```json
 {
@@ -455,7 +638,7 @@ Still accepted for compatibility:
 }
 ```
 
-### 6.6 Client event: `mark_read`
+### 7.6 Client event: `mark_read`
 
 ```json
 {
@@ -468,9 +651,10 @@ Result:
 
 - Chat room receives `messages_read`
 - Sender receives `ack`
-- Related order streams receive `order_update` with fresh unread counters
+- Related order streams receive `order_update`
+- Customer orders socket then receives the three snapshots again
 
-### 6.7 Client event: `typing`
+### 7.7 Client event: `typing`
 
 ```json
 {
@@ -479,33 +663,31 @@ Result:
 }
 ```
 
-### 6.8 Server event: `chat_message`
+### 7.8 Client event: `ring`
 
-Example:
+```json
+{
+  "type": "ring",
+  "request_id": "ring-201",
+  "order_id": 15,
+  "target": "shop"
+}
+```
+
+When sent from a chat socket, the outgoing ring payload includes the current `chat_type`.
+
+### 7.9 Server event: `chat_message`
 
 ```json
 {
   "type": "chat_message",
   "data": {
-    "id": 36,
-    "order_id": 7,
-    "chat_type": "driver_customer",
-    "sender_type": "driver",
-    "sender_name": "خالد سمير",
-    "sender_id": 9,
-    "message_type": "text",
-    "content": "أنا قريب منك",
-    "latitude": null,
-    "longitude": null,
-    "is_read": false,
-    "created_at": "2026-03-22T00:20:00+02:00",
-    "audio_file_url": null,
-    "image_file_url": null
+    "...": "same shape as one chat message object"
   }
 }
 ```
 
-### 6.9 Server event: `messages_read`
+### 7.10 Server event: `messages_read`
 
 ```json
 {
@@ -516,7 +698,7 @@ Example:
 }
 ```
 
-### 6.10 Server event: `typing`
+### 7.11 Server event: `typing`
 
 Example for shop chat:
 
@@ -524,7 +706,7 @@ Example for shop chat:
 {
   "type": "typing",
   "user_type": "shop_owner",
-  "user_name": "شاورما",
+  "user_name": "برجر كنچ",
   "is_typing": true
 }
 ```
@@ -535,14 +717,36 @@ Example for driver chat:
 {
   "type": "typing",
   "user_type": "driver",
-  "user_name": "خالد سمير",
+  "user_name": "أحمد محمود",
   "is_typing": true
 }
 ```
 
-### 6.11 Server event: `ack`
+### 7.12 Server event: `ring`
 
-Used for successful client actions such as `send_message`, `chat_message`, `location`, and `mark_read`.
+```json
+{
+  "type": "ring",
+  "data": {
+    "ring_id": "uuid-value",
+    "order_id": 15,
+    "order_number": "OD12345",
+    "sender_type": "shop_owner",
+    "sender_name": "برجر كنچ",
+    "sender_id": 8,
+    "target": "customer",
+    "targets": ["customer"],
+    "chat_type": "shop_customer",
+    "notification_kind": "ring",
+    "play_sound_on_frontend": true,
+    "created_at": "2026-03-28T20:15:00+02:00"
+  }
+}
+```
+
+### 7.13 Server event: `ack`
+
+Used for successful client actions such as `send_message`, `chat_message`, `location`, `mark_read`, and `ring`.
 
 ```json
 {
@@ -561,9 +765,9 @@ Used for successful client actions such as `send_message`, `chat_message`, `loca
 }
 ```
 
-### 6.12 Server event: `error`
+### 7.14 Server event: `error`
 
-Examples of error codes from current backend:
+Examples of error codes from the current backend:
 
 - `UNKNOWN_EVENT`
 - `INVALID_JSON`
@@ -571,9 +775,12 @@ Examples of error codes from current backend:
 - `MESSAGE_CONTENT_REQUIRED`
 - `LOCATION_COORDINATES_REQUIRED`
 - `MESSAGE_SAVE_FAILED`
+- `ORDER_NOT_FOUND`
+- `ORDER_ACCESS_DENIED`
+- `RING_TARGET_REQUIRED`
+- `RING_TARGET_NOT_ALLOWED`
+- `RING_TARGET_UNAVAILABLE`
 - `UNEXPECTED_ERROR`
-
-Example payload:
 
 ```json
 {
@@ -587,123 +794,83 @@ Example payload:
 }
 ```
 
-## 7. Media Messages for Customer Chat
+## 8. Media Messages for Customer Chat
 
-Image and audio uploads are not sent through the websocket payload directly.
+Audio and image messages are not uploaded through WebSocket directly.
 
-Current backend behavior:
+Transport:
 
-- WebSocket supports direct send for `text` and `location`
-- Media upload happens through REST
-- After REST upload succeeds, the backend broadcasts the created media message to websocket subscribers
+- REST upload, then websocket broadcast
 
-REST endpoint:
+Endpoint:
 
 ```text
 POST /api/chat/order/{order_id}/send-media/
 ```
 
-Required form-data:
+Form-data:
 
 - `chat_type=shop_customer` or `chat_type=driver_customer`
-- exactly one of:
-  - `image_file`
-  - `audio_file`
+- `audio_file` or `image_file`
+- optional `content`
 
-Optional:
+Realtime result:
 
-- `content`
-
-Then:
-
-- The active chat socket receives `chat_message`
-- The customer orders socket receives `new_message`
-
-## 8. Order Data Shape Used by Customer Sockets
-
-`order_update` uses `OrderSerializer`.
-
-Important top-level fields:
-
-- `id`
-- `order_number`
-- `customer`
-- `employee`
-- `driver`
-- `status`
-- `status_display`
-- `items`
-- `total_amount`
-- `delivery_fee`
-- `address`
-- `notes`
-- `unread_messages_count`
-- `last_message`
-- `created_at`
-- `updated_at`
-
-Useful fields for customer order cards:
-
-- `data.id`
-- `data.order_number`
-- `data.status`
-- `data.status_display`
-- `data.last_message.content`
-- `data.last_message.created_at`
-- `data.unread_messages_count`
-- `data.total_amount`
-- `data.delivery_fee`
-- `data.driver.name`
-- `data.updated_at`
+- Chat room receives `chat_message`
+- Related customer orders socket receives `new_message`
+- Customer orders socket then receives refreshed snapshots
 
 ## 9. Source of Truth
 
-For the current customer-side behavior:
+Current backend source of truth for customer realtime behavior:
 
-- Initial orders list should come from `GET /api/customer/orders/`
-- Shops tab can use `GET /api/customer/shops-conversations/`
-- Active delivery / on-way tab can use `GET /api/customer/orders/on-way/`
-- Live order changes come from `/ws/orders/customer/{customer_id}/`
-- Initial chat history comes from `previous_messages`
-- Live chat updates come from the chat websocket channels
-- Driver live tracking comes from `driver_location` events on the customer orders socket
+- `shop/consumers.py`:
+  - `CustomerOrderConsumer`
+  - `ChatConsumer`
+- `shop/websocket_utils.py`
+- `shop/serializers.py`:
+  - `OrderSerializer`
+  - `ChatMessageSerializer`
+- `shop/views.py` helpers used to build customer dashboard snapshot items
 
-Fallback tracking REST endpoint:
-
-```text
-GET /api/orders/{order_id}/track/
-```
+If this document and implementation diverge, the implementation wins.
 
 ## 10. Reconnect Behavior
 
-Current expected client behavior:
-
 ### Customer orders socket
 
-- Reopen `/ws/orders/customer/{customer_id}/?token=<JWT>` after disconnect
-- Wait for `connection`
-- Refresh the current order list from REST if needed, because this socket does not send snapshot on reconnect
-- Resume live handling of `order_update`, `new_message`, and `driver_location`
+On reconnect, the frontend should expect this sequence again:
+
+1. `connection`
+2. `orders_snapshot`
+3. `shops_snapshot`
+4. `on_way_snapshot`
+5. Resume live handling of `order_update`, `new_message`, `driver_location`, and `ring`
 
 ### Customer chat sockets
 
-- Reopen the needed chat URL after disconnect
-- Wait for `connection`
-- Consume `previous_messages`
-- Resume live handling of `chat_message`, `messages_read`, `typing`, `ack`, and `error`
+On reconnect, the frontend should:
 
-No extra room rejoin event is required after reconnect.
+1. Re-open the active chat socket with the same `order_id` and `chat_type`
+2. Wait for `connection`
+3. Wait for `previous_messages`
+4. Resume sending `mark_read` if needed
+5. Resume live handling of `chat_message`, `messages_read`, `typing`, and `ring`
 
 ## 11. Current Naming Notes
 
 Current backend event names for customer integrations are:
 
+- `orders_snapshot`
+- `shops_snapshot`
+- `on_way_snapshot`
 - `order_update`
 - `new_message`
 - `driver_location`
 - `chat_message`
 - `messages_read`
 - `typing`
+- `ring`
 - `ack`
 - `error`
 
@@ -711,6 +878,7 @@ Important naming notes:
 
 - The backend currently uses `order_update`, not `order_updated`
 - The backend currently uses `mark_read`, not `mark_message_seen`
+- The backend currently uses `sync_dashboard`, and also accepts `refresh_dashboard` as an alias
 - There is no separate `order_cancelled` event; cancellation comes through `order_update`
 
 ## 12. Customer UI Action Map
@@ -739,17 +907,17 @@ Endpoint:
 POST /api/customer/orders/
 ```
 
-Request body:
+Request body example:
 
 ```json
 {
+  "shop_owner_id": 12,
   "address": "TEST - TEST",
   "items": [
     "Item 1",
     "Item 2"
   ],
-  "notes": "Optional notes",
-  "phone_number": "01000000000"
+  "notes": "Optional notes"
 }
 ```
 
@@ -758,27 +926,15 @@ Backend behavior:
 - Creates the order with `status=new`
 - Creates the first chat message in `shop_customer`
 - Broadcasts that first message realtime
+- Creates the static customer-facing status message that the order was received
 
 Realtime result:
 
 - Shop dashboard receives `new_order`
-- Shop and customer flows receive the first `new_message`
-
-Automatic status message after creation:
-
-- The backend also creates a static system message for the customer:
-  - `تم استلام طلبك ويرجى الانتظار حتى يتم إرسال الفاتورة.`
-- This is not a message the shop needs to type manually
-
-Client note:
-
-- The REST response itself should also be used to insert the new order locally
+- Shop and customer flows receive `new_message`
+- If the customer orders socket is already open, it also receives fresh customer dashboard snapshots
 
 ### 12.2 Send text message
-
-Purpose:
-
-- Send a normal chat message to shop or driver
 
 Transport:
 
@@ -804,7 +960,8 @@ Realtime result:
 
 - Chat room receives `chat_message`
 - Sender receives `ack`
-- Customer orders list receives `new_message`
+- Customer orders socket receives `new_message`
+- Customer orders socket receives refreshed snapshots
 
 ### 12.3 Send audio file
 
@@ -827,7 +984,8 @@ Form-data:
 Realtime result:
 
 - Chat room receives `chat_message` with `message_type=audio`
-- Customer orders list receives `new_message`
+- Customer orders socket receives `new_message`
+- Customer orders socket receives refreshed snapshots
 
 ### 12.4 Send image
 
@@ -850,7 +1008,8 @@ Form-data:
 Realtime result:
 
 - Chat room receives `chat_message` with `message_type=image`
-- Customer orders list receives `new_message`
+- Customer orders socket receives `new_message`
+- Customer orders socket receives refreshed snapshots
 
 ### 12.5 Send current location
 
@@ -874,7 +1033,8 @@ Realtime result:
 
 - Chat room receives `chat_message` with `message_type=location`
 - Sender receives `ack`
-- Customer orders list receives `new_message`
+- Customer orders socket receives `new_message`
+- Customer orders socket receives refreshed snapshots
 
 ### 12.6 Mark messages as read
 
@@ -896,12 +1056,38 @@ Realtime result:
 - Chat room receives `messages_read`
 - Sender receives `ack`
 - Related order streams receive `order_update`
+- Customer orders socket receives refreshed snapshots
 
-### 12.7 Confirm invoice
+### 12.7 Send ring / nudge
 
-Purpose:
+Transport:
 
-- Customer accepts the priced invoice
+- WebSocket
+
+Possible sockets:
+
+- `/ws/orders/customer/{customer_id}/?token=<JWT>`
+- `/ws/chat/order/{order_id}/?token=<JWT>&chat_type=shop_customer`
+- `/ws/chat/order/{order_id}/?token=<JWT>&chat_type=driver_customer`
+
+Client payload:
+
+```json
+{
+  "type": "ring",
+  "request_id": "ring-501",
+  "order_id": 15,
+  "target": "shop"
+}
+```
+
+Realtime result:
+
+- The target side receives `ring`
+- The sender receives `ack`
+- The frontend plays sound or visual notification locally
+
+### 12.8 Confirm invoice
 
 Transport:
 
@@ -917,12 +1103,9 @@ Realtime result:
 
 - Customer orders socket receives `order_update` with `status=confirmed`
 - Shop and customer flows receive `new_message` for the system confirmation message
+- Customer orders socket receives refreshed snapshots
 
-### 12.8 Reject invoice
-
-Purpose:
-
-- Customer rejects the priced invoice
+### 12.9 Reject invoice
 
 Transport:
 
@@ -938,8 +1121,9 @@ Realtime result:
 
 - Customer orders socket receives `order_update` with `status=cancelled`
 - Shop and customer flows receive `new_message` for the system rejection message
+- Customer orders socket receives refreshed snapshots
 
-### 12.9 Track driver live
+### 12.10 Track driver live
 
 Primary realtime source:
 
@@ -953,8 +1137,8 @@ GET /api/orders/{order_id}/track/
 
 Use this when:
 
-- The screen opens after reconnect
-- You want the latest known driver coordinates immediately before waiting for the next websocket push
+- The screen opens after reconnect and you want the latest stored coordinates immediately
+- You want one immediate coordinate fetch before waiting for the next websocket push
 
 ## 13. Automatic Status Messages
 
@@ -975,5 +1159,5 @@ The following customer-facing messages are system-generated by the backend:
 
 Implementation note:
 
-- These are static workflow/status messages generated automatically by the server
-- They are not expected to be typed manually by shop staff
+- These are static workflow/status messages generated automatically by the server.
+- They are not expected to be typed manually by shop staff.

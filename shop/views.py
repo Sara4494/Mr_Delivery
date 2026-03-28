@@ -71,7 +71,7 @@ from user.models import (
     WORK_SCHEDULE_DAY_LABELS,
     default_work_schedule,
 )
-from user.utils import success_response, error_response, build_message_fields, t, localize_message
+from user.utils import success_response, error_response, build_message_fields, t, localize_message, build_absolute_file_url
 from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 from .websocket_utils import (
     notify_order_update,
@@ -2087,7 +2087,7 @@ def driver_order_chat_view(request, order_id):
     )
 
     payload = _chat_message_payload(message, request=request)
-    broadcast_chat_message(order.id, 'driver_customer', payload)
+    broadcast_chat_message(order.id, 'driver_customer', payload, request=request)
 
     return success_response(
         data=_build_driver_order_chat_message_payload(message, request, driver),
@@ -2788,7 +2788,7 @@ def order_detail_view(request, order_id):
                     message_type='text',
                     content=msg_content,
                 )
-                broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg))
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg, request=request), request=request)
             elif new_status == 'pending_customer_confirm':
                 if old_status == 'pending_customer_confirm':
                     msg_content = 'invoice_modified_waiting_for_confirmation'
@@ -2803,7 +2803,7 @@ def order_detail_view(request, order_id):
                     message_type='text',
                     content=msg_content,
                 )
-                broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg))
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg, request=request), request=request)
 
             if has_driver_assignment and order.driver and (not old_driver or old_driver.id != order.driver.id):
                 driver_msg = ChatMessage.objects.create(
@@ -2815,7 +2815,7 @@ def order_detail_view(request, order_id):
                     message_type='text',
                     content=f'تم تحويل الأوردر للدليفري {order.driver.name}.',
                 )
-                broadcast_chat_message_to_order(order.id, _chat_message_payload(driver_msg))
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(driver_msg, request=request), request=request)
         except Exception as e:
             print(f"Order system message broadcast error: {e}")
         
@@ -3712,12 +3712,12 @@ def _build_customer_driver_payload(order, request):
     }
 
 
-def _build_customer_shop_conversation_item(order, request):
+def _build_customer_shop_conversation_item(order, request, base_url=None):
     last_message = _get_prefetched_latest_message(order)
     return {
         'shop_id': order.shop_owner_id,
         'shop_name': order.shop_owner.shop_name,
-        'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image),
+        'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image, base_url=base_url),
         'subtitle': 'تم التواصل مؤخراً' if last_message else 'لا يوجد تواصل بعد',
         'chat': {
             'order_id': order.id,
@@ -3727,7 +3727,7 @@ def _build_customer_shop_conversation_item(order, request):
     }
 
 
-def _build_customer_on_way_order_item(order, request):
+def _build_customer_on_way_order_item(order, request, base_url=None):
     driver = order.driver
     can_chat_with_driver = bool(order.driver_id and order.status in {'preparing', 'on_way'})
 
@@ -3737,10 +3737,10 @@ def _build_customer_on_way_order_item(order, request):
         'status_label': _get_customer_friendly_delivery_status(order),
         'shop_id': order.shop_owner_id,
         'shop_name': order.shop_owner.shop_name,
-        'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image),
+        'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image, base_url=base_url),
         'driver_id': driver.id if driver else None,
         'driver_name': driver.name if driver else None,
-        'driver_image_url': _build_file_url(request, driver.profile_image) if driver else None,
+        'driver_image_url': _build_file_url(request, driver.profile_image, base_url=base_url) if driver else None,
         'driver_role_label': 'مندوب التوصيل' if driver else None,
         'chat': (
             {
@@ -3893,7 +3893,7 @@ def chat_order_media_upload_view(request, order_id):
         order.save(update_fields=['unread_messages_count'])
 
     payload = _chat_message_payload(message, request=request)
-    broadcast_chat_message(order.id, chat_type, payload)
+    broadcast_chat_message(order.id, chat_type, payload, request=request)
     serialized = ChatMessageSerializer(message, context={'request': request}).data
     return success_response(
         data=serialized,
@@ -3973,16 +3973,8 @@ def shop_category_detail_view(request, category_id):
 # ==================== Public Shops (for Customer selection) ====================
 
 
-def _build_file_url(request, file_field):
-    if not file_field:
-        return None
-    try:
-        file_url = file_field.url
-    except Exception:
-        return None
-    if request:
-        return request.build_absolute_uri(file_url)
-    return file_url
+def _build_file_url(request, file_field, base_url=None):
+    return build_absolute_file_url(file_field, request=request, base_url=base_url)
 
 
 def _to_hhmm_time(value):
@@ -5074,7 +5066,7 @@ def customer_orders_list_create_view(request):
                     sender_type='customer'
                 ).count()
                 order.save(update_fields=['unread_messages_count'])
-                broadcast_chat_message_to_order(order.id, _chat_message_payload(first_msg))
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(first_msg, request=request), request=request)
             except Exception as e:
                 print(f"initial chat message broadcast error: {e}")
 
@@ -5096,7 +5088,8 @@ def customer_orders_list_create_view(request):
                 broadcast_chat_message_to_customer(
                     order.id,
                     'shop_customer',
-                    _chat_message_payload(received_msg)
+                    _chat_message_payload(received_msg, request=request),
+                    request=request
                 )
             except Exception as e:
                 print(f"order received chat message error: {e}")
@@ -5227,7 +5220,7 @@ def customer_order_confirm_view(request, order_id):
             message_type='text',
             content='تمت الموافقة على الفاتورة من العميل',
         )
-        broadcast_chat_message_to_order(order.id, _chat_message_payload(accepted_msg))
+        broadcast_chat_message_to_order(order.id, _chat_message_payload(accepted_msg, request=request), request=request)
     except Exception as e:
         print(f"confirm order chat message error: {e}")
     
@@ -5292,7 +5285,7 @@ def customer_order_reject_view(request, order_id):
             message_type='text',
             content='تم رفض الفاتورة من العميل',
         )
-        broadcast_chat_message_to_order(order.id, _chat_message_payload(rejected_msg))
+        broadcast_chat_message_to_order(order.id, _chat_message_payload(rejected_msg, request=request), request=request)
     except Exception as e:
         print(f"reject order chat message error: {e}")
 

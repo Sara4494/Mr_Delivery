@@ -395,3 +395,111 @@ chat.sendMessage('Hello!');
 3. **Message Persistence**: All messages are saved to database
 4. **File Uploads**: Audio and image messages should be sent via REST API, not WebSocket
 5. **Reconnection**: Implement auto-reconnection in frontend for better UX
+
+---
+
+## Customer Orders Dashboard Snapshot
+
+The customer orders socket `/ws/orders/customer/{customer_id}/?...` now streams the customer dashboard lists directly over WebSocket, so the frontend does not need to fetch these lists over HTTP just to render the tabs:
+
+- `/api/customer/orders/`
+- `/api/customer/shops-conversations/`
+- `/api/customer/orders/on-way/`
+
+### Initial Snapshot Events
+
+Immediately after the socket connects, the backend sends:
+
+- `orders_snapshot`
+- `shops_snapshot`
+- `on_way_snapshot`
+
+`orders_snapshot`:
+
+```json
+{
+    "type": "orders_snapshot",
+    "data": {
+        "orders": [
+            {
+                "...": "same shape as OrderSerializer"
+            }
+        ]
+    }
+}
+```
+
+`shops_snapshot`:
+
+```json
+{
+    "type": "shops_snapshot",
+    "data": {
+        "count": 2,
+        "results": [
+            {
+                "shop_id": 8,
+                "shop_name": "برجر كنچ",
+                "shop_logo_url": "/media/shops/logo.png",
+                "subtitle": "تم التواصل مؤخراً",
+                "chat": {
+                    "order_id": 15,
+                    "chat_type": "shop_customer",
+                    "shop_id": 8
+                }
+            }
+        ]
+    }
+}
+```
+
+`on_way_snapshot`:
+
+```json
+{
+    "type": "on_way_snapshot",
+    "data": {
+        "count": 1,
+        "results": [
+            {
+                "order_id": 15,
+                "status_key": "on_way",
+                "status_label": "في الطريق",
+                "shop_id": 8,
+                "shop_name": "برجر كنچ",
+                "driver_id": 12,
+                "driver_name": "أحمد محمود",
+                "chat": {
+                    "order_id": 15,
+                    "chat_type": "driver_customer",
+                    "driver_id": 12
+                }
+            }
+        ]
+    }
+}
+```
+
+### Manual Resync
+
+The frontend can request a fresh snapshot from the same socket:
+
+```json
+{
+    "type": "sync_dashboard",
+    "request_id": "sync-1001"
+}
+```
+
+Ack:
+
+```json
+{
+    "type": "ack",
+    "action": "sync_dashboard",
+    "success": true,
+    "request_id": "sync-1001"
+}
+```
+
+The backend also re-sends the three snapshot events after `order_update` and `new_message` so the customer tabs stay in sync without polling.

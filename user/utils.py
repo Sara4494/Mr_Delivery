@@ -1,4 +1,5 @@
 from django.utils.translation import get_language
+from django.conf import settings
 from rest_framework import status as http_status
 from rest_framework.response import Response
 
@@ -148,6 +149,90 @@ def build_message_fields(message, request=None, lang=None, **kwargs):
     return {
         "message": localize_message(request, message, lang=lang, **kwargs),
     }
+
+
+def _normalize_base_url(raw_base_url):
+    value = str(raw_base_url or "").strip().rstrip("/")
+    return value or None
+
+
+def _scope_headers(scope=None):
+    headers = {}
+    for key, value in (scope or {}).get("headers", []) or []:
+        try:
+            headers[key.decode("latin1").lower()] = value.decode("latin1")
+        except Exception:
+            continue
+    return headers
+
+
+def resolve_base_url(request=None, scope=None, base_url=None):
+    explicit_base_url = _normalize_base_url(base_url)
+    if explicit_base_url:
+        return explicit_base_url
+
+    if request is not None:
+        try:
+            return request.build_absolute_uri("/").rstrip("/")
+        except Exception:
+            try:
+                scheme = "https" if request.is_secure() else "http"
+                return f"{scheme}://{request.get_host()}"
+            except Exception:
+                pass
+
+    scope_headers = _scope_headers(scope)
+    host = (scope_headers.get("x-forwarded-host") or scope_headers.get("host") or "").split(",")[0].strip()
+    proto = (scope_headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+
+    if not proto:
+        scope_scheme = str((scope or {}).get("scheme") or "").strip().lower()
+        if scope_scheme == "wss":
+            proto = "https"
+        elif scope_scheme == "ws":
+            proto = "http"
+        elif scope_scheme in {"http", "https"}:
+            proto = scope_scheme
+
+    if host:
+        return f"{proto or 'http'}://{host}"
+
+    return _normalize_base_url(getattr(settings, "PUBLIC_BASE_URL", ""))
+
+
+def build_absolute_file_url(file_field_or_url, request=None, scope=None, base_url=None):
+    """
+    Resolve a file/url into an absolute URL.
+    Falls back to the active request/scope host, and only then to
+    settings.PUBLIC_BASE_URL when no request object exists,
+    which is especially useful for WebSocket payloads.
+    """
+    if not file_field_or_url:
+        return None
+
+    try:
+        file_url = file_field_or_url.url
+    except Exception:
+        file_url = str(file_field_or_url or "").strip()
+
+    if not file_url:
+        return None
+
+    if file_url.startswith(("http://", "https://")):
+        return file_url
+
+    if request is not None:
+        try:
+            return request.build_absolute_uri(file_url)
+        except Exception:
+            pass
+
+    resolved_base_url = resolve_base_url(request=request, scope=scope, base_url=base_url)
+    if not resolved_base_url:
+        return file_url
+
+    normalized_path = file_url if str(file_url).startswith("/") else f"/{file_url}"
+    return f"{resolved_base_url}{normalized_path}"
 
 
 def success_response(data=None, message="", status_code=http_status.HTTP_200_OK, request=None, lang=None):

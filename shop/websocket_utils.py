@@ -29,21 +29,31 @@ def send_to_group(group_name, message_type, data):
         )
 
 
-def _serialize_order_snapshot(order):
-    return OrderSerializer(order).data
+def _serialize_order_snapshot(order, request=None, base_url=None):
+    context = {}
+    if request is not None:
+        context['request'] = request
+    if base_url:
+        context['base_url'] = base_url
+    return OrderSerializer(order, context=context).data
 
 
-def _serialize_driver_snapshot(driver):
-    return DriverSerializer(driver).data
+def _serialize_driver_snapshot(driver, request=None, base_url=None):
+    context = {}
+    if request is not None:
+        context['request'] = request
+    if base_url:
+        context['base_url'] = base_url
+    return DriverSerializer(driver, context=context).data
 
 
-def _build_message_notification_payload(order, chat_type, message_payload):
+def _build_message_notification_payload(order, chat_type, message_payload, request=None, base_url=None):
     return {
         'order_id': order.id,
         'order_number': order.order_number,
         'chat_type': chat_type,
         'message': message_payload,
-        'order': _serialize_order_snapshot(order),
+        'order': _serialize_order_snapshot(order, request=request, base_url=base_url),
     }
 
 
@@ -88,7 +98,7 @@ def notify_driver_assigned(driver_id, order_data):
     send_to_group(f'driver_{driver_id}', 'new_order', order_data)
 
 
-def broadcast_chat_message(order_id, chat_type, message_payload):
+def broadcast_chat_message(order_id, chat_type, message_payload, request=None, base_url=None):
     """
     إرسال رسالة شات إلى مجموعة الطلب حسب نوع المحادثة.
     chat_type: shop_customer | driver_customer
@@ -105,20 +115,26 @@ def broadcast_chat_message(order_id, chat_type, message_payload):
     except Order.DoesNotExist:
         return
 
-    notification_payload = _build_message_notification_payload(order, chat_type, message_payload)
+    notification_payload = _build_message_notification_payload(
+        order,
+        chat_type,
+        message_payload,
+        request=request,
+        base_url=base_url,
+    )
     for group_name in _get_message_target_groups(order, chat_type):
         send_to_group(group_name, 'new_message', notification_payload)
 
 
-def broadcast_chat_message_to_order(order_id, message_payload):
+def broadcast_chat_message_to_order(order_id, message_payload, request=None, base_url=None):
     """
     إرسال رسالة شات إلى مجموعة طلب (لظهورها فوراً عند العميل والمحل).
     message_payload: dict مثل {'id', 'sender_type', 'sender_name', 'message_type', 'content', 'created_at', ...}
     """
-    broadcast_chat_message(order_id, 'shop_customer', message_payload)
+    broadcast_chat_message(order_id, 'shop_customer', message_payload, request=request, base_url=base_url)
 
 
-def broadcast_chat_message_to_customer(order_id, chat_type, message_payload):
+def broadcast_chat_message_to_customer(order_id, chat_type, message_payload, request=None, base_url=None):
     """
     إرسال رسالة تلقائية للعميل:
     - تظهر داخل غرفة الشات الحالية
@@ -137,7 +153,13 @@ def broadcast_chat_message_to_customer(order_id, chat_type, message_payload):
     except Order.DoesNotExist:
         return
 
-    notification_payload = _build_message_notification_payload(order, chat_type, message_payload)
+    notification_payload = _build_message_notification_payload(
+        order,
+        chat_type,
+        message_payload,
+        request=request,
+        base_url=base_url,
+    )
     if order.customer_id:
         send_to_group(f'customer_orders_{order.customer_id}', 'new_message', notification_payload)
 

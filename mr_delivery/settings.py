@@ -213,6 +213,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # Media files (Images)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '').strip().rstrip('/')
 
 # REST Framework settings
 REST_FRAMEWORK = {
