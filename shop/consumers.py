@@ -1,4 +1,5 @@
-import json
+﻿import json
+import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
@@ -20,6 +21,255 @@ def _json_dumps(payload):
     return json.dumps(payload, cls=DjangoJSONEncoder)
 
 
+def _normalize_ring_targets(raw_targets):
+    if isinstance(raw_targets, str):
+        candidates = [raw_targets]
+    elif isinstance(raw_targets, (list, tuple, set)):
+        candidates = list(raw_targets)
+    else:
+        candidates = []
+
+    alias_map = {
+        'shop': 'shop',
+        'store': 'shop',
+        'merchant': 'shop',
+        'shop_owner': 'shop',
+        'employee': 'shop',
+        'customer': 'customer',
+        'client': 'customer',
+        'driver': 'driver',
+        'delivery': 'driver',
+        'delivery_driver': 'driver',
+    }
+
+    normalized = []
+    for item in candidates:
+        key = alias_map.get(str(item).strip().lower())
+        if key and key not in normalized:
+            normalized.append(key)
+    return normalized
+
+
+def _user_has_order_access(order, user, user_type):
+    if not user:
+        return False
+    if user_type == 'shop_owner':
+        return order.shop_owner_id == user.id
+    if user_type == 'employee':
+        return order.shop_owner_id == getattr(user, 'shop_owner_id', None)
+    if user_type == 'driver':
+        return order.driver_id == user.id
+    if user_type == 'customer':
+        return order.customer_id == user.id
+    return False
+
+
+def _get_user_display_name(user, user_type):
+    if user_type == 'customer':
+        return getattr(user, 'name', 'عميل')
+    if user_type == 'shop_owner':
+        return getattr(user, 'owner_name', 'المحل')
+    if user_type == 'employee':
+        return getattr(user, 'name', 'موظف المحل')
+    if user_type == 'driver':
+        return getattr(user, 'name', 'المندوب')
+    return 'غير معروف'
+
+
+@database_sync_to_async
+def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_type=None):
+    try:
+        order = Order.objects.select_related('shop_owner', 'customer', 'driver').get(id=order_id)
+    except Order.DoesNotExist:
+        return {
+            'error': {
+                'code': 'ORDER_NOT_FOUND',
+                'message': 'الطلب غير موجود',
+            }
+        }
+
+    if not _user_has_order_access(order, user, user_type):
+        return {
+            'error': {
+                'code': 'ORDER_ACCESS_DENIED',
+                'message': 'غير مسموح لك بإرسال رنة لهذا الطلب',
+            }
+        }
+
+    targets = _normalize_ring_targets(raw_targets)
+    if not targets:
+        return {
+            'error': {
+                'code': 'RING_TARGET_REQUIRED',
+                'message': 'يجب تحديد الطرف المطلوب إرسال الرنة له',
+            }
+        }
+
+    allowed_targets = {
+        'customer': {'shop', 'driver'},
+        'shop_owner': {'customer', 'driver'},
+        'employee': {'customer', 'driver'},
+        'driver': {'customer', 'shop'},
+    }
+
+    invalid_targets = [target for target in targets if target not in allowed_targets.get(user_type, set())]
+    if invalid_targets:
+        return {
+            'error': {
+                'code': 'RING_TARGET_NOT_ALLOWED',
+                'message': 'الطرف المطلوب غير مسموح لهذا المستخدم',
+                'details': {
+                    'targets': invalid_targets,
+                },
+            }
+        }
+
+    group_names = set()
+    delivered_targets = []
+    unavailable_targets = []
+
+    if 'shop' in targets:
+        if order.shop_owner_id:
+            group_names.add(f'shop_orders_{order.shop_owner_id}')
+            delivered_targets.append('shop')
+        else:
+            unavailable_targets.append('shop')
+
+    if 'customer' in targets:
+        if order.customer_id:
+            group_names.add(f'customer_orders_{order.customer_id}')
+            delivered_targets.append('customer')
+        else:
+            unavailable_targets.append('customer')
+
+    if 'driver' in targets:
+        if order.driver_id:
+            group_names.add(f'driver_{order.driver_id}')
+            delivered_targets.append('driver')
+        else:
+            unavailable_targets.append('driver')
+
+    if not delivered_targets:
+        return {
+            'error': {
+                'code': 'RING_TARGET_UNAVAILABLE',
+                'message': 'الطرف المطلوب غير متاح حاليا',
+                'details': {
+                    'targets': unavailable_targets or targets,
+                },
+            }
+        }
+
+    payload = {
+        'ring_id': str(uuid.uuid4()),
+        'order_id': order.id,
+        'order_number': order.order_number,
+        'sender_type': user_type,
+        'sender_name': _get_user_display_name(user, user_type),
+        'sender_id': getattr(user, 'id', None),
+        'targets': delivered_targets,
+        'created_at': timezone.now().isoformat(),
+        'chat_type': chat_type if chat_type in ['shop_customer', 'driver_customer'] else None,
+        'notification_kind': 'ring',
+        'play_sound_on_frontend': True,
+    }
+
+    if len(delivered_targets) == 1:
+        payload['target'] = delivered_targets[0]
+
+    return {
+        'payload': payload,
+        'group_names': list(group_names),
+        'unavailable_targets': unavailable_targets,
+    }
+
+
+async def _send_ack(consumer, action, request_id=None, data=None, message='تم تنفيذ الطلب بنجاح'):
+    payload = {
+        'type': 'ack',
+        'action': action,
+        'success': True,
+        'data': data or {},
+    }
+    if request_id is not None:
+        payload['request_id'] = request_id
+    await consumer.send(
+        text_data=_json_dumps(
+            _with_localized_message(payload, message, lang=getattr(consumer, 'lang', None))
+        )
+    )
+
+
+async def _send_error_event(consumer, code, message, request_id=None, details=None):
+    payload = {
+        'type': 'error',
+        'success': False,
+        'code': code,
+    }
+    if request_id is not None:
+        payload['request_id'] = request_id
+    if details:
+        payload['details'] = details
+    await consumer.send(
+        text_data=_json_dumps(
+            _with_localized_message(payload, message, lang=getattr(consumer, 'lang', None))
+        )
+    )
+
+
+async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
+    order_id = data.get('order_id') or getattr(consumer, 'order_id', None)
+    if not order_id:
+        await _send_error_event(
+            consumer,
+            code='ORDER_ID_REQUIRED',
+            message='معرف الطلب مطلوب لإرسال الرنة',
+            request_id=request_id,
+        )
+        return
+
+    ring_context = await _build_ring_dispatch_context(
+        consumer.user,
+        consumer.user_type,
+        int(order_id),
+        data.get('targets', data.get('target')),
+        chat_type=chat_type,
+    )
+
+    error = ring_context.get('error')
+    if error:
+        await _send_error_event(
+            consumer,
+            code=error.get('code', 'RING_FAILED'),
+            message=error.get('message', 'تعذر إرسال الرنة'),
+            request_id=request_id,
+            details=error.get('details'),
+        )
+        return
+
+    for group_name in ring_context['group_names']:
+        await consumer.channel_layer.group_send(
+            group_name,
+            {
+                'type': 'ring',
+                'data': ring_context['payload'],
+            }
+        )
+
+    await _send_ack(
+        consumer,
+        action='ring',
+        request_id=request_id,
+        data={
+            'order_id': int(order_id),
+            'targets': ring_context['payload']['targets'],
+            'unavailable_targets': ring_context.get('unavailable_targets', []),
+            'ring_id': ring_context['payload']['ring_id'],
+        },
+        message='تم إرسال الرنة بنجاح',
+    )
+
+
 
 
 
@@ -27,20 +277,20 @@ def _json_dumps(payload):
 
 class ChatConsumer(AsyncWebsocketConsumer):
     """
-    WebSocket Consumer للشات - يدعم جميع الأطراف:
-    - shop_owner ↔ customer (shop_customer chat)
-    - employee ↔ customer (shop_customer chat)
-    - driver ↔ customer (driver_customer chat)
+    Chat WebSocket consumer for:
+    - shop_owner <-> customer (shop_customer chat)
+    - employee <-> customer (shop_customer chat)
+    - driver <-> customer (driver_customer chat)
     
     URL: ws://server/ws/chat/order/{order_id}/?token=JWT_TOKEN&chat_type=shop_customer
     """
     
     async def connect(self):
-        """الاتصال بالـ WebSocket"""
+        """Connect to the WebSocket."""
         try:
             self.order_id = self.scope['url_route']['kwargs']['order_id']
             
-            # استخراج chat_type من query string
+            # Parse chat type from the query string.
             query_string = self.scope.get('query_string', b'').decode('utf-8')
             self.chat_type = 'shop_customer'  # default
             if 'chat_type=' in query_string:
@@ -48,14 +298,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 if chat_type_param in ['shop_customer', 'driver_customer']:
                     self.chat_type = chat_type_param
 
-            # استخراج lang من query string
+            # Parse language from the query string.
             self.lang = 'ar'
             if 'lang=' in query_string:
                 self.lang = query_string.split('lang=')[-1].split('&')[0]
             
             self.room_group_name = f'chat_order_{self.order_id}_{self.chat_type}'
             
-            # التحقق من المستخدم
+            # Validate the authenticated user.
             user = self.scope.get('user')
             user_type = self.scope.get('user_type')
             
@@ -65,13 +315,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.close(code=4401)  # unauthorized
                 return
             
-            # التحقق من صلاحية الوصول للطلب
+            # Validate access to the order.
             has_access = await self.check_order_access(user, user_type)
             if not has_access:
                 await self.close(code=4403)  # forbidden
                 return
             
-            # التحقق من صلاحية chat_type
+            # Validate access to the requested chat type.
             if self.chat_type == 'driver_customer' and user_type not in ['driver', 'customer']:
                 await self.close(code=4403)
                 return
@@ -83,11 +333,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.user = user
             self.user_type = user_type
             
-            # الانضمام إلى مجموعة الشات
+            # Join the chat group.
             await self.channel_layer.group_add(self.room_group_name, self.channel_name)
             await self.accept()
             
-            # إرسال رسالة ترحيبية
+            # Send connection confirmation.
             await self.send(text_data=_json_dumps(_with_localized_message(
                 {
                     'type': 'connection',
@@ -99,7 +349,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 lang=self.lang
             )))
             
-            # إرسال الرسائل السابقة
+            # Send previous messages.
             previous_messages = await self.get_previous_messages()
             await self.send(text_data=_json_dumps({
                 'type': 'previous_messages',
@@ -112,7 +362,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
     
     async def receive(self, text_data):
-        """استقبال رسالة من العميل"""
+        """Receive an inbound WebSocket event."""
         try:
             data = json.loads(text_data)
             event_type = data.get('type', 'chat_message')
@@ -123,6 +373,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     await self.handle_location(data, request_id=request_id, action=event_type)
                 else:
                     await self.handle_chat_message(data, request_id=request_id, action=event_type)
+            elif event_type == 'ring':
+                await self.handle_ring(data, request_id=request_id)
             elif event_type == 'mark_read':
                 await self.handle_mark_read(request_id=request_id)
             elif event_type == 'typing':
@@ -151,7 +403,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
     
     async def handle_chat_message(self, data, request_id=None, action='chat_message'):
-        """معالجة رسالة الشات"""
+        """Handle a chat message event."""
         content = data.get('content', '')
         msg_type = data.get('message_type', 'text')
 
@@ -172,7 +424,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
             return
         
-        # حفظ الرسالة
+        # Persist the message first, then broadcast it.
         message = await self.save_message(
             content=content,
             message_type=msg_type,
@@ -183,7 +435,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if message:
             serialized = await self.serialize_message(message)
             
-            # إرسال الرسالة لجميع المشتركين
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -210,7 +461,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
     
     async def handle_location(self, data, request_id=None, action='location'):
-        """معالجة رسالة الموقع"""
+        """Handle a location message event."""
         latitude = data.get('latitude')
         longitude = data.get('longitude')
         content = data.get('content', 'موقعي الحالي')
@@ -258,7 +509,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
     
     async def handle_mark_read(self, request_id=None):
-        """تعليم الرسائل كمقروءة"""
+        """Mark messages as read for the other participant."""
         marked_count = await self.mark_messages_as_read()
         
         await self.channel_layer.group_send(
@@ -281,7 +532,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
     
     async def handle_typing(self, data):
-        """معالجة حالة الكتابة"""
+        """Broadcast the typing indicator."""
         is_typing = data.get('is_typing', False)
         
         await self.channel_layer.group_send(
@@ -293,11 +544,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'is_typing': is_typing
             }
         )
+
+    async def handle_ring(self, data, request_id=None):
+        await _handle_ring_request(
+            self,
+            data,
+            request_id=request_id,
+            chat_type=self.chat_type,
+        )
     
     # ==================== Event Handlers ====================
     
     async def chat_message(self, event):
-        """إرسال رسالة الشات"""
+        """Send a chat message event to the client."""
         from user.utils import localize_message
         msg_data = dict(event['message'])
         msg_data['content'] = localize_message(None, msg_data.get('content'), lang=getattr(self, 'lang', 'ar'))
@@ -307,7 +566,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
     
     async def messages_read(self, event):
-        """إرسال تأكيد قراءة الرسائل"""
+        """Send a read-receipt event to the client."""
         await self.send(text_data=_json_dumps({
             'type': 'messages_read',
             'order_id': event['order_id'],
@@ -316,12 +575,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
     
     async def typing_indicator(self, event):
-        """إرسال مؤشر الكتابة"""
+        """Send a typing event to the client."""
         await self.send(text_data=_json_dumps({
             'type': 'typing',
             'user_type': event['user_type'],
             'user_name': event['user_name'],
             'is_typing': event['is_typing']
+        }))
+
+    async def ring(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'ring',
+            'data': event['data']
         }))
 
     async def send_ack(self, action, request_id=None, data=None, message='تم تنفيذ الطلب بنجاح'):
@@ -381,7 +646,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def check_order_access(self, user, user_type):
-        """التحقق من صلاحية الوصول للطلب"""
+        """Check whether the current user can access the order."""
         try:
             order = Order.objects.get(id=self.order_id)
             
@@ -409,11 +674,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def save_message(self, content, message_type='text', latitude=None, longitude=None):
-        """حفظ الرسالة في قاعدة البيانات"""
+        """Persist a chat message in the database."""
         try:
             order = Order.objects.get(id=self.order_id)
             
-            # تحديد المرسل
+            # Determine the concrete sender field based on the user type.
             sender_kwargs = {
                 'sender_type': self.user_type,
             }
@@ -437,7 +702,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 **sender_kwargs
             )
             
-            # تحديث عدد الرسائل غير المقروءة في الطلب
+            # Keep the unread counter in sync for the shop side.
             if self.user_type == 'customer':
                 order.unread_messages_count = order.messages.filter(
                     chat_type='shop_customer',
@@ -454,7 +719,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def get_previous_messages(self):
-        """جلب الرسائل السابقة"""
+        """Return recent chat history for the current room."""
         try:
             messages = ChatMessage.objects.filter(
                 order_id=self.order_id,
@@ -488,7 +753,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def serialize_message(self, message):
-        """تحويل الرسالة إلى JSON"""
+        """Serialize a chat message for WebSocket delivery."""
         serialized = ChatMessageSerializer(message, context={'lang': self.lang}).data
         return {
             'id': serialized.get('id'),
@@ -510,19 +775,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def mark_messages_as_read(self):
-        """تعليم الرسائل كمقروءة"""
+        """Mark unread room messages as read."""
         try:
             order = Order.objects.get(id=self.order_id)
             
-            # تحديد الرسائل التي يجب تعليمها كمقروءة
-            # (الرسائل التي ليست من المستخدم الحالي)
+            # Mark only messages sent by the other participant.
             marked_count = ChatMessage.objects.filter(
                 order=order,
                 chat_type=self.chat_type,
                 is_read=False
             ).exclude(sender_type=self.user_type).update(is_read=True)
             
-            # تحديث عدد الرسائل غير المقروءة
+            # Recalculate the unread counter for the shop side.
             if self.user_type in ['shop_owner', 'employee']:
                 order.unread_messages_count = order.messages.filter(
                     chat_type='shop_customer',
@@ -539,7 +803,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def get_user_name(self):
-        """الحصول على اسم المستخدم"""
+        """Return the display name for the connected user."""
         if self.user_type == 'customer':
             return self.user.name
         elif self.user_type == 'shop_owner':
@@ -608,58 +872,50 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
 class OrderConsumer(AsyncWebsocketConsumer):
     """
-    WebSocket Consumer لتحديثات الطلبات في الوقت الحقيقي
-    
-    URL: ws://server/ws/orders/shop/{shop_owner_id}/?token=JWT_TOKEN
-    
-    يُستخدم لإرسال:
-    - طلبات جديدة
-    - تحديثات حالة الطلبات
-    - إشعارات
+    WebSocket consumer for shop order updates.
     """
-    
+
     async def connect(self):
-        """الاتصال بالـ WebSocket"""
         self.shop_owner_id = self.scope['url_route']['kwargs'].get('shop_owner_id')
         self.room_group_name = f'shop_orders_{self.shop_owner_id}'
-        
+
         query_string = self.scope.get('query_string', b'').decode('utf-8')
         self.lang = 'ar'
         if 'lang=' in query_string:
             self.lang = query_string.split('lang=')[-1].split('&')[0]
-        
+
         user = self.scope.get('user')
         user_type = self.scope.get('user_type')
-        
-        # التحقق من أن المستخدم هو صاحب المحل أو موظف
+
         if not user:
             await self.close(code=4401)
             return
-        
+
         if user_type == 'shop_owner' and user.id != int(self.shop_owner_id):
             await self.close(code=4403)
             return
-        
+
         if user_type == 'employee' and user.shop_owner_id != int(self.shop_owner_id):
             await self.close(code=4403)
             return
-        
+
         if user_type not in ['shop_owner', 'employee']:
             await self.close(code=4403)
             return
-        
+
         self.user = user
         self.user_type = user_type
-        
+
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-        
+
         await self.send(text_data=_json_dumps(_with_localized_message(
             {
                 'type': 'connection',
-                'shop_owner_id': self.shop_owner_id
+                'shop_owner_id': self.shop_owner_id,
             },
-            'تم الاتصال بنجاح'
+            'تم الاتصال بنجاح',
+            lang=self.lang,
         )))
 
         orders_snapshot = await self.get_orders_snapshot()
@@ -670,30 +926,58 @@ class OrderConsumer(AsyncWebsocketConsumer):
                     'orders': orders_snapshot,
                 },
             },
-            'تمت مزامنة قائمة الطلبات بنجاح'
+            'تمت مزامنة قائمة الطلبات بنجاح',
+            lang=self.lang,
         )))
-    
+
     async def disconnect(self, close_code):
-        """قطع الاتصال"""
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-    
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+            event_type = data.get('type')
+            request_id = data.get('request_id')
+
+            if event_type == 'ring':
+                await _handle_ring_request(self, data, request_id=request_id)
+            else:
+                await _send_error_event(
+                    self,
+                    code='UNKNOWN_EVENT',
+                    message='نوع الحدث غير مدعوم',
+                    request_id=request_id,
+                    details={'type': event_type},
+                )
+        except json.JSONDecodeError:
+            await _send_error_event(
+                self,
+                code='INVALID_JSON',
+                message='تنسيق البيانات غير صحيح',
+            )
+        except Exception as e:
+            print(f"[OrderConsumer.receive] error: {e}")
+            await _send_error_event(
+                self,
+                code='UNEXPECTED_ERROR',
+                message='حدث خطأ غير متوقع',
+                details={'error_detail': str(e)},
+            )
+
     async def order_update(self, event):
-        """إرسال تحديث الطلب"""
         await self.send(text_data=_json_dumps({
             'type': 'order_update',
-            'data': event['data']
+            'data': event['data'],
         }))
-    
+
     async def new_order(self, event):
-        """إرسال إشعار بطلب جديد"""
         await self.send(text_data=_json_dumps({
             'type': 'new_order',
-            'data': event['data']
+            'data': event['data'],
         }))
-    
+
     async def new_message(self, event):
-        """إشعار برسالة جديدة"""
         from user.utils import localize_message
         notif_data = dict(event['data'])
         if 'message' in notif_data and isinstance(notif_data['message'], dict):
@@ -703,21 +987,25 @@ class OrderConsumer(AsyncWebsocketConsumer):
             )
         await self.send(text_data=_json_dumps({
             'type': 'new_message',
-            'data': notif_data
+            'data': notif_data,
         }))
 
     async def store_status_updated(self, event):
-        """تحديث حالة المتجر في الوقت الحقيقي"""
         await self.send(text_data=_json_dumps({
             'type': 'store_status_updated',
-            'data': event['data']
+            'data': event['data'],
         }))
 
     async def driver_status_updated(self, event):
-        """تحديث حالة السائق في الوقت الحقيقي"""
         await self.send(text_data=_json_dumps({
             'type': 'driver_status_updated',
-            'data': event['data']
+            'data': event['data'],
+        }))
+
+    async def ring(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'ring',
+            'data': event['data'],
         }))
 
     @database_sync_to_async
@@ -733,64 +1021,85 @@ class OrderConsumer(AsyncWebsocketConsumer):
 
 class CustomerOrderConsumer(AsyncWebsocketConsumer):
     """
-    WebSocket Consumer لتحديثات طلبات العميل
-    
-    URL: ws://server/ws/orders/customer/{customer_id}/?token=JWT_TOKEN
-    
-    يُستخدم لإرسال:
-    - تحديثات حالة الطلب
-    - موقع السائق
-    - رسائل جديدة
+    WebSocket consumer for customer order updates.
     """
-    
+
     async def connect(self):
-        """الاتصال بالـ WebSocket"""
         self.customer_id = self.scope['url_route']['kwargs'].get('customer_id')
         self.room_group_name = f'customer_orders_{self.customer_id}'
-        
+
         query_string = self.scope.get('query_string', b'').decode('utf-8')
         self.lang = 'ar'
         if 'lang=' in query_string:
             self.lang = query_string.split('lang=')[-1].split('&')[0]
-        
+
         user = self.scope.get('user')
         user_type = self.scope.get('user_type')
-        
+
         if not user or user_type != 'customer' or user.id != int(self.customer_id):
             await self.close(code=4401)
             return
-        
+
         self.user = user
-        
+        self.user_type = user_type
+
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-        
+
         await self.send(text_data=_json_dumps(_with_localized_message(
             {'type': 'connection'},
-            'تم الاتصال بنجاح'
+            'تم الاتصال بنجاح',
+            lang=self.lang,
         )))
-    
+
     async def disconnect(self, close_code):
-        """قطع الاتصال"""
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-    
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+            event_type = data.get('type')
+            request_id = data.get('request_id')
+
+            if event_type == 'ring':
+                await _handle_ring_request(self, data, request_id=request_id)
+            else:
+                await _send_error_event(
+                    self,
+                    code='UNKNOWN_EVENT',
+                    message='نوع الحدث غير مدعوم',
+                    request_id=request_id,
+                    details={'type': event_type},
+                )
+        except json.JSONDecodeError:
+            await _send_error_event(
+                self,
+                code='INVALID_JSON',
+                message='تنسيق البيانات غير صحيح',
+            )
+        except Exception as e:
+            print(f"[CustomerOrderConsumer.receive] error: {e}")
+            await _send_error_event(
+                self,
+                code='UNEXPECTED_ERROR',
+                message='حدث خطأ غير متوقع',
+                details={'error_detail': str(e)},
+            )
+
     async def order_update(self, event):
-        """تحديث حالة الطلب"""
         await self.send(text_data=_json_dumps({
             'type': 'order_update',
-            'data': event['data']
+            'data': event['data'],
         }))
-    
+
     async def driver_location(self, event):
-        """تحديث موقع السائق"""
         await self.send(text_data=_json_dumps({
             'type': 'driver_location',
-            'data': event['data']
+            'data': event['data'],
         }))
-    
+
     async def new_message(self, event):
-        """إشعار برسالة جديدة"""
         from user.utils import localize_message
         notif_data = dict(event['data'])
         if 'message' in notif_data and isinstance(notif_data['message'], dict):
@@ -800,75 +1109,96 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             )
         await self.send(text_data=_json_dumps({
             'type': 'new_message',
-            'data': notif_data
+            'data': notif_data,
+        }))
+
+    async def ring(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'ring',
+            'data': event['data'],
         }))
 
 
 class DriverConsumer(AsyncWebsocketConsumer):
     """
-    WebSocket Consumer للسائق
-    
-    URL: ws://server/ws/driver/{driver_id}/?token=JWT_TOKEN
-    
-    يُستخدم لإرسال:
-    - طلبات توصيل جديدة
-    - تحديثات الطلبات
-    - رسائل من العملاء
+    WebSocket consumer for driver updates.
     """
-    
+
     async def connect(self):
-        """الاتصال بالـ WebSocket"""
         self.driver_id = self.scope['url_route']['kwargs'].get('driver_id')
         self.room_group_name = f'driver_{self.driver_id}'
-        
+
+        query_string = self.scope.get('query_string', b'').decode('utf-8')
+        self.lang = 'ar'
+        if 'lang=' in query_string:
+            self.lang = query_string.split('lang=')[-1].split('&')[0]
+
         user = self.scope.get('user')
         user_type = self.scope.get('user_type')
-        
+
         if not user or user_type != 'driver' or user.id != int(self.driver_id):
             await self.close(code=4401)
             return
-        
+
         self.user = user
-        
+        self.user_type = user_type
+
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-        
+
         await self.send(text_data=_json_dumps(_with_localized_message(
             {'type': 'connection'},
-            'تم الاتصال بنجاح'
+            'تم الاتصال بنجاح',
+            lang=self.lang,
         )))
-    
+
     async def disconnect(self, close_code):
-        """قطع الاتصال"""
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-    
+
     async def receive(self, text_data):
-        """استقبال بيانات من السائق"""
         try:
             data = json.loads(text_data)
             msg_type = data.get('type')
-            
+            request_id = data.get('request_id')
+
             if msg_type == 'location_update':
                 await self.handle_location_update(data)
-                
+            elif msg_type == 'ring':
+                await _handle_ring_request(self, data, request_id=request_id)
+            else:
+                await _send_error_event(
+                    self,
+                    code='UNKNOWN_EVENT',
+                    message='نوع الحدث غير مدعوم',
+                    request_id=request_id,
+                    details={'type': msg_type},
+                )
+        except json.JSONDecodeError:
+            await _send_error_event(
+                self,
+                code='INVALID_JSON',
+                message='تنسيق البيانات غير صحيح',
+            )
         except Exception as e:
             print(f"[DriverConsumer.receive] error: {e}")
-    
+            await _send_error_event(
+                self,
+                code='UNEXPECTED_ERROR',
+                message='حدث خطأ غير متوقع',
+                details={'error_detail': str(e)},
+            )
+
     async def handle_location_update(self, data):
-        """تحديث موقع السائق"""
         latitude = data.get('latitude')
         longitude = data.get('longitude')
-        
+
         if latitude and longitude:
             await self.update_driver_location(latitude, longitude)
-            
-            # إرسال الموقع للعملاء الذين لديهم طلبات نشطة مع هذا السائق
             await self.broadcast_location_to_customers(latitude, longitude)
-    
+
     @database_sync_to_async
     def update_driver_location(self, latitude, longitude):
-        """تحديث موقع السائق في قاعدة البيانات"""
         try:
             driver = Driver.objects.get(id=self.driver_id)
             driver.current_latitude = latitude
@@ -877,19 +1207,17 @@ class DriverConsumer(AsyncWebsocketConsumer):
             driver.save()
         except Exception as e:
             print(f"[DriverConsumer.update_driver_location] error: {e}")
-    
+
     @database_sync_to_async
     def get_active_orders(self):
-        """جلب الطلبات النشطة للسائق"""
         return list(Order.objects.filter(
             driver_id=self.driver_id,
             status__in=['on_way', 'preparing']
         ).values_list('customer_id', flat=True))
-    
+
     async def broadcast_location_to_customers(self, latitude, longitude):
-        """إرسال الموقع للعملاء"""
         customer_ids = await self.get_active_orders()
-        
+
         for customer_id in customer_ids:
             await self.channel_layer.group_send(
                 f'customer_orders_{customer_id}',
@@ -899,27 +1227,24 @@ class DriverConsumer(AsyncWebsocketConsumer):
                         'driver_id': self.driver_id,
                         'latitude': str(latitude),
                         'longitude': str(longitude),
-                        'updated_at': timezone.now().isoformat()
+                        'updated_at': timezone.now().isoformat(),
                     }
                 }
             )
-    
+
     async def new_order(self, event):
-        """طلب توصيل جديد"""
         await self.send(text_data=_json_dumps({
             'type': 'new_order',
-            'data': event['data']
+            'data': event['data'],
         }))
-    
+
     async def order_update(self, event):
-        """تحديث طلب"""
         await self.send(text_data=_json_dumps({
             'type': 'order_update',
-            'data': event['data']
+            'data': event['data'],
         }))
-    
+
     async def new_message(self, event):
-        """إشعار برسالة جديدة"""
         from user.utils import localize_message
         notif_data = dict(event['data'])
         if 'message' in notif_data and isinstance(notif_data['message'], dict):
@@ -929,5 +1254,11 @@ class DriverConsumer(AsyncWebsocketConsumer):
             )
         await self.send(text_data=_json_dumps({
             'type': 'new_message',
-            'data': notif_data
+            'data': notif_data,
+        }))
+
+    async def ring(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'ring',
+            'data': event['data'],
         }))

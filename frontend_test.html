@@ -969,6 +969,7 @@
             const token = _normalizeBearerToken((tokenInputEl || {}).value);
             const tokenErr = _validateHeaderToken(token);
             const tokenRoleErr = _validateCustomerTokenRole(token);
+            const shopPayload = _getCustomerShopPayload();
             const address = (document.getElementById('customerOrderAddress') || {}).value.trim();
             const notes = (document.getElementById('customerOrderNotes') || {}).value.trim();
             const container = document.getElementById('customerOrderBands');
@@ -977,22 +978,19 @@
             inputs.forEach(inp => { const v = inp.value.trim(); if (v) items.push(v); });
             if (!address) { alert('العنوان مطلوب'); return; }
             if (items.length === 0) { alert('أضف بنداً واحداً على الأقل (تفاصيل الأوردر)'); return; }
+            if (!shopPayload) { alert('لازم تختار محل أو تكتب رقم المحل أولاً.'); return; }
             if (tokenErr) { alert(tokenErr); return; }
             if (tokenRoleErr) { alert(tokenRoleErr); return; }
             if (tokenInputEl) tokenInputEl.value = token;
             const resultEl = document.getElementById('customerOrderResult');
             resultEl.style.display = 'block';
             resultEl.className = 'status connecting';
-            resultEl.textContent = 'جاري اختيار المحل...';
+            resultEl.textContent = 'جاري إرسال الطلب...';
 
-            _chooseCustomerShop(base, token)
-            .then(() => {
-                resultEl.textContent = 'جاري إرسال الطلب...';
-                return fetch(base + '/customer/orders/', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                    body: JSON.stringify({ address, items, notes })
-                });
+            fetch(base + '/customer/orders/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ address, items, notes, ...shopPayload })
             })
             .then(r => r.json())
             .then(data => {
@@ -1010,6 +1008,7 @@
                 resultEl.textContent = 'خطأ: ' + err.message;
             });
         }
+
 
         // ==================== Utility Functions ====================
         function updateStatus(elementId, status, message) {

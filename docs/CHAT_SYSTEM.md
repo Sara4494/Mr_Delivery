@@ -189,6 +189,89 @@ content: "Check this image"
 
 ---
 
+## Ring / Nudge Event
+
+This is a lightweight notification only. It does **not** open a call and the backend does **not** stream any sound.
+The frontend should play the ringtone or show the visual notification when it receives the event.
+
+### Send Ring Event
+
+You can send it through:
+
+- chat socket `/ws/chat/order/{order_id}/?...`
+- shop orders socket `/ws/orders/shop/{shop_owner_id}/?...`
+- customer orders socket `/ws/orders/customer/{customer_id}/?...`
+- driver socket `/ws/driver/{driver_id}/?...`
+
+Client payload:
+
+```json
+{
+    "type": "ring",
+    "request_id": "ring-101",
+    "order_id": 15,
+    "target": "driver"
+}
+```
+
+Supported targets:
+
+- `shop`
+- `customer`
+- `driver`
+
+You can also send multiple targets:
+
+```json
+{
+    "type": "ring",
+    "request_id": "ring-102",
+    "order_id": 15,
+    "targets": ["customer", "driver"]
+}
+```
+
+### Ring Ack
+
+```json
+{
+    "type": "ack",
+    "action": "ring",
+    "success": true,
+    "request_id": "ring-101",
+    "data": {
+        "order_id": 15,
+        "targets": ["driver"],
+        "unavailable_targets": [],
+        "ring_id": "uuid-value"
+    }
+}
+```
+
+### Receive Ring Event
+
+```json
+{
+    "type": "ring",
+    "data": {
+        "ring_id": "uuid-value",
+        "order_id": 15,
+        "order_number": "OD12345",
+        "sender_type": "customer",
+        "sender_name": "Ahmed",
+        "sender_id": 7,
+        "target": "driver",
+        "targets": ["driver"],
+        "chat_type": "driver_customer",
+        "notification_kind": "ring",
+        "play_sound_on_frontend": true,
+        "created_at": "2026-03-28T20:15:00+02:00"
+    }
+}
+```
+
+---
+
 ## 🔔 Notifications
 
 When a new message is sent, the system automatically notifies:

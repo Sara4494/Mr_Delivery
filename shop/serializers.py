@@ -832,21 +832,62 @@ class OrderCreateSerializer(serializers.Serializer):
 
 
 class CustomerOrderCreateSerializer(serializers.Serializer):
-    """إنشاء طلب من العميل (الرسالة الأولى = الفاتورة: الاسم، العنوان، البند 1، 2، 3، ...)"""
+    """Create a customer order from the app's first request card."""
     address = serializers.CharField(required=True)
     items = serializers.ListField(child=serializers.CharField(), min_length=1)
     notes = serializers.CharField(required=False, allow_blank=True)
     phone_number = serializers.CharField(required=False, allow_blank=True)
-    
+    shop_owner_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    shop_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    shop_number = serializers.CharField(required=False, allow_blank=True, write_only=True)
+
+    def validate(self, attrs):
+        customer = self.context['customer']
+        requested_shop_id = attrs.get('shop_owner_id') or attrs.get('shop_id') or attrs.get('id')
+        requested_shop_number = str(attrs.get('shop_number') or '').strip()
+
+        shop_owner = None
+        if requested_shop_id:
+            shop_owner = ShopOwner.objects.filter(id=requested_shop_id, is_active=True).first()
+            if not shop_owner:
+                raise serializers.ValidationError({'shop': 'المحل غير موجود'})
+        elif requested_shop_number:
+            shop_owner = ShopOwner.objects.filter(shop_number=requested_shop_number, is_active=True).first()
+            if not shop_owner:
+                raise serializers.ValidationError({'shop': 'المحل غير موجود'})
+        else:
+            shop_owner = getattr(customer, 'shop_owner', None)
+
+        if not shop_owner:
+            raise serializers.ValidationError({
+                'shop': 'العميل غير مرتبط بمحل. يرجى اختيار المحل أولاً أو إرسال shop_owner_id.'
+            })
+
+        attrs['resolved_shop_owner'] = shop_owner
+        return attrs
+
     def create(self, validated_data):
         customer = self.context['customer']
-        shop_owner = getattr(customer, 'shop_owner', None)
+        shop_owner = validated_data.pop('resolved_shop_owner', None) or getattr(customer, 'shop_owner', None)
+        validated_data.pop('shop_owner_id', None)
+        validated_data.pop('shop_id', None)
+        validated_data.pop('id', None)
+        validated_data.pop('shop_number', None)
+
         if not shop_owner:
-            raise serializers.ValidationError({'shop': 'العميل غير مرتبط بمحل. يرجى اختيار المحل أولاً.'})
-        
+            raise serializers.ValidationError({
+                'shop': 'العميل غير مرتبط بمحل. يرجى اختيار المحل أولاً أو إرسال shop_owner_id.'
+            })
+
+        # Persist the selected shop on the customer for future order/chat flows.
+        if customer.shop_owner_id != shop_owner.id:
+            customer.shop_owner = shop_owner
+            customer.save(update_fields=['shop_owner'])
+
         items_str = _items_to_db_value(validated_data['items'])
         order_number = _generate_short_order_number()
-        
+
         order = Order.objects.create(
             shop_owner=shop_owner,
             customer=customer,
@@ -859,7 +900,6 @@ class CustomerOrderCreateSerializer(serializers.Serializer):
             status='new',
         )
         return order
-
 
 class InvoiceSerializer(serializers.ModelSerializer):
     """Serializer للفاتورة"""
