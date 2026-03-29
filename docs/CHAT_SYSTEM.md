@@ -241,6 +241,14 @@ You can also send multiple targets:
     "request_id": "ring-101",
     "data": {
         "order_id": 15,
+        "shop": {
+            "id": 3,
+            "name": "برجر كنچ",
+            "profile_image_url": "/media/shops/logo.png"
+        },
+        "shop_id": 3,
+        "shop_name": "برجر كنچ",
+        "shop_profile_image_url": "/media/shops/logo.png",
         "targets": ["driver"],
         "unavailable_targets": [],
         "ring_id": "uuid-value"
@@ -257,6 +265,14 @@ You can also send multiple targets:
         "ring_id": "uuid-value",
         "order_id": 15,
         "order_number": "OD12345",
+        "shop": {
+            "id": 3,
+            "name": "برجر كنچ",
+            "profile_image_url": "/media/shops/logo.png"
+        },
+        "shop_id": 3,
+        "shop_name": "برجر كنچ",
+        "shop_profile_image_url": "/media/shops/logo.png",
         "sender_type": "customer",
         "sender_name": "Ahmed",
         "sender_id": 7,

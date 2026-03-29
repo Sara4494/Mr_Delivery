@@ -107,6 +107,14 @@ def _build_ring_shop_payload(order, scope=None, base_url=None):
     }
 
 
+def _build_flat_ring_shop_fields(shop_payload):
+    return {
+        'shop_id': shop_payload.get('id'),
+        'shop_name': shop_payload.get('name'),
+        'shop_profile_image_url': shop_payload.get('profile_image_url'),
+    }
+
+
 @database_sync_to_async
 def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_type=None, scope=None, base_url=None):
     try:
@@ -191,11 +199,13 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
             }
         }
 
+    shop_payload = _build_ring_shop_payload(order, scope=scope, base_url=base_url)
+
     payload = {
         'ring_id': str(uuid.uuid4()),
         'order_id': order.id,
         'order_number': order.order_number,
-        'shop': _build_ring_shop_payload(order, scope=scope, base_url=base_url),
+        'shop': shop_payload,
         'sender_type': user_type,
         'sender_name': _get_user_display_name(user, user_type),
         'sender_id': getattr(user, 'id', None),
@@ -204,6 +214,7 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
         'chat_type': chat_type if chat_type in ['shop_customer', 'driver_customer'] else None,
         'notification_kind': 'ring',
         'play_sound_on_frontend': True,
+        **_build_flat_ring_shop_fields(shop_payload),
     }
 
     if len(delivered_targets) == 1:
@@ -297,6 +308,9 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
         data={
             'order_id': int(order_id),
             'shop': ring_context['payload'].get('shop'),
+            'shop_id': ring_context['payload'].get('shop_id'),
+            'shop_name': ring_context['payload'].get('shop_name'),
+            'shop_profile_image_url': ring_context['payload'].get('shop_profile_image_url'),
             'targets': ring_context['payload']['targets'],
             'unavailable_targets': ring_context.get('unavailable_targets', []),
             'ring_id': ring_context['payload']['ring_id'],
