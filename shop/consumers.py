@@ -8,7 +8,7 @@ from django.utils import timezone
 from .models import Order, ChatMessage, Customer, Employee, Driver
 from user.models import ShopOwner
 from .serializers import ChatMessageSerializer, OrderSerializer
-from user.utils import build_message_fields, resolve_base_url
+from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
 
 
 def _with_localized_message(payload, message, lang=None):
@@ -88,8 +88,21 @@ def _get_user_display_name(user, user_type):
     return 'غير معروف'
 
 
+def _build_ring_shop_payload(order, scope=None, base_url=None):
+    shop_owner = getattr(order, 'shop_owner', None)
+    return {
+        'id': getattr(shop_owner, 'id', None),
+        'name': getattr(shop_owner, 'shop_name', None),
+        'profile_image_url': build_absolute_file_url(
+            getattr(shop_owner, 'profile_image', None),
+            scope=scope,
+            base_url=base_url,
+        ),
+    }
+
+
 @database_sync_to_async
-def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_type=None):
+def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_type=None, scope=None, base_url=None):
     try:
         order = Order.objects.select_related('shop_owner', 'customer', 'driver').get(id=order_id)
     except Order.DoesNotExist:
@@ -176,6 +189,7 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
         'ring_id': str(uuid.uuid4()),
         'order_id': order.id,
         'order_number': order.order_number,
+        'shop': _build_ring_shop_payload(order, scope=scope, base_url=base_url),
         'sender_type': user_type,
         'sender_name': _get_user_display_name(user, user_type),
         'sender_id': getattr(user, 'id', None),
@@ -246,6 +260,8 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
         int(order_id),
         data.get('targets', data.get('target')),
         chat_type=chat_type,
+        scope=getattr(consumer, 'scope', None),
+        base_url=getattr(consumer, 'base_url', None),
     )
 
     error = ring_context.get('error')
@@ -274,6 +290,7 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
         request_id=request_id,
         data={
             'order_id': int(order_id),
+            'shop': ring_context['payload'].get('shop'),
             'targets': ring_context['payload']['targets'],
             'unavailable_targets': ring_context.get('unavailable_targets', []),
             'ring_id': ring_context['payload']['ring_id'],
