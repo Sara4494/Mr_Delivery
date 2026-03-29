@@ -6,6 +6,12 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Prefetch
 from django.utils import timezone
 from .models import Order, ChatMessage, Customer, Employee, Driver
+from .presence import (
+    build_customer_presence_broadcast_batches,
+    get_order_customer_presence_snapshot,
+    mark_customer_websocket_connected,
+    mark_customer_websocket_disconnected,
+)
 from user.models import ShopOwner
 from .serializers import ChatMessageSerializer, OrderSerializer
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
@@ -362,10 +368,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
             self.user = user
             self.user_type = user_type
+            self.customer_presence_registered = False
             
             # Join the chat group.
             await self.channel_layer.group_add(self.room_group_name, self.channel_name)
             await self.accept()
+
+            presence_state = None
+            if self.user_type == 'customer':
+                presence_state = await self.register_customer_presence('chat')
+                self.customer_presence_registered = bool(presence_state)
             
             # Send connection confirmation.
             await self.send(text_data=_json_dumps(_with_localized_message(
@@ -378,6 +390,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'تم الاتصال بنجاح',
                 lang=self.lang
             )))
+
+            presence_snapshot = await self.get_presence_snapshot()
+            if presence_snapshot:
+                await self.send(text_data=_json_dumps({
+                    'type': 'presence_snapshot',
+                    'data': presence_snapshot,
+                }))
+
+            if presence_state and presence_state.get('changed'):
+                await self.broadcast_presence_updates(presence_state)
             
             # Send previous messages.
             previous_messages = await self.get_previous_messages()
@@ -390,6 +412,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             print(f"[ChatConsumer.connect] error: {e}")
             await self.close(code=1011)
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+        if getattr(self, 'customer_presence_registered', False):
+            presence_state = await self.unregister_customer_presence()
+            if presence_state and presence_state.get('changed'):
+                await self.broadcast_presence_updates(presence_state)
     
     async def receive(self, text_data):
         """Receive an inbound WebSocket event."""
@@ -619,6 +650,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'data': event['data']
         }))
 
+    async def presence_update(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'presence_update',
+            'data': event['data'],
+        }))
+
     async def send_ack(self, action, request_id=None, data=None, message='تم تنفيذ الطلب بنجاح'):
         payload = {
             'type': 'ack',
@@ -671,8 +708,45 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'data': order_snapshot,
                 }
             )
+
+    async def broadcast_presence_updates(self, presence_state):
+        batches = await self.get_customer_presence_broadcast_batches(
+            presence_state.get('customer_id'),
+            presence_state.get('is_online'),
+            presence_state.get('last_seen'),
+        )
+
+        for batch in batches:
+            for group_name in batch['group_names']:
+                await self.channel_layer.group_send(
+                    group_name,
+                    {
+                        'type': 'presence_update',
+                        'data': batch['data'],
+                    }
+                )
     
     # ==================== Database Operations ====================
+
+    @database_sync_to_async
+    def get_presence_snapshot(self):
+        return get_order_customer_presence_snapshot(self.order_id)
+
+    @database_sync_to_async
+    def register_customer_presence(self, connection_type):
+        return mark_customer_websocket_connected(
+            customer_id=self.user.id,
+            channel_name=self.channel_name,
+            connection_type=connection_type,
+        )
+
+    @database_sync_to_async
+    def unregister_customer_presence(self):
+        return mark_customer_websocket_disconnected(self.channel_name)
+
+    @database_sync_to_async
+    def get_customer_presence_broadcast_batches(self, customer_id, is_online, last_seen):
+        return build_customer_presence_broadcast_batches(customer_id, is_online, last_seen)
     
     @database_sync_to_async
     def check_order_access(self, user, user_type):
@@ -1051,6 +1125,12 @@ class OrderConsumer(AsyncWebsocketConsumer):
             'data': event['data'],
         }))
 
+    async def presence_update(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'presence_update',
+            'data': event['data'],
+        }))
+
     @database_sync_to_async
     def get_orders_snapshot(self):
         orders = (
@@ -1090,9 +1170,13 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
 
         self.user = user
         self.user_type = user_type
+        self.customer_presence_registered = False
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
+
+        presence_state = await self.register_customer_presence('orders')
+        self.customer_presence_registered = bool(presence_state)
 
         await self.send(text_data=_json_dumps(_with_localized_message(
             {'type': 'connection'},
@@ -1100,11 +1184,19 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             lang=self.lang,
         )))
 
+        if presence_state and presence_state.get('changed'):
+            await self.broadcast_presence_updates(presence_state)
+
         await self.send_dashboard_snapshots()
 
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+        if getattr(self, 'customer_presence_registered', False):
+            presence_state = await self.unregister_customer_presence()
+            if presence_state and presence_state.get('changed'):
+                await self.broadcast_presence_updates(presence_state)
 
     async def receive(self, text_data):
         try:
@@ -1178,6 +1270,29 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             'data': event['data'],
         }))
 
+    async def presence_update(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'presence_update',
+            'data': event['data'],
+        }))
+
+    async def broadcast_presence_updates(self, presence_state):
+        batches = await self.get_customer_presence_broadcast_batches(
+            presence_state.get('customer_id'),
+            presence_state.get('is_online'),
+            presence_state.get('last_seen'),
+        )
+
+        for batch in batches:
+            for group_name in batch['group_names']:
+                await self.channel_layer.group_send(
+                    group_name,
+                    {
+                        'type': 'presence_update',
+                        'data': batch['data'],
+                    }
+                )
+
     async def send_dashboard_snapshots(self, request_id=None):
         orders_snapshot, shops_snapshot, on_way_snapshot = await _gather_customer_dashboard_snapshots(
             self.customer_id,
@@ -1214,6 +1329,22 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
                 message,
                 lang=self.lang,
             )))
+
+    @database_sync_to_async
+    def register_customer_presence(self, connection_type):
+        return mark_customer_websocket_connected(
+            customer_id=self.user.id,
+            channel_name=self.channel_name,
+            connection_type=connection_type,
+        )
+
+    @database_sync_to_async
+    def unregister_customer_presence(self):
+        return mark_customer_websocket_disconnected(self.channel_name)
+
+    @database_sync_to_async
+    def get_customer_presence_broadcast_batches(self, customer_id, is_online, last_seen):
+        return build_customer_presence_broadcast_batches(customer_id, is_online, last_seen)
 
 
 @database_sync_to_async
@@ -1400,6 +1531,12 @@ class DriverConsumer(AsyncWebsocketConsumer):
     async def order_update(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'order_update',
+            'data': event['data'],
+        }))
+
+    async def presence_update(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'presence_update',
             'data': event['data'],
         }))
 

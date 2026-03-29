@@ -9,6 +9,7 @@ from .models import (
     Invoice, Employee, Product, Category, Offer, OrderRating, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
 )
+from .presence import format_utc_iso8601
 from user.models import ShopOwner, ShopCategory
 from user.utils import t, build_absolute_file_url
 from user.otp_service import normalize_phone
@@ -139,11 +140,12 @@ class CustomerSerializer(serializers.ModelSerializer):
     default_address = serializers.SerializerMethodField()
     unread_messages_count = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
+    last_seen = serializers.SerializerMethodField()
     
     class Meta:
         model = Customer
         fields = ['id', 'name', 'phone_number',  'profile_image', 'profile_image_url',
-                  'addresses', 'default_address', 'is_online', 'is_verified',
+                  'addresses', 'default_address', 'is_online', 'last_seen', 'is_verified',
                   'unread_messages_count', 'last_message', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
@@ -159,6 +161,9 @@ class CustomerSerializer(serializers.ModelSerializer):
         if addr:
             return CustomerAddressSerializer(addr).data
         return None
+
+    def get_last_seen(self, obj):
+        return format_utc_iso8601(obj.last_seen)
     
     def get_unread_messages_count(self, obj):
         """عدد الرسائل غير المقروءة للعميل"""
@@ -215,6 +220,7 @@ class CustomerAppProfileSerializer(serializers.ModelSerializer):
 
     profile_image_url = serializers.SerializerMethodField()
     default_address = serializers.SerializerMethodField()
+    last_seen = serializers.SerializerMethodField()
 
     class Meta:
         model = Customer
@@ -224,6 +230,8 @@ class CustomerAppProfileSerializer(serializers.ModelSerializer):
             'phone_number',
             'profile_image',
             'profile_image_url',
+            'is_online',
+            'last_seen',
             'is_verified',
             'default_address',
         ]
@@ -239,6 +247,9 @@ class CustomerAppProfileSerializer(serializers.ModelSerializer):
         if addr:
             return CustomerAppAddressSerializer(addr, context=self.context).data
         return None
+
+    def get_last_seen(self, obj):
+        return format_utc_iso8601(obj.last_seen)
 
 
 class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
@@ -1507,7 +1518,8 @@ class CustomerTokenObtainPairSerializer(serializers.Serializer):
                 'id': customer.id,
                 'name': customer.name,
                 'phone_number': customer.phone_number,
-     
+                'is_online': bool(customer.is_online),
+                'last_seen': format_utc_iso8601(customer.last_seen),
                 'is_verified': customer.is_verified,
             }
         }

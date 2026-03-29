@@ -1256,6 +1256,51 @@
             return `قبل ${days} ${days === 1 ? 'يوم' : 'أيام'}`;
         }
 
+        function formatPresenceLabel(customer) {
+            if (!customer) {
+                return 'حالة العميل غير متاحة';
+            }
+            if (customer.is_online) {
+                return 'متصل الآن';
+            }
+            if (customer.last_seen) {
+                return `آخر ظهور ${formatRelativeTime(customer.last_seen)}`;
+            }
+            return 'غير متصل';
+        }
+
+        function patchOrderPresence(orderPayload, presence) {
+            const nextOrder = { ...(orderPayload || {}) };
+            nextOrder.customer = {
+                ...(nextOrder.customer || {}),
+                id: presence.customer_id || nextOrder.customer?.id || null,
+                is_online: Boolean(presence.is_online),
+                last_seen: presence.last_seen || null,
+            };
+            return nextOrder;
+        }
+
+        function applyPresenceUpdate(presence) {
+            const orderId = Number(presence?.order_id || 0);
+            if (!orderId) {
+                return;
+            }
+
+            const orderIndex = state.orders.findIndex((item) => Number(item.id) === orderId);
+            if (orderIndex >= 0) {
+                const nextRaw = patchOrderPresence(state.orders[orderIndex].raw, presence);
+                state.orders[orderIndex] = {
+                    ...state.orders[orderIndex],
+                    raw: nextRaw,
+                };
+            }
+
+            if (Number(state.selectedOrderId) === orderId) {
+                state.selectedOrder = patchOrderPresence(state.selectedOrder, presence);
+                renderSelectedOrder();
+            }
+        }
+
         function initialsFromName(name) {
             const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
             if (!parts.length) {
@@ -1675,6 +1720,7 @@
             els.selectedCustomerMeta.innerHTML = [
                 order.status_display || getStatusDisplay(order.status),
                 customer.phone_number || 'بدون تليفون',
+                formatPresenceLabel(customer),
                 `آخر تحديث ${formatRelativeTime(order.updated_at || order.created_at)}`,
             ].map((part) => `<span>${part}</span>`).join('');
 
@@ -1931,6 +1977,18 @@
                 case 'driver_status_updated':
                     setRealtimeHint(`تم تحديث حالة السائق ${payload.data?.driver?.name || ''}`);
                     break;
+                case 'presence_update':
+                    applyPresenceUpdate(payload.data);
+                    if (Number(payload.data?.order_id || 0) === Number(state.selectedOrderId)) {
+                        setRealtimeHint(
+                            payload.data?.is_online
+                                ? 'العميل متصل الآن.'
+                                : payload.data?.last_seen
+                                    ? `تم تحديث آخر ظهور العميل ${formatRelativeTime(payload.data?.last_seen)}.`
+                                    : 'تم تحديث حالة العميل إلى غير متصل.'
+                        );
+                    }
+                    break;
                 default:
                     break;
             }
@@ -1979,6 +2037,26 @@
             switch (payload.type) {
                 case 'connection':
                     els.typingNote.textContent = '';
+                    break;
+                case 'presence_snapshot':
+                    applyPresenceUpdate(payload.data);
+                    setRealtimeHint(
+                        payload.data?.is_online
+                            ? 'تم تحميل حالة العميل: متصل الآن.'
+                            : payload.data?.last_seen
+                                ? `تم تحميل آخر ظهور العميل ${formatRelativeTime(payload.data?.last_seen)}.`
+                                : 'تم تحميل حالة العميل: غير متصل.'
+                    );
+                    break;
+                case 'presence_update':
+                    applyPresenceUpdate(payload.data);
+                    setRealtimeHint(
+                        payload.data?.is_online
+                            ? 'العميل متصل الآن.'
+                            : payload.data?.last_seen
+                                ? `تم تحديث آخر ظهور العميل ${formatRelativeTime(payload.data?.last_seen)}.`
+                                : 'تم تحديث حالة العميل إلى غير متصل.'
+                    );
                     break;
                 case 'previous_messages':
                     state.chatMessages = Array.isArray(payload.messages) ? payload.messages : [];

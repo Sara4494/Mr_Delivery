@@ -83,6 +83,7 @@ from .websocket_utils import (
     notify_shop_status_updated,
     notify_driver_status_updated,
 )
+from .presence import format_utc_iso8601
 
 
 def shop_dashboard_ui_view(request):
@@ -1068,10 +1069,12 @@ def _build_driver_order_detail_payload(order, request):
         'order_number': order.order_number,
         'status_label': _get_driver_order_status_label(order),
         'customer': {
+            'id': customer.id if customer else None,
             'name': customer.name if customer else None,
             'phone_number': customer.phone_number if customer else None,
             'profile_image_url': _build_file_url(request, customer.profile_image) if customer else None,
             'is_online': bool(customer.is_online) if customer else False,
+            'last_seen': format_utc_iso8601(customer.last_seen) if customer else None,
         },
         'address_text': _build_driver_order_address_text(order),
         'invoice': _build_driver_order_invoice_payload(order),
@@ -3531,7 +3534,8 @@ def customer_register_view(request):
                     'id': customer.id,
                     'name': customer.name,
                     'phone_number': customer.phone_number,
-                    
+                    'is_online': bool(customer.is_online),
+                    'last_seen': format_utc_iso8601(customer.last_seen),
                 }
             },
             message=t(request, 'registration_successful'),

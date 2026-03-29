@@ -1167,6 +1167,28 @@
                         `${data.message} | chat: ${data.chat_type} | user: ${data.user_type}`);
                     break;
 
+                case 'presence_snapshot':
+                    addMessage(
+                        'chatMessages',
+                        'system',
+                        'Presence',
+                        data.data?.is_online
+                            ? `Customer is online الآن`
+                            : `Customer last seen: ${data.data?.last_seen || 'N/A'}`
+                    );
+                    break;
+
+                case 'presence_update':
+                    addMessage(
+                        'chatMessages',
+                        'system',
+                        'Presence',
+                        data.data?.is_online
+                            ? `Customer became online`
+                            : `Customer went offline at ${data.data?.last_seen || 'N/A'}`
+                    );
+                    break;
+
                 case 'previous_messages':
                     addMessage('chatMessages', 'system', 'System', `📜 ${data.messages.length} previous messages`);
                     data.messages.forEach(msg => {

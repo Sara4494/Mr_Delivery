@@ -32,6 +32,7 @@ class Customer(models.Model):
     password = models.CharField(max_length=128, blank=True, null=True, verbose_name="كلمة المرور")
     profile_image = models.ImageField(upload_to='customer_profiles/', blank=True, null=True, verbose_name="صورة العميل")
     is_online = models.BooleanField(default=False, verbose_name="متصل الآن")
+    last_seen = models.DateTimeField(blank=True, null=True, verbose_name="آخر ظهور")
     is_verified = models.BooleanField(default=False, verbose_name="تم التحقق")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
@@ -71,6 +72,31 @@ class Customer(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.phone_number}"
+
+
+class CustomerPresenceConnection(models.Model):
+    """Active websocket connections used to derive customer presence."""
+
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='presence_connections',
+        verbose_name="العميل",
+    )
+    channel_name = models.CharField(max_length=255, unique=True, verbose_name="اسم القناة")
+    connection_type = models.CharField(max_length=50, default='websocket', verbose_name="نوع الاتصال")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+
+    class Meta:
+        verbose_name = "اتصال حضور العميل"
+        verbose_name_plural = "اتصالات حضور العميل"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['customer', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.customer_id} - {self.connection_type} - {self.channel_name}"
 
 
 class CustomerAddress(models.Model):
