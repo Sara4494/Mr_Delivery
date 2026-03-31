@@ -84,6 +84,7 @@ from .websocket_utils import (
     notify_driver_status_updated,
 )
 from .presence import format_utc_iso8601
+from .driver_chat_service import request_transfer_for_order, sync_order_assignment_change
 
 
 def shop_dashboard_ui_view(request):
@@ -99,6 +100,11 @@ def driver_dashboard_ui_view(request):
 def customer_dashboard_ui_view(request):
     """Experimental operational UI for the customer dashboard."""
     return render(request, 'shop/customer_dashboard_ui.html')
+
+
+def driver_chats_ui_view(request):
+    """Operational UI for shop-side driver chats."""
+    return render(request, 'shop/driver_chats_ui.html')
 
 
 class OrderPagination(PageNumberPagination):
@@ -1987,6 +1993,21 @@ def driver_order_transfer_view(request, order_id):
     order.driver = None
     order.save(update_fields=['driver', 'status', 'updated_at'])
 
+    transfer_reason = selected_reason['label']
+    if note:
+        transfer_reason = f'{transfer_reason}: {note}'
+
+    if old_driver:
+        try:
+            request_transfer_for_order(
+                order=order,
+                driver=old_driver,
+                reason=transfer_reason,
+                request=request,
+            )
+        except Exception as e:
+            print(f"driver_chat transfer request sync error: {e}")
+
     if old_driver:
         old_driver.current_orders_count = old_driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
         old_driver.save(update_fields=['current_orders_count'])
@@ -2836,6 +2857,11 @@ def order_detail_view(request, order_id):
                 status__in=['new', 'preparing', 'on_way']
             ).count()
             order.driver.save()
+
+        try:
+            sync_order_assignment_change(order, old_driver=old_driver, new_driver=order.driver, request=request)
+        except Exception as e:
+            print(f"driver_chat sync error: {e}")
         
         response_serializer = OrderSerializer(order, context={'request': request})
         

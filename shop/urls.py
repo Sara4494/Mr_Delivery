@@ -1,10 +1,13 @@
 from django.urls import path, re_path
+
+from . import driver_chat_views
 from . import views
 
 app_name = 'shop'
 
 urlpatterns = [
     path('shop/dashboard-ui/', views.shop_dashboard_ui_view, name='shop_dashboard_ui'),
+    path('shop/driver-chats/ui/', views.driver_chats_ui_view, name='shop_driver_chats_ui'),
     path('driver/dashboard-ui/', views.driver_dashboard_ui_view, name='driver_dashboard_ui'),
     path('customer/dashboard-ui/', views.customer_dashboard_ui_view, name='customer_dashboard_ui'),
     # Public shops list (for customers)
@@ -52,6 +55,17 @@ urlpatterns = [
     # Invoices
     path('shop/invoices/', views.invoice_list_view, name='invoice_list'),
     path('shop/invoices/<int:invoice_id>/', views.invoice_detail_view, name='invoice_detail'),
+
+    # Driver Chats
+    path('shop/driver-chats/conversations/', driver_chat_views.driver_chat_conversations_view, name='driver_chat_conversations'),
+    path('shop/driver-chats/conversations/<str:conversation_id>/messages/', driver_chat_views.driver_chat_messages_view, name='driver_chat_messages'),
+    path('shop/driver-chats/conversations/<str:conversation_id>/orders/', driver_chat_views.driver_chat_orders_view, name='driver_chat_orders'),
+    path('shop/drivers/available-for-transfer/', driver_chat_views.driver_chat_available_transfer_drivers_view, name='driver_chat_available_transfer_drivers'),
+    path('shop/driver-chats/voice/upload-url/', driver_chat_views.driver_chat_voice_upload_url_view, name='driver_chat_voice_upload_url'),
+    path('shop/driver-chats/voice/upload/', driver_chat_views.driver_chat_voice_upload_view, name='driver_chat_voice_upload'),
+    path('shop/driver-chats/mark-read/', driver_chat_views.driver_chat_mark_read_view, name='driver_chat_mark_read'),
+    path('shop/driver-chats/resync/', driver_chat_views.driver_chat_resync_view, name='driver_chat_resync'),
+    path('shop/driver-chats/calls/<str:call_id>/', driver_chat_views.driver_chat_call_detail_view, name='driver_chat_call_detail'),
     
     # Dashboard Statistics
     path('shop/dashboard/statistics/', views.shop_dashboard_statistics_view, name='dashboard_statistics'),

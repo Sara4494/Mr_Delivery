@@ -1,7 +1,13 @@
+import uuid
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from user.models import ShopOwner
+
+
+def _generate_public_token(prefix):
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 class ShopStatus(models.Model):
@@ -222,6 +228,8 @@ class Driver(models.Model):
     phone_number = models.CharField(max_length=20, unique=True, verbose_name="رقم الهاتف")
     password = models.CharField(max_length=128, verbose_name="كلمة المرور", blank=True, null=True)  # إضافة password للسائق
     profile_image = models.ImageField(upload_to='driver_profiles/', blank=True, null=True, verbose_name="صورة السائق")
+    vehicle_label = models.CharField(max_length=120, blank=True, null=True, verbose_name="وصف المركبة")
+    plate_number = models.CharField(max_length=50, blank=True, null=True, verbose_name="رقم اللوحة")
     vehicle_type = models.CharField(
         max_length=20,
         choices=VEHICLE_TYPE_CHOICES,
@@ -238,6 +246,7 @@ class Driver(models.Model):
     current_latitude = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True, verbose_name="خط العرض الحالي")
     current_longitude = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True, verbose_name="خط الطول الحالي")
     location_updated_at = models.DateTimeField(blank=True, null=True, verbose_name="آخر تحديث للموقع")
+    last_seen_at = models.DateTimeField(blank=True, null=True, verbose_name="آخر ظهور")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
 
@@ -349,6 +358,245 @@ class Order(models.Model):
 
     def __str__(self):
         return f"طلب #{self.order_number} - {self.customer.name}"
+
+
+class DriverPresenceConnection(models.Model):
+    """Active websocket connections used to derive driver presence."""
+
+    driver = models.ForeignKey(
+        Driver,
+        on_delete=models.CASCADE,
+        related_name='presence_connections',
+        verbose_name="السائق",
+    )
+    channel_name = models.CharField(max_length=255, unique=True, verbose_name="اسم القناة")
+    connection_type = models.CharField(max_length=50, default='websocket', verbose_name="نوع الاتصال")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+
+    class Meta:
+        verbose_name = "اتصال حضور السائق"
+        verbose_name_plural = "اتصالات حضور السائق"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['driver', '-created_at'], name='drvprs_driver_created_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.driver_id} - {self.connection_type} - {self.channel_name}"
+
+
+class DriverChatConversation(models.Model):
+    STATUS_CHOICES = [
+        ('waiting_reply', 'في انتظار الرد'),
+        ('awaiting_driver_acceptance', 'بانتظار موافقة السائق'),
+        ('transfer_requested', 'تم طلب التحويل'),
+        ('driver_busy', 'السائق مشغول'),
+        ('driver_on_way', 'السائق في الطريق'),
+        ('driver_arrived', 'السائق وصل'),
+        ('transferred_to_another_driver', 'تم التحويل لسائق آخر'),
+        ('delivered', 'تم التسليم'),
+        ('cancelled', 'ملغي'),
+        ('rejected', 'مرفوض'),
+    ]
+
+    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='driver_chat_conversations', verbose_name="المتجر")
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='shop_conversations', verbose_name="السائق")
+    public_id = models.CharField(max_length=64, unique=True, blank=True, verbose_name="المعرف العام")
+    status = models.CharField(max_length=40, choices=STATUS_CHOICES, default='waiting_reply', verbose_name="حالة المحادثة")
+    unread_count = models.PositiveIntegerField(default=0, verbose_name="عدد الرسائل غير المقروءة")
+    last_message_preview = models.TextField(blank=True, null=True, verbose_name="معاينة آخر رسالة")
+    last_message_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت آخر رسالة")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "محادثة سائق"
+        verbose_name_plural = "محادثات السائقين"
+        ordering = ['-updated_at', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['shop_owner', 'driver'], name='unique_shop_driver_conversation')
+        ]
+        indexes = [
+            models.Index(fields=['shop_owner', '-updated_at'], name='drvchatconv_shop_upd_idx'),
+            models.Index(fields=['driver', '-updated_at'], name='drvchatconv_driver_upd_idx'),
+            models.Index(fields=['public_id'], name='drvchatconv_public_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.public_id:
+            self.public_id = f"conv_{self.pk}"
+            super().save(update_fields=['public_id'])
+
+    def __str__(self):
+        return f"{self.shop_owner_id}:{self.driver_id}"
+
+
+class DriverChatOrder(models.Model):
+    STATUS_CHOICES = DriverChatConversation.STATUS_CHOICES
+
+    conversation = models.ForeignKey(DriverChatConversation, on_delete=models.CASCADE, related_name='orders', verbose_name="المحادثة")
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='driver_chat_links', verbose_name="الطلب")
+    status = models.CharField(max_length=40, choices=STATUS_CHOICES, default='waiting_reply', verbose_name="حالة الطلب")
+    transfer_reason = models.TextField(blank=True, null=True, verbose_name="سبب التحويل")
+    is_active = models.BooleanField(default=True, verbose_name="نشط")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "أوردر في محادثة سائق"
+        verbose_name_plural = "أوردرات محادثات السائقين"
+        ordering = ['-updated_at', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['conversation', 'order'], name='unique_driver_chat_order_per_conversation')
+        ]
+        indexes = [
+            models.Index(fields=['conversation', '-updated_at'], name='drvchatord_conv_upd_idx'),
+            models.Index(fields=['order', '-updated_at'], name='drvchatord_order_upd_idx'),
+            models.Index(fields=['status'], name='drvchatord_status_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.conversation_id}:{self.order_id}:{self.status}"
+
+
+class DriverChatCall(models.Model):
+    STATUS_CHOICES = [
+        ('initiated', 'تم بدء الاتصال'),
+        ('ringing', 'جاري الرن'),
+        ('accepted', 'تم القبول'),
+        ('rejected', 'تم الرفض'),
+        ('cancelled', 'تم الإلغاء'),
+        ('ended', 'تم إنهاء الاتصال'),
+        ('missed', 'مكالمة فائتة'),
+        ('timeout', 'انتهى الوقت'),
+        ('failed', 'فشل الاتصال'),
+    ]
+    INITIATOR_CHOICES = [
+        ('store', 'المتجر'),
+        ('driver', 'السائق'),
+    ]
+
+    conversation = models.ForeignKey(DriverChatConversation, on_delete=models.CASCADE, related_name='calls', verbose_name="المحادثة")
+    public_id = models.CharField(max_length=64, unique=True, blank=True, verbose_name="المعرف العام")
+    initiated_by = models.CharField(max_length=20, choices=INITIATOR_CHOICES, verbose_name="بدأها")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='initiated', verbose_name="الحالة")
+    reason = models.CharField(max_length=120, blank=True, null=True, verbose_name="السبب")
+    channel_name = models.CharField(max_length=120, blank=True, null=True, verbose_name="اسم غرفة الاتصال")
+    rtc_token = models.TextField(blank=True, null=True, verbose_name="رمز RTC")
+    answered_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت الرد")
+    ended_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت الإنهاء")
+    duration_seconds = models.PositiveIntegerField(default=0, verbose_name="مدة المكالمة بالثواني")
+    metadata = models.JSONField(blank=True, null=True, verbose_name="بيانات إضافية")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "مكالمة سائق"
+        verbose_name_plural = "مكالمات السائقين"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['conversation', '-created_at'], name='drvchatcall_conv_idx'),
+            models.Index(fields=['public_id'], name='drvchatcall_public_idx'),
+            models.Index(fields=['status'], name='drvchatcall_status_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.public_id:
+            self.public_id = f"call_{self.pk}"
+            super().save(update_fields=['public_id'])
+
+    def __str__(self):
+        return f"{self.public_id}:{self.status}"
+
+
+class DriverChatMessage(models.Model):
+    MESSAGE_TYPE_CHOICES = [
+        ('text', 'نص'),
+        ('voice', 'صوت'),
+        ('invoice', 'فاتورة'),
+        ('system', 'نظام'),
+        ('call', 'اتصال'),
+    ]
+    SENDER_CHOICES = [
+        ('store', 'المتجر'),
+        ('driver', 'السائق'),
+        ('system', 'النظام'),
+    ]
+    DELIVERY_STATUS_CHOICES = [
+        ('sent', 'تم الإرسال'),
+        ('delivered', 'تم التسليم'),
+        ('read', 'تمت القراءة'),
+        ('failed', 'فشل الإرسال'),
+    ]
+
+    conversation = models.ForeignKey(DriverChatConversation, on_delete=models.CASCADE, related_name='messages', verbose_name="المحادثة")
+    public_id = models.CharField(max_length=64, unique=True, blank=True, verbose_name="المعرف العام")
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPE_CHOICES, default='text', verbose_name="نوع الرسالة")
+    sender_type = models.CharField(max_length=20, choices=SENDER_CHOICES, verbose_name="المرسل")
+    text = models.TextField(blank=True, null=True, verbose_name="نص الرسالة")
+    audio_url = models.TextField(blank=True, null=True, verbose_name="رابط الصوت")
+    voice_duration_seconds = models.PositiveIntegerField(blank=True, null=True, verbose_name="مدة الصوت")
+    client_message_id = models.CharField(max_length=120, blank=True, null=True, verbose_name="معرف رسالة العميل")
+    delivery_status = models.CharField(max_length=20, choices=DELIVERY_STATUS_CHOICES, default='sent', verbose_name="حالة التسليم")
+    conversation_order = models.ForeignKey(DriverChatOrder, on_delete=models.SET_NULL, null=True, blank=True, related_name='messages', verbose_name="الأوردر المرتبط")
+    call = models.ForeignKey(DriverChatCall, on_delete=models.SET_NULL, null=True, blank=True, related_name='messages', verbose_name="المكالمة")
+    metadata = models.JSONField(blank=True, null=True, verbose_name="بيانات إضافية")
+    is_read = models.BooleanField(default=False, verbose_name="مقروءة")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإرسال")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "رسالة محادثة سائق"
+        verbose_name_plural = "رسائل محادثات السائقين"
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['conversation', 'created_at'], name='drvchatmsg_conv_created_idx'),
+            models.Index(fields=['conversation', '-created_at'], name='drvchatmsg_conv_desc_idx'),
+            models.Index(fields=['public_id'], name='drvchatmsg_public_idx'),
+            models.Index(fields=['message_type'], name='drvchatmsg_type_idx'),
+            models.Index(fields=['sender_type'], name='drvchatmsg_sender_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.public_id:
+            self.public_id = f"msg_{self.pk}"
+            super().save(update_fields=['public_id'])
+
+    def __str__(self):
+        return f"{self.public_id}:{self.message_type}"
+
+
+class DriverChatEvent(models.Model):
+    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='driver_chat_events', verbose_name="المتجر")
+    conversation = models.ForeignKey(DriverChatConversation, on_delete=models.SET_NULL, null=True, blank=True, related_name='events', verbose_name="المحادثة")
+    driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='driver_chat_events', verbose_name="السائق")
+    event_id = models.CharField(max_length=64, unique=True, blank=True, verbose_name="معرف الحدث")
+    event_type = models.CharField(max_length=120, verbose_name="نوع الحدث")
+    payload = models.JSONField(verbose_name="البيانات")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+
+    class Meta:
+        verbose_name = "حدث محادثة سائق"
+        verbose_name_plural = "أحداث محادثات السائقين"
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['shop_owner', 'created_at'], name='drvchatevt_shop_created_idx'),
+            models.Index(fields=['driver', 'created_at'], name='drvchatevt_driver_created_idx'),
+            models.Index(fields=['event_id'], name='drvchatevt_event_id_idx'),
+            models.Index(fields=['event_type'], name='drvchatevt_type_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.event_id:
+            self.event_id = f"evt_{self.pk}"
+            super().save(update_fields=['event_id'])
+
+    def __str__(self):
+        return f"{self.event_id}:{self.event_type}"
 
 
 class ChatMessage(models.Model):

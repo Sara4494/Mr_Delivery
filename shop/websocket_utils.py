@@ -7,6 +7,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from .models import Driver, Order
 from .serializers import DriverSerializer, OrderSerializer
+from .driver_chat_service import broadcast_driver_presence_update
 
 
 def send_to_group(group_name, message_type, data):
@@ -208,3 +209,8 @@ def notify_driver_status_updated(driver):
 
     for shop_owner_id in shop_owner_ids:
         send_to_group(f'shop_orders_{shop_owner_id}', 'driver_status_updated', payload)
+
+    try:
+        broadcast_driver_presence_update(driver_obj)
+    except Exception as exc:
+        print(f"driver_chat presence broadcast error: {exc}")

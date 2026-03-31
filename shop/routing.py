@@ -1,5 +1,7 @@
 from django.urls import re_path
+
 from . import consumers
+from . import driver_chat_consumers
 
 websocket_urlpatterns = [
     # ==================== Chat WebSocket ====================
@@ -20,4 +22,10 @@ websocket_urlpatterns = [
     # قناة السائق (طلبات جديدة، رسائل، تحديث الموقع)
     # ws://server/ws/driver/{driver_id}/?token=JWT
     re_path(r'ws/driver/(?P<driver_id>\d+)/$', consumers.DriverConsumer.as_asgi()),
+
+    # ==================== Driver Chats ====================
+    # ws://server/ws/driver-chats/shop/{shop_owner_id}/?token=JWT&lang=ar
+    re_path(r'ws/driver-chats/shop/(?P<shop_owner_id>\d+)/$', driver_chat_consumers.DriverChatsShopConsumer.as_asgi()),
+    # ws://server/ws/driver-chats/driver/{driver_id}/?token=JWT&lang=ar
+    re_path(r'ws/driver-chats/driver/(?P<driver_id>\d+)/$', driver_chat_consumers.DriverChatsDriverConsumer.as_asgi()),
 ]

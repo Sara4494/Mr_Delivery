@@ -14,6 +14,11 @@ from .presence import (
 )
 from user.models import ShopOwner
 from .serializers import ChatMessageSerializer, OrderSerializer
+from .driver_chat_service import (
+    broadcast_driver_presence_update,
+    mark_driver_connected,
+    mark_driver_disconnected,
+)
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
 
 
@@ -1446,9 +1451,13 @@ class DriverConsumer(AsyncWebsocketConsumer):
 
         self.user = user
         self.user_type = user_type
+        self.driver_presence_registered = False
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
+
+        presence_state = await self.register_driver_presence()
+        self.driver_presence_registered = bool(presence_state)
 
         await self.send(text_data=_json_dumps(_with_localized_message(
             {'type': 'connection'},
@@ -1456,9 +1465,29 @@ class DriverConsumer(AsyncWebsocketConsumer):
             lang=self.lang,
         )))
 
+        if presence_state and presence_state.get('changed'):
+            await self.broadcast_driver_presence()
+
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+        if getattr(self, 'driver_presence_registered', False):
+            presence_state = await self.unregister_driver_presence()
+            if presence_state and presence_state.get('changed'):
+                await self.broadcast_driver_presence()
+
+    @database_sync_to_async
+    def register_driver_presence(self):
+        return mark_driver_connected(self.driver_id, self.channel_name, connection_type='driver_socket')
+
+    @database_sync_to_async
+    def unregister_driver_presence(self):
+        return mark_driver_disconnected(self.channel_name)
+
+    @database_sync_to_async
+    def broadcast_driver_presence(self):
+        return broadcast_driver_presence_update(self.driver_id)
 
     async def receive(self, text_data):
         try:
