@@ -70,6 +70,7 @@
                         <div class="row" style="margin-top:16px">
                             <button class="btn btn-primary" type="button" id="refreshBtn">تحديث الآن</button>
                             <button class="btn btn-soft" type="button" id="logoutBtn">تسجيل الخروج</button>
+                            <button class="btn btn-success" type="button" id="newOrderBtn">طلب أوردر جديد</button>
                         </div>
                     </div>
                     <div class="stat-grid">
@@ -150,10 +151,41 @@
         </section>
     </main>
     <script>
-        const EP={login:'/api/customer/login/',profile:'/api/customer/profile/',media:id=>`/api/chat/order/${id}/send-media/`,confirm:id=>`/api/customer/orders/${id}/confirm/`,reject:id=>`/api/customer/orders/${id}/reject/`};
+        const EP={
+            login:'/api/customer/login/',
+            profile:'/api/customer/profile/',
+            media:id=>`/api/chat/order/${id}/send-media/`,
+            confirm:id=>`/api/customer/orders/${id}/confirm/`,
+            reject:id=>`/api/customer/orders/${id}/reject/`,
+            customerOrders:'/api/customer/orders/', // New endpoint for customer order creation
+            publicShops:'/api/shops/', // New endpoint to fetch public shops
+        };
         const KEY={a:'mr_delivery_customer_access',r:'mr_delivery_customer_refresh',u:'mr_delivery_customer_user'};
         const $=id=>document.getElementById(id);
         const fmtMoney=v=>new Intl.NumberFormat('ar-EG',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(v||0));
+
+        // New Order Request Modal elements
+        const $newOrderOverlay = $('newOrderOverlay');
+        const $newOrderBtn = $('newOrderBtn');
+        const $newOrderForm = $('newOrderForm');
+        const $newOrderShopSelect = $('newOrderShopSelect');
+        const $newOrderAddressInput = $('newOrderAddressInput');
+        const $newOrderItemsInput = $('newOrderItemsInput');
+        const $newOrderNotesInput = $('newOrderNotesInput');
+        const $submitNewOrderBtn = $('submitNewOrderBtn');
+        const $cancelNewOrderBtn = $('cancelNewOrderBtn');
+
+        // New Order Request Modal
+        // This modal needs to be added to the HTML body, similar to the login modal.
+        // I'll add it at the end of the body, before the script tag.
+        // <div class="login hidden" id="newOrderOverlay">
+        //     <div class="login-card">
+        //         ... form content ...
+        //     </div>
+        // </div>
+
+
+
         const fmtClock=v=>{const d=new Date(v);return Number.isNaN(d.getTime())?'':new Intl.DateTimeFormat('ar-EG',{hour:'2-digit',minute:'2-digit'}).format(d)};
         const esc=v=>String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
         function json(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch{return null}}
