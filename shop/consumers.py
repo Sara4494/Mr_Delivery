@@ -1662,17 +1662,7 @@ class OrderConsumer(AsyncWebsocketConsumer):
             lang=self.lang,
         )))
 
-        orders_snapshot = await self.get_orders_snapshot()
-        await self.send(text_data=_json_dumps(_with_localized_message(
-            {
-                'type': 'orders_snapshot',
-                'data': {
-                    'orders': orders_snapshot,
-                },
-            },
-            'تمت مزامنة قائمة الطلبات بنجاح',
-            lang=self.lang,
-        )))
+        await self.send_shop_dashboard_snapshots()
 
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
@@ -1686,6 +1676,14 @@ class OrderConsumer(AsyncWebsocketConsumer):
 
             if event_type == 'ring':
                 await _handle_ring_request(self, data, request_id=request_id)
+            elif event_type in {'sync_dashboard', 'refresh_dashboard'}:
+                await self.send_shop_dashboard_snapshots()
+                await _send_ack(
+                    self,
+                    'sync_dashboard',
+                    request_id=request_id,
+                    message='تمت مزامنة بيانات المحل بنجاح',
+                )
             else:
                 await _send_error_event(
                     self,
@@ -1777,6 +1775,26 @@ class OrderConsumer(AsyncWebsocketConsumer):
             'data': event['data'],
         }))
 
+    async def send_shop_dashboard_snapshots(self):
+        orders_snapshot = await self.get_orders_snapshot()
+        await self.send(text_data=_json_dumps(_with_localized_message(
+            {
+                'type': 'orders_snapshot',
+                'data': {
+                    'orders': orders_snapshot,
+                },
+            },
+            'تمت مزامنة قائمة الطلبات بنجاح',
+            lang=self.lang,
+        )))
+
+        support_conversations = await self.get_support_conversations_snapshot()
+        for conversation in support_conversations:
+            await self.send(text_data=_json_dumps({
+                'type': 'support_conversation_update',
+                'data': conversation,
+            }))
+
     @database_sync_to_async
     def get_orders_snapshot(self):
         orders = (
@@ -1789,6 +1807,24 @@ class OrderConsumer(AsyncWebsocketConsumer):
             orders,
             many=True,
             context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+        ).data
+
+    @database_sync_to_async
+    def get_support_conversations_snapshot(self):
+        conversations = (
+            CustomerSupportConversation.objects
+            .filter(shop_owner_id=self.shop_owner_id)
+            .select_related('shop_owner', 'customer')
+            .order_by('-updated_at', '-created_at')
+        )
+        return CustomerSupportConversationSerializer(
+            conversations,
+            many=True,
+            context=_serializer_context(
+                lang=getattr(self, 'lang', None),
+                scope=getattr(self, 'scope', None),
+                base_url=getattr(self, 'base_url', None),
+            ),
         ).data
 
 

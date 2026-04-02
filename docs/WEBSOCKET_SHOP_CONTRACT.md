@@ -58,6 +58,7 @@ What happens on connect:
 1. The server accepts the socket.
 2. It sends a `connection` event.
 3. It immediately sends `orders_snapshot`.
+4. It replays existing standalone support chats as `support_conversation_update` events.
 
 Important:
 
@@ -105,6 +106,7 @@ Realtime fan-out rules relevant to the shop:
 - `shop_customer` chat messages are broadcast to the order chat room
 - The same message is also broadcast to the shop orders dashboard as `new_message`
 - `mark_read` updates unread counters and triggers an `order_update` snapshot to the shop dashboard
+- standalone support chats are broadcast to the same shop dashboard as `support_conversation_update` and `support_message`
 
 ## 5. Shop Dashboard Events
 
@@ -112,13 +114,19 @@ Server-to-client events on `/ws/orders/shop/{shop_owner_id}/`:
 
 - `connection`
 - `orders_snapshot`
+- `support_conversation_update`
+- `support_message`
 - `new_order`
 - `order_update`
 - `new_message`
 - `store_status_updated`
 - `driver_status_updated`
 
-The shop dashboard channel does not currently expect any client-to-server events.
+Optional client-to-server events accepted by the shop dashboard channel:
+
+- `ring`
+- `sync_dashboard`
+- `refresh_dashboard` as an alias of `sync_dashboard`
 
 ### 5.1 `connection`
 
@@ -143,6 +151,7 @@ Current backend behavior:
 - Returns the latest 50 orders for that shop
 - Sorted by `updated_at` descending
 - Uses `OrderSerializer`
+- After `orders_snapshot`, the backend replays existing support conversations on the same socket as `support_conversation_update`
 
 ```json
 {

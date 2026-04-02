@@ -73,6 +73,11 @@
 - `support_conversation_update`
 - `support_message`
 
+Ù…Ù‡Ù…:
+
+- Ø¹Ù†Ø¯ reopen Ø£Ùˆ reconnect Ù„Ø³ÙˆÙƒØª Ø§Ù„Ù…Ø­Ù„ØŒ Ø§Ù„Ø¨Ø§Ùƒ Ø¥Ù†Ø¯ Ø³ÙŠØ¹ÙŠØ¯ Ø¨Ø« Ø¬Ù…ÙŠØ¹ Ù…Ø­Ø§Ø¯Ø«Ø§Øª Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„Ù…ÙˆØ¬ÙˆØ¯Ø© ÙƒØ£Ø­Ø¯Ø§Ø« `support_conversation_update`
+- Ù„Ø°Ù„Ùƒ Ø§Ù„ÙØ±ÙˆÙ†Øª ÙŠØªØ¹Ø§Ù…Ù„ Ù…Ø¹ `support_conversation_update` ÙƒÙ€ upsert Ø¯Ø§Ø¦Ù…Ù‹Ø§ØŒ Ø³ÙˆØ§Ø¡ Ø¬Ø§Ø¡Øª live Ø£Ùˆ Ø¬Ø§Ø¡Øª Ø¨Ø¹Ø¯ reconnect
+
 ## event: `support_conversation_update`
 
 يصل عند:
