@@ -5355,196 +5355,82 @@ def customer_select_shop_view(request):
 
 # ==================== Customer Orders (طلبات العميل - الطلب كأول رسالة) ====================
 
-@api_view(['GET', 'POST'])
+@api_view(['POST'])
 @permission_classes([IsCustomer])
 def customer_orders_list_create_view(request):
     """
-    قائمة طلبات العميل وإنشاء طلب جديد (الرسالة الأولى = الفاتورة: اسم، عنوان، بند 1، 2، 3، ...)
-    GET /api/customer/orders/ - قائمة طلباتي
-    POST /api/customer/orders/ - إنشاء طلب (يملأ النموذج ويبعث للمحل)
+    Create a customer order.
+    POST /api/customer/orders/
     """
     customer = _get_customer_from_request(request)
     if not customer:
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
     
-    if request.method == 'GET':
-        orders = Order.objects.filter(customer=customer).order_by('-created_at')
-        serializer = OrderSerializer(orders, many=True, context={'request': request})
+    serializer = CustomerOrderCreateSerializer(
+        data=request.data,
+        context={'customer': customer, 'request': request}
+    )
+    if serializer.is_valid():
+        order = serializer.save()
+
+        # First chat message in the order thread (request/invoice draft card content).
+        try:
+            request_message = _build_customer_order_request_message(
+                customer=customer,
+                address=order.address,
+                items=serializer.validated_data.get('items', [])
+            )
+            first_msg = ChatMessage.objects.create(
+                order=order,
+                chat_type='shop_customer',
+                sender_type='customer',
+                sender_customer=customer,
+                message_type='text',
+                content=request_message,
+            )
+            order.unread_messages_count = order.messages.filter(
+                chat_type='shop_customer',
+                is_read=False,
+                sender_type='customer'
+            ).count()
+            order.save(update_fields=['unread_messages_count'])
+            broadcast_chat_message_to_order(order.id, _chat_message_payload(first_msg, request=request), request=request)
+        except Exception as e:
+            print(f"initial chat message broadcast error: {e}")
+
+        response_serializer = OrderSerializer(order, context={'request': request})
+        try:
+            notify_new_order(order.shop_owner_id, response_serializer.data)
+        except Exception as e:
+            print(f"new_order WebSocket error: {e}")
+
+        try:
+            received_msg = ChatMessage.objects.create(
+                order=order,
+                chat_type='shop_customer',
+                sender_type='shop_owner',
+                sender_shop_owner=order.shop_owner,
+                message_type='text',
+                content='order_received_wait_for_invoice',
+            )
+            broadcast_chat_message_to_customer(
+                order.id,
+                'shop_customer',
+                _chat_message_payload(received_msg, request=request),
+                request=request
+            )
+        except Exception as e:
+            print(f"order received chat message error: {e}")
+
         return success_response(
-            data=serializer.data,
-            message=t(request, 'orders_retrieved_successfully'),
-            status_code=status.HTTP_200_OK
+            data=response_serializer.data,
+            message=t(request, 'order_created_successfully'),
+            status_code=status.HTTP_201_CREATED
         )
-    
-    elif request.method == 'POST':
-        serializer = CustomerOrderCreateSerializer(
-            data=request.data,
-            context={'customer': customer, 'request': request}
-        )
-        if serializer.is_valid():
-            order = serializer.save()
-
-            # First chat message in the order thread (request/invoice draft card content).
-            try:
-                request_message = _build_customer_order_request_message(
-                    customer=customer,
-                    address=order.address,
-                    items=serializer.validated_data.get('items', [])
-                )
-                first_msg = ChatMessage.objects.create(
-                    order=order,
-                    chat_type='shop_customer',
-                    sender_type='customer',
-                    sender_customer=customer,
-                    message_type='text',
-                    content=request_message,
-                )
-                order.unread_messages_count = order.messages.filter(
-                    chat_type='shop_customer',
-                    is_read=False,
-                    sender_type='customer'
-                ).count()
-                order.save(update_fields=['unread_messages_count'])
-                broadcast_chat_message_to_order(order.id, _chat_message_payload(first_msg, request=request), request=request)
-            except Exception as e:
-                print(f"initial chat message broadcast error: {e}")
-
-            response_serializer = OrderSerializer(order, context={'request': request})
-            try:
-                notify_new_order(order.shop_owner_id, response_serializer.data)
-            except Exception as e:
-                print(f"new_order WebSocket error: {e}")
-
-            try:
-                received_msg = ChatMessage.objects.create(
-                    order=order,
-                    chat_type='shop_customer',
-                    sender_type='shop_owner',
-                    sender_shop_owner=order.shop_owner,
-                    message_type='text',
-                    content='order_received_wait_for_invoice',
-                )
-                broadcast_chat_message_to_customer(
-                    order.id,
-                    'shop_customer',
-                    _chat_message_payload(received_msg, request=request),
-                    request=request
-                )
-            except Exception as e:
-                print(f"order received chat message error: {e}")
-
-            return success_response(
-                data=response_serializer.data,
-                message=t(request, 'order_created_successfully'),
-                status_code=status.HTTP_201_CREATED
-            )
-        return error_response(
-            message=t(request, 'invalid_data'),
-            errors=serializer.errors,
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
-
-
-@api_view(['GET'])
-@permission_classes([IsCustomer])
-def customer_shops_conversations_view(request):
-    """
-    قائمة المحلات التي لدى العميل معها محادثات/طلبات.
-    GET /api/customer/shops-conversations/
-    """
-    customer = _get_customer_from_request(request)
-    if not customer:
-        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-    orders = (
-        Order.objects
-        .filter(customer=customer)
-        .select_related('shop_owner', 'shop_owner__shop_category')
-        .prefetch_related(
-            Prefetch(
-                'messages',
-                queryset=ChatMessage.objects.order_by('-created_at'),
-                to_attr='prefetched_messages',
-            )
-        )
-        .order_by('-updated_at', '-created_at')
-    )
-    support_conversations = (
-        CustomerSupportConversation.objects
-        .filter(customer=customer)
-        .select_related('shop_owner')
-        .order_by('-updated_at', '-created_at')
-    )
-
-    grouped_by_shop = {}
-    for order in orders:
-        if not order.shop_owner_id:
-            continue
-
-        shop_id = order.shop_owner_id
-        order_timestamp = order.updated_at or order.created_at
-        current = grouped_by_shop.get(shop_id)
-        if current is None or order_timestamp >= current['timestamp']:
-            grouped_by_shop[shop_id] = {
-                'timestamp': order_timestamp,
-                'payload': _build_customer_shop_conversation_item(order, request),
-            }
-
-    for conversation in support_conversations:
-        if not conversation.shop_owner_id:
-            continue
-
-        shop_id = conversation.shop_owner_id
-        conversation_timestamp = conversation.last_message_at or conversation.updated_at or conversation.created_at
-        current = grouped_by_shop.get(shop_id)
-        if current is None or conversation_timestamp >= current['timestamp']:
-            grouped_by_shop[shop_id] = {
-                'timestamp': conversation_timestamp,
-                'payload': _build_customer_support_shop_conversation_item(conversation, request),
-            }
-
-    results = [
-        item['payload']
-        for item in sorted(grouped_by_shop.values(), key=lambda value: value['timestamp'], reverse=True)
-    ]
-    return success_response(
-        data={
-            'count': len(results),
-            'results': results,
-        },
-        message='shops_conversations_retrieved_successfully',
-        status_code=status.HTTP_200_OK,
-        request=request,
-    )
-
-
-@api_view(['GET'])
-@permission_classes([IsCustomer])
-def customer_on_way_orders_view(request):
-    """
-    الطلبات النشطة الخاصة بالعميل في التوصيل.
-    GET /api/customer/orders/on-way/
-    """
-    customer = _get_customer_from_request(request)
-    if not customer:
-        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-    orders = (
-        Order.objects
-        .filter(customer=customer, status__in=['confirmed', 'preparing', 'on_way'])
-        .select_related('shop_owner', 'shop_owner__shop_category', 'driver')
-        .order_by('-updated_at', '-created_at')
-    )
-
-    results = [_build_customer_on_way_order_item(order, request) for order in orders]
-    return success_response(
-        data={
-            'count': len(results),
-            'results': results,
-        },
-        message='orders_retrieved_successfully',
-        status_code=status.HTTP_200_OK,
-        request=request,
+    return error_response(
+        message=t(request, 'invalid_data'),
+        errors=serializer.errors,
+        status_code=status.HTTP_400_BAD_REQUEST
     )
 
 

@@ -17,6 +17,7 @@ Welcome to **Mr Delivery** documentation - a comprehensive shop management and d
 ### 3. API Reference
 - [REST API Guide](./REST_API.md)
 - [WebSocket API Guide](./WEBSOCKET_API.md)
+- [Customer Dashboard Socket](./CUSTOMER_DASHBOARD_SOCKET.md)
 
 ### 4. Database
 - [Database Models](./DATABASE_MODELS.md)

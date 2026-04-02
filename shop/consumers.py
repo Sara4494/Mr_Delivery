@@ -1951,25 +1951,30 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
                 )
 
     async def send_dashboard_snapshots(self, request_id=None):
-        orders_snapshot, shops_snapshot, on_way_snapshot = await _gather_customer_dashboard_snapshots(
+        dashboard_snapshot = await _gather_customer_dashboard_snapshots(
             self.customer_id,
             base_url=getattr(self, 'base_url', None),
         )
 
         snapshot_events = [
             (
+                'dashboard_snapshot',
+                dashboard_snapshot,
+                'تمت مزامنة لوحة العميل بنجاح',
+            ),
+            (
                 'orders_snapshot',
-                {'orders': orders_snapshot},
+                {'orders': dashboard_snapshot['orders']},
                 'تمت مزامنة الطلبات بنجاح',
             ),
             (
                 'shops_snapshot',
-                shops_snapshot,
+                dashboard_snapshot['shops'],
                 'تمت مزامنة قائمة المحلات بنجاح',
             ),
             (
                 'on_way_snapshot',
-                on_way_snapshot,
+                dashboard_snapshot['on_way'],
                 'تمت مزامنة طلبات الطريق بنجاح',
             ),
         ]
@@ -2077,17 +2082,17 @@ def _gather_customer_dashboard_snapshots(customer_id, base_url=None):
     )
     on_way_results = [_build_customer_on_way_order_item(order, None, base_url=base_url) for order in on_way_orders]
 
-    return (
-        orders_snapshot,
-        {
+    return {
+        'orders': orders_snapshot,
+        'shops': {
             'count': len(shops_results),
             'results': shops_results,
         },
-        {
+        'on_way': {
             'count': len(on_way_results),
             'results': on_way_results,
         },
-    )
+    }
 
 
 class DriverConsumer(AsyncWebsocketConsumer):

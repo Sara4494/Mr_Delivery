@@ -64,13 +64,18 @@ What happens on connect:
 
 1. The server accepts the socket.
 2. It sends a `connection` event.
-3. It sends `orders_snapshot`.
-4. It sends `shops_snapshot`.
-5. It sends `on_way_snapshot`.
+3. It sends `dashboard_snapshot`.
+4. It sends `orders_snapshot`.
+5. It sends `shops_snapshot`.
+6. It sends `on_way_snapshot`.
 
 Important:
 
-- The three snapshots are now the source of truth for the customer tabs.
+- `dashboard_snapshot` is the unified source of truth for the customer tabs.
+- Orders are read from `dashboard_snapshot.data.orders`.
+- Shops/conversations are read from `dashboard_snapshot.data.shops.results`.
+- On-way orders are read from `dashboard_snapshot.data.on_way.results`.
+- The legacy per-tab snapshots are still sent for backward compatibility: `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 - The frontend no longer needs REST just to render the orders list, shops-conversations tab, or on-way tab.
 - The same socket also receives incremental events such as `order_update`, `new_message`, `support_conversation_update`, `support_message`, and `driver_location`.
 
@@ -297,6 +302,7 @@ Key fields used by the customer frontend include:
 Server-to-client events on `/ws/orders/customer/{customer_id}/`:
 
 - `connection`
+- `dashboard_snapshot`
 - `orders_snapshot`
 - `shops_snapshot`
 - `on_way_snapshot`
@@ -317,11 +323,11 @@ Client-to-server events accepted on `/ws/orders/customer/{customer_id}/`:
 
 Important:
 
-- After every successful connect, the backend sends the three snapshots.
-- After every `order_update`, the backend re-sends the three snapshots.
-- After every `new_message`, the backend re-sends the three snapshots.
-- After every `support_conversation_update`, the backend re-sends the three snapshots.
-- After every `support_message`, the backend re-sends the three snapshots.
+- After every successful connect, the backend sends `dashboard_snapshot` and then the three per-tab snapshots.
+- After every `order_update`, the backend re-sends `dashboard_snapshot`, `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+- After every `new_message`, the backend re-sends `dashboard_snapshot`, `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+- After every `support_conversation_update`, the backend re-sends `dashboard_snapshot`, `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+- After every `support_message`, the backend re-sends `dashboard_snapshot`, `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 - `driver_location` is incremental only and does not trigger a full snapshot refresh by itself.
 
 ### 6.1 `connection`
@@ -335,7 +341,33 @@ Important:
 }
 ```
 
-### 6.2 `orders_snapshot`
+### 6.2 `dashboard_snapshot`
+
+Primary event for the customer dashboard. It returns all three tabs in one payload.
+
+```json
+{
+  "type": "dashboard_snapshot",
+  "data": {
+    "orders": [
+      {
+        "...": "same shape as OrderSerializer"
+      }
+    ],
+    "shops": {
+      "count": 2,
+      "results": []
+    },
+    "on_way": {
+      "count": 1,
+      "results": []
+    }
+  },
+  "message": "تمت مزامنة لوحة العميل بنجاح"
+}
+```
+
+### 6.3 `orders_snapshot`
 
 Sent immediately after connect and after a dashboard resync.
 
@@ -353,7 +385,7 @@ Sent immediately after connect and after a dashboard resync.
 }
 ```
 
-### 6.3 `shops_snapshot`
+### 6.4 `shops_snapshot`
 
 Used for the customer shops-conversations tab.
 
@@ -386,7 +418,7 @@ Notes:
 - When the latest customer-shop thread is a support chat, `chat.order_id` is absent and `chat.support_conversation_id` is present.
 - In that case the result can also include `support_conversation` with the full support conversation summary object.
 
-### 6.4 `on_way_snapshot`
+### 6.5 `on_way_snapshot`
 
 Used for the customer on-way tab.
 
@@ -419,9 +451,9 @@ Used for the customer on-way tab.
 }
 ```
 
-### 6.5 Client event: `sync_dashboard`
+### 6.6 Client event: `sync_dashboard`
 
-Requests a fresh set of the three customer dashboard snapshots from the same socket.
+Requests a fresh customer dashboard snapshot set from the same socket.
 
 ```json
 {
@@ -432,7 +464,7 @@ Requests a fresh set of the three customer dashboard snapshots from the same soc
 
 `refresh_dashboard` is accepted as an alias and behaves the same way.
 
-### 6.6 `order_update`
+### 6.7 `order_update`
 
 Sent when the order snapshot changes.
 
@@ -459,9 +491,9 @@ Important:
 
 - There is no separate `order_cancelled` event.
 - Cancellation is delivered through `order_update` where `data.status == "cancelled"`.
-- After sending `order_update`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+- After sending `order_update`, the backend re-sends `dashboard_snapshot`, `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 
-### 6.7 `new_message`
+### 6.8 `new_message`
 
 Sent when a new chat message is created for this customer's order.
 
@@ -487,9 +519,9 @@ This can come from:
 }
 ```
 
-After sending `new_message`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+After sending `new_message`, the backend re-sends `dashboard_snapshot`, `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 
-### 6.7A `support_conversation_update`
+### 6.9 `support_conversation_update`
 
 Sent when a standalone `inquiry` or `complaint` conversation is created or when its unread/summary metadata changes.
 
@@ -502,9 +534,9 @@ Sent when a standalone `inquiry` or `complaint` conversation is created or when 
 }
 ```
 
-After sending `support_conversation_update`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+After sending `support_conversation_update`, the backend re-sends `dashboard_snapshot`, `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 
-### 6.7B `support_message`
+### 6.10 `support_message`
 
 Sent when a new standalone support chat message is created.
 
@@ -529,9 +561,9 @@ Sent when a new standalone support chat message is created.
 }
 ```
 
-After sending `support_message`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+After sending `support_message`, the backend re-sends `dashboard_snapshot`, `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 
-### 6.8 `driver_location`
+### 6.11 `driver_location`
 
 Sent when the driver updates location while the order is active.
 
@@ -547,7 +579,7 @@ Sent when the driver updates location while the order is active.
 }
 ```
 
-### 6.9 Client event: `ring`
+### 6.12 Client event: `ring`
 
 This is a lightweight notification only. It does not open a call.
 
@@ -576,7 +608,7 @@ You can also send multiple targets:
 }
 ```
 
-### 6.10 Server event: `ring`
+### 6.13 Server event: `ring`
 
 ```json
 {
@@ -600,7 +632,7 @@ You can also send multiple targets:
 
 `chat_type` is `null` when the ring is sent from the orders socket, and can be `shop_customer` or `driver_customer` when sent from a chat socket.
 
-### 6.11 Server event: `ack`
+### 6.14 Server event: `ack`
 
 Used for successful client actions such as `sync_dashboard` and `ring`.
 
@@ -634,7 +666,7 @@ Example for ring:
 }
 ```
 
-### 6.12 Server event: `error`
+### 6.15 Server event: `error`
 
 Examples of error codes from the current backend:
 
@@ -1063,10 +1095,11 @@ If this document and implementation diverge, the implementation wins.
 On reconnect, the frontend should expect this sequence again:
 
 1. `connection`
-2. `orders_snapshot`
-3. `shops_snapshot`
-4. `on_way_snapshot`
-5. Resume live handling of `order_update`, `new_message`, `support_conversation_update`, `support_message`, `driver_location`, and `ring`
+2. `dashboard_snapshot`
+3. `orders_snapshot`
+4. `shops_snapshot`
+5. `on_way_snapshot`
+6. Resume live handling of `order_update`, `new_message`, `support_conversation_update`, `support_message`, `driver_location`, and `ring`
 
 ### Customer chat sockets
 
@@ -1085,6 +1118,7 @@ On reconnect, the frontend should:
 
 Current backend event names for customer integrations are:
 
+- `dashboard_snapshot`
 - `orders_snapshot`
 - `shops_snapshot`
 - `on_way_snapshot`

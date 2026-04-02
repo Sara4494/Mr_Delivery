@@ -426,9 +426,12 @@ The customer orders socket `/ws/orders/customer/{customer_id}/?...` now streams 
 
 Immediately after the socket connects, the backend sends:
 
+- `dashboard_snapshot`
 - `orders_snapshot`
 - `shops_snapshot`
 - `on_way_snapshot`
+
+`dashboard_snapshot` is the primary event and contains all three lists in one payload.
 
 `orders_snapshot`:
 

@@ -87,6 +87,20 @@ Mr_Delivery/
 - **لوحة التحكم:** إحصائيات عامة.
 - **المحادثات:** WebSocket لمحادثات الطلبات.
 
+### Customer Dashboard WebSocket
+- Route: `ws/orders/customer/{customer_id}/?token=JWT&lang=ar`
+- Main snapshot event: `dashboard_snapshot`
+- Snapshot payload includes: `orders`, `shops`, and `on_way`
+- Read customer orders from `dashboard_snapshot.data.orders`
+- Read customer shops/conversations from `dashboard_snapshot.data.shops.results`
+- Read customer on-way orders from `dashboard_snapshot.data.on_way.results`
+- Manual refresh from the client: send `{ "type": "sync_dashboard" }`
+- REST reads removed from the customer dashboard flow:
+  - `GET /api/customer/orders/`
+  - `GET /api/customer/shops-conversations/`
+  - `GET /api/customer/orders/on-way/`
+- Order creation still uses: `POST /api/customer/orders/`
+
 ---
 
 ## النماذج (Models)
