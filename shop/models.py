@@ -668,6 +668,143 @@ class ChatMessage(models.Model):
         return f"رسالة من {self.sender_name} ({self.get_sender_type_display()}) - طلب #{self.order.order_number}"
 
 
+class CustomerSupportConversation(models.Model):
+    """Standalone customer support chat with a shop without creating an order."""
+
+    CONVERSATION_TYPE_CHOICES = [
+        ('inquiry', 'استفسار'),
+        ('complaint', 'شكوى'),
+    ]
+
+    STATUS_CHOICES = [
+        ('open', 'مفتوحة'),
+        ('closed', 'مغلقة'),
+    ]
+
+    shop_owner = models.ForeignKey(
+        ShopOwner,
+        on_delete=models.CASCADE,
+        related_name='customer_support_conversations',
+        verbose_name="صاحب المحل",
+    )
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='support_conversations',
+        verbose_name="العميل",
+    )
+    public_id = models.CharField(max_length=64, unique=True, blank=True, verbose_name="المعرف العام")
+    conversation_type = models.CharField(
+        max_length=20,
+        choices=CONVERSATION_TYPE_CHOICES,
+        verbose_name="نوع المحادثة",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='open',
+        verbose_name="الحالة",
+    )
+    unread_for_customer_count = models.PositiveIntegerField(default=0, verbose_name="غير المقروء للعميل")
+    unread_for_shop_count = models.PositiveIntegerField(default=0, verbose_name="غير المقروء للمحل")
+    last_message_preview = models.TextField(blank=True, null=True, verbose_name="معاينة آخر رسالة")
+    last_message_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت آخر رسالة")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "محادثة دعم عميل"
+        verbose_name_plural = "محادثات دعم العملاء"
+        ordering = ['-updated_at', '-created_at']
+        indexes = [
+            models.Index(fields=['customer', '-updated_at'], name='custsupconv_cust_upd_idx'),
+            models.Index(fields=['shop_owner', '-updated_at'], name='custsupconv_shop_upd_idx'),
+            models.Index(fields=['public_id'], name='custsupconv_public_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.public_id:
+            self.public_id = f"support_{self.pk}"
+            super().save(update_fields=['public_id'])
+
+    def __str__(self):
+        return f"{self.public_id}:{self.conversation_type}"
+
+
+class CustomerSupportMessage(models.Model):
+    """Messages inside standalone customer support chats."""
+
+    SENDER_TYPE_CHOICES = [
+        ('customer', 'عميل'),
+        ('shop_owner', 'صاحب المحل'),
+        ('employee', 'موظف'),
+    ]
+
+    MESSAGE_TYPE_CHOICES = ChatMessage.MESSAGE_TYPE_CHOICES
+
+    conversation = models.ForeignKey(
+        CustomerSupportConversation,
+        on_delete=models.CASCADE,
+        related_name='messages',
+        verbose_name="محادثة الدعم",
+    )
+    sender_type = models.CharField(max_length=20, choices=SENDER_TYPE_CHOICES, verbose_name="نوع المرسل")
+    sender_customer = models.ForeignKey(
+        Customer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sent_support_messages',
+        verbose_name="العميل المرسل",
+    )
+    sender_shop_owner = models.ForeignKey(
+        ShopOwner,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sent_support_messages',
+        verbose_name="صاحب المحل المرسل",
+    )
+    sender_employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sent_support_messages',
+        verbose_name="الموظف المرسل",
+    )
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPE_CHOICES, default='text', verbose_name="نوع الرسالة")
+    content = models.TextField(blank=True, null=True, verbose_name="محتوى الرسالة")
+    audio_file = models.FileField(upload_to='support_chat_audio/', blank=True, null=True, verbose_name="ملف صوتي")
+    image_file = models.ImageField(upload_to='support_chat_images/', blank=True, null=True, verbose_name="صورة")
+    latitude = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True, verbose_name="خط العرض")
+    longitude = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True, verbose_name="خط الطول")
+    is_read = models.BooleanField(default=False, verbose_name="مقروءة")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإرسال")
+
+    class Meta:
+        verbose_name = "رسالة دعم عميل"
+        verbose_name_plural = "رسائل دعم العملاء"
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['conversation', 'created_at'], name='custsupmsg_conv_created_idx'),
+        ]
+
+    @property
+    def sender_name(self):
+        if self.sender_type == 'customer' and self.sender_customer:
+            return self.sender_customer.name
+        if self.sender_type == 'shop_owner' and self.sender_shop_owner:
+            return self.sender_shop_owner.owner_name
+        if self.sender_type == 'employee' and self.sender_employee:
+            return self.sender_employee.name
+        return "غير معروف"
+
+    def __str__(self):
+        return f"رسالة دعم من {self.sender_name} - {self.conversation.public_id}"
+
+
 class Invoice(models.Model):
     """نموذج الفاتورة"""
     shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='invoices', verbose_name="صاحب المحل")

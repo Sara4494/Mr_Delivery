@@ -7,6 +7,7 @@ It covers:
 - Customer orders socket
 - Customer chat with shop
 - Customer chat with driver
+- Customer support chat with shop for `inquiry` / `complaint`
 - Driver live location updates
 - Dashboard snapshots for customer tabs
 - Ring / nudge notifications
@@ -33,7 +34,7 @@ All customer sockets require a JWT access token in the query string:
 Optional query parameters:
 
 - `lang=ar` or `lang=en`
-- `chat_type=shop_customer` or `chat_type=driver_customer` on chat sockets only
+- `chat_type=shop_customer` or `chat_type=driver_customer` on order chat sockets only
 
 Connection close codes used by the backend:
 
@@ -71,7 +72,7 @@ Important:
 
 - The three snapshots are now the source of truth for the customer tabs.
 - The frontend no longer needs REST just to render the orders list, shops-conversations tab, or on-way tab.
-- The same socket also receives incremental events such as `order_update`, `new_message`, and `driver_location`.
+- The same socket also receives incremental events such as `order_update`, `new_message`, `support_conversation_update`, `support_message`, and `driver_location`.
 
 Customer list endpoints replaced by the snapshots above:
 
@@ -120,6 +121,26 @@ What happens on connect:
 2. It sends a `connection` event.
 3. It immediately sends `previous_messages`.
 
+### 3.4 Customer support chat with shop
+
+Used for customer `inquiry` or `complaint` flows that should open chat immediately without creating an order.
+
+```text
+/ws/chat/support/{support_conversation_id}/?token=<JWT>
+```
+
+Allowed users:
+
+- `customer` who owns the support conversation
+- `shop_owner`
+- `employee`
+
+What happens on connect:
+
+1. The server validates token and support conversation access.
+2. It sends a `connection` event.
+3. It immediately sends `previous_messages`.
+
 ## 4. Rooms and Subscription Logic
 
 There is no explicit `join_order_room` or `leave_order_room`.
@@ -129,13 +150,16 @@ Subscription is implicit:
 - Opening `/ws/orders/customer/{customer_id}/...` joins the customer orders stream
 - Opening `/ws/chat/order/{order_id}/...?chat_type=shop_customer` joins the shop-customer chat room
 - Opening `/ws/chat/order/{order_id}/...?chat_type=driver_customer` joins the driver-customer chat room
+- Opening `/ws/chat/support/{support_conversation_id}/...` joins the standalone support chat room
 
 Realtime fan-out rules relevant to the customer:
 
 - `shop_customer` chat messages are broadcast to the chat room and the customer orders channel
 - `driver_customer` chat messages are broadcast to the chat room and the customer orders channel
+- `support_customer` chat messages are broadcast to the support chat room and to the customer orders channel as `support_message`
 - Driver live location updates are pushed to the customer orders channel
 - Order workflow changes are pushed to the customer orders channel as `order_update`
+- Support conversation metadata changes are pushed to the customer orders channel as `support_conversation_update`
 - Ring events can arrive on the customer orders channel and on the chat channel
 
 ## 5. Shared Payload Shapes
@@ -173,6 +197,71 @@ Notes:
 - `message_type` can be `text`, `location`, `audio`, or `image` depending on how the message was created.
 - Audio and image messages are uploaded through REST, then broadcast back over WebSocket.
 - `invoice` may be present for system/invoice-related messages.
+
+### 5.1A Support chat message object
+
+This shape appears in:
+
+- support chat `previous_messages.messages[]`
+- support chat `chat_message.data`
+- customer orders `support_message.data.message`
+
+```json
+{
+  "id": 9,
+  "support_conversation_id": "support_12",
+  "chat_type": "support_customer",
+  "conversation_type": "complaint",
+  "conversation_type_display": "شكوى",
+  "sender_type": "customer",
+  "sender_name": "Ahmed",
+  "sender_id": 7,
+  "message_type": "text",
+  "content": "عندي شكوى بخصوص الخدمة",
+  "latitude": null,
+  "longitude": null,
+  "is_read": false,
+  "created_at": "2026-04-02T12:30:00+02:00",
+  "audio_file_url": null,
+  "image_file_url": null
+}
+```
+
+### 5.1B Support conversation summary object
+
+This shape appears in:
+
+- `shops_snapshot.data.results[].support_conversation`
+- `support_conversation_update.data`
+- `support_message.data.conversation`
+
+```json
+{
+  "support_conversation_id": "support_12",
+  "conversation_type": "inquiry",
+  "conversation_type_display": "استفسار",
+  "status": "open",
+  "status_display": "مفتوحة",
+  "shop_id": 8,
+  "shop_name": "برجر كنچ",
+  "shop_logo_url": "/media/shops/logo.png",
+  "customer_id": 7,
+  "customer_name": "Ahmed",
+  "subtitle": "استفسار مفتوح",
+  "last_message_preview": null,
+  "last_message_at": null,
+  "unread_for_customer_count": 0,
+  "unread_for_shop_count": 0,
+  "created_at": "2026-04-02T12:28:00+02:00",
+  "updated_at": "2026-04-02T12:28:00+02:00",
+  "chat": {
+    "support_conversation_id": "support_12",
+    "chat_type": "support_customer",
+    "conversation_type": "inquiry",
+    "shop_id": 8
+  }
+}
+```
 
 ### 5.2 Order snapshot object
 
@@ -213,6 +302,8 @@ Server-to-client events on `/ws/orders/customer/{customer_id}/`:
 - `on_way_snapshot`
 - `order_update`
 - `new_message`
+- `support_conversation_update`
+- `support_message`
 - `driver_location`
 - `ring`
 - `ack`
@@ -229,6 +320,8 @@ Important:
 - After every successful connect, the backend sends the three snapshots.
 - After every `order_update`, the backend re-sends the three snapshots.
 - After every `new_message`, the backend re-sends the three snapshots.
+- After every `support_conversation_update`, the backend re-sends the three snapshots.
+- After every `support_message`, the backend re-sends the three snapshots.
 - `driver_location` is incremental only and does not trigger a full snapshot refresh by itself.
 
 ### 6.1 `connection`
@@ -286,6 +379,12 @@ Used for the customer shops-conversations tab.
   "message": "تمت مزامنة قائمة المحلات بنجاح"
 }
 ```
+
+Notes:
+
+- A result can point either to an order chat or to a standalone support chat.
+- When the latest customer-shop thread is a support chat, `chat.order_id` is absent and `chat.support_conversation_id` is present.
+- In that case the result can also include `support_conversation` with the full support conversation summary object.
 
 ### 6.4 `on_way_snapshot`
 
@@ -389,6 +488,48 @@ This can come from:
 ```
 
 After sending `new_message`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+
+### 6.7A `support_conversation_update`
+
+Sent when a standalone `inquiry` or `complaint` conversation is created or when its unread/summary metadata changes.
+
+```json
+{
+  "type": "support_conversation_update",
+  "data": {
+    "...": "same shape as one support conversation summary object"
+  }
+}
+```
+
+After sending `support_conversation_update`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
+
+### 6.7B `support_message`
+
+Sent when a new standalone support chat message is created.
+
+```json
+{
+  "type": "support_message",
+  "data": {
+    "support_conversation_id": "support_12",
+    "chat_type": "support_customer",
+    "conversation_type": "complaint",
+    "message": {
+      "...": "same shape as one support chat message object"
+    },
+    "conversation": {
+      "...": "same shape as one support conversation summary object"
+    },
+    "shop_id": 8,
+    "shop_name": "برجر كنچ",
+    "customer_id": 7,
+    "customer_name": "Ahmed"
+  }
+}
+```
+
+After sending `support_message`, the backend re-sends `orders_snapshot`, `shops_snapshot`, and `on_way_snapshot`.
 
 ### 6.8 `driver_location`
 
@@ -523,6 +664,10 @@ Server-to-client events on both:
 - `/ws/chat/order/{order_id}/?token=<JWT>&chat_type=shop_customer`
 - `/ws/chat/order/{order_id}/?token=<JWT>&chat_type=driver_customer`
 
+Server-to-client events on support chat:
+
+- `/ws/chat/support/{support_conversation_id}/?token=<JWT>`
+
 Server-to-client events:
 
 - `connection`
@@ -534,6 +679,16 @@ Server-to-client events:
 - `ack`
 - `error`
 
+Server-to-client events on support chat:
+
+- `connection`
+- `previous_messages`
+- `chat_message`
+- `messages_read`
+- `typing`
+- `ack`
+- `error`
+
 Client-to-server events:
 
 - `send_message`
@@ -542,6 +697,14 @@ Client-to-server events:
 - `mark_read`
 - `typing`
 - `ring`
+
+Client-to-server events on support chat:
+
+- `send_message`
+- `chat_message` as legacy compatibility
+- `location`
+- `mark_read`
+- `typing`
 
 ### 7.1 `connection`
 
@@ -573,6 +736,21 @@ Example for driver chat:
 }
 ```
 
+Example for support chat:
+
+```json
+{
+  "type": "connection",
+  "support_conversation_id": "support_12",
+  "chat_type": "support_customer",
+  "conversation_type": "complaint",
+  "user_type": "customer",
+  "message": "تم الاتصال بنجاح",
+  "message_ar": "تم الاتصال بنجاح",
+  "message_en": "Connected successfully"
+}
+```
+
 ### 7.2 `previous_messages`
 
 Sent immediately after a successful chat connect.
@@ -580,8 +758,8 @@ Sent immediately after a successful chat connect.
 Current backend behavior:
 
 - Returns up to 50 messages
-- Filtered by `order_id`
-- Filtered by the selected `chat_type`
+- On order chats: filtered by `order_id` and the selected `chat_type`
+- On support chats: filtered by `support_conversation_id`
 - Ordered ascending by `created_at`
 
 ```json
@@ -612,6 +790,7 @@ Works on:
 
 - `chat_type=shop_customer`
 - `chat_type=driver_customer`
+- `/ws/chat/support/{support_conversation_id}/?token=<JWT>`
 
 ### 7.4 Client event: legacy `chat_message`
 
@@ -651,7 +830,8 @@ Result:
 
 - Chat room receives `messages_read`
 - Sender receives `ack`
-- Related order streams receive `order_update`
+- On order chats: related order streams receive `order_update`
+- On support chats: related customer/shop streams receive `support_conversation_update`
 - Customer orders socket then receives the three snapshots again
 
 ### 7.7 Client event: `typing`
@@ -664,6 +844,8 @@ Result:
 ```
 
 ### 7.8 Client event: `ring`
+
+Supported only on order chat sockets.
 
 ```json
 {
@@ -687,6 +869,8 @@ When sent from a chat socket, the outgoing ring payload includes the current `ch
 }
 ```
 
+On support chat sockets, `data` uses the support chat message object instead.
+
 ### 7.10 Server event: `messages_read`
 
 ```json
@@ -695,6 +879,17 @@ When sent from a chat socket, the outgoing ring payload includes the current `ch
   "order_id": "7",
   "reader_type": "customer",
   "count": 3
+}
+```
+
+Support chat example:
+
+```json
+{
+  "type": "messages_read",
+  "support_conversation_id": "support_12",
+  "reader_type": "shop_owner",
+  "count": 2
 }
 ```
 
@@ -765,6 +960,23 @@ Used for successful client actions such as `send_message`, `chat_message`, `loca
 }
 ```
 
+Support chat example:
+
+```json
+{
+  "type": "ack",
+  "action": "send_message",
+  "success": true,
+  "request_id": "msg-201",
+  "data": {
+    "message_id": 9,
+    "support_conversation_id": "support_12",
+    "chat_type": "support_customer"
+  },
+  "message": "تم تنفيذ الطلب بنجاح"
+}
+```
+
 ### 7.14 Server event: `error`
 
 Examples of error codes from the current backend:
@@ -806,18 +1018,21 @@ Endpoint:
 
 ```text
 POST /api/chat/order/{order_id}/send-media/
+POST /api/chat/support/{support_conversation_id}/send-media/
 ```
 
 Form-data:
 
-- `chat_type=shop_customer` or `chat_type=driver_customer`
+- On order chat uploads: `chat_type=shop_customer` or `chat_type=driver_customer`
+- On support chat uploads: no `chat_type` is required because the route already identifies the support conversation
 - `audio_file` or `image_file`
 - optional `content`
 
 Realtime result:
 
 - Chat room receives `chat_message`
-- Related customer orders socket receives `new_message`
+- Order chat uploads push `new_message` on the related customer orders socket
+- Support chat uploads push `support_message` on the related customer orders socket
 - Customer orders socket then receives refreshed snapshots
 
 ## 9. Source of Truth
@@ -827,10 +1042,16 @@ Current backend source of truth for customer realtime behavior:
 - `shop/consumers.py`:
   - `CustomerOrderConsumer`
   - `ChatConsumer`
+  - `SupportChatConsumer`
 - `shop/websocket_utils.py`
 - `shop/serializers.py`:
   - `OrderSerializer`
   - `ChatMessageSerializer`
+  - `CustomerSupportConversationSerializer`
+  - `CustomerSupportMessageSerializer`
+- `shop/models.py`:
+  - `CustomerSupportConversation`
+  - `CustomerSupportMessage`
 - `shop/views.py` helpers used to build customer dashboard snapshot items
 
 If this document and implementation diverge, the implementation wins.
@@ -845,17 +1066,20 @@ On reconnect, the frontend should expect this sequence again:
 2. `orders_snapshot`
 3. `shops_snapshot`
 4. `on_way_snapshot`
-5. Resume live handling of `order_update`, `new_message`, `driver_location`, and `ring`
+5. Resume live handling of `order_update`, `new_message`, `support_conversation_update`, `support_message`, `driver_location`, and `ring`
 
 ### Customer chat sockets
 
 On reconnect, the frontend should:
 
-1. Re-open the active chat socket with the same `order_id` and `chat_type`
+1. Re-open the active chat socket:
+   - for order chat: with the same `order_id` and `chat_type`
+   - for support chat: with the same `support_conversation_id`
 2. Wait for `connection`
 3. Wait for `previous_messages`
 4. Resume sending `mark_read` if needed
-5. Resume live handling of `chat_message`, `messages_read`, `typing`, and `ring`
+5. Resume live handling of `chat_message`, `messages_read`, and `typing`
+6. On order chats only, also resume live handling of `ring`
 
 ## 11. Current Naming Notes
 
@@ -866,6 +1090,8 @@ Current backend event names for customer integrations are:
 - `on_way_snapshot`
 - `order_update`
 - `new_message`
+- `support_conversation_update`
+- `support_message`
 - `driver_location`
 - `chat_message`
 - `messages_read`
@@ -880,6 +1106,7 @@ Important naming notes:
 - The backend currently uses `mark_read`, not `mark_message_seen`
 - The backend currently uses `sync_dashboard`, and also accepts `refresh_dashboard` as an alias
 - There is no separate `order_cancelled` event; cancellation comes through `order_update`
+- Standalone `inquiry` / `complaint` chat uses `support_conversation_update` and `support_message`, not `order_update`
 
 ## 12. Customer UI Action Map
 
@@ -934,6 +1161,50 @@ Realtime result:
 - Shop and customer flows receive `new_message`
 - If the customer orders socket is already open, it also receives fresh customer dashboard snapshots
 
+### 12.1A Open inquiry / complaint chat without order
+
+Purpose:
+
+- Open customer support chat immediately with the selected shop without creating an order or invoice flow
+
+Transport:
+
+- REST
+
+Endpoint:
+
+```text
+POST /api/customer/support-chats/
+```
+
+Request body example:
+
+```json
+{
+  "shop_owner_id": 12,
+  "conversation_type": "complaint",
+  "initial_message": "عندي شكوى بخصوص الخدمة"
+}
+```
+
+Allowed `conversation_type` values:
+
+- `inquiry`
+- `complaint`
+
+Backend behavior:
+
+- Creates a standalone support conversation linked to the customer and shop
+- Returns `support_conversation_id`
+- Does not create an order
+- If `initial_message` is provided, creates the first support message immediately
+
+Realtime result:
+
+- Customer orders socket receives `support_conversation_update`
+- If `initial_message` is provided, customer orders socket also receives `support_message`
+- `shops_snapshot` refreshes so the shop thread can point to `support_conversation_id`
+
 ### 12.2 Send text message
 
 Transport:
@@ -944,6 +1215,7 @@ Socket:
 
 - `/ws/chat/order/{order_id}/?token=<JWT>&chat_type=shop_customer`
 - `/ws/chat/order/{order_id}/?token=<JWT>&chat_type=driver_customer`
+- `/ws/chat/support/{support_conversation_id}/?token=<JWT>`
 
 Client payload:
 
@@ -960,7 +1232,8 @@ Realtime result:
 
 - Chat room receives `chat_message`
 - Sender receives `ack`
-- Customer orders socket receives `new_message`
+- On order chat, customer orders socket receives `new_message`
+- On support chat, customer orders socket receives `support_message`
 - Customer orders socket receives refreshed snapshots
 
 ### 12.3 Send audio file
@@ -973,18 +1246,21 @@ Endpoint:
 
 ```text
 POST /api/chat/order/{order_id}/send-media/
+POST /api/chat/support/{support_conversation_id}/send-media/
 ```
 
 Form-data:
 
-- `chat_type=shop_customer` or `chat_type=driver_customer`
+- On order chat uploads: `chat_type=shop_customer` or `chat_type=driver_customer`
+- On support chat uploads: no `chat_type` is required
 - `audio_file`
 - optional `content`
 
 Realtime result:
 
 - Chat room receives `chat_message` with `message_type=audio`
-- Customer orders socket receives `new_message`
+- On order chat, customer orders socket receives `new_message`
+- On support chat, customer orders socket receives `support_message`
 - Customer orders socket receives refreshed snapshots
 
 ### 12.4 Send image
@@ -997,18 +1273,21 @@ Endpoint:
 
 ```text
 POST /api/chat/order/{order_id}/send-media/
+POST /api/chat/support/{support_conversation_id}/send-media/
 ```
 
 Form-data:
 
-- `chat_type=shop_customer` or `chat_type=driver_customer`
+- On order chat uploads: `chat_type=shop_customer` or `chat_type=driver_customer`
+- On support chat uploads: no `chat_type` is required
 - `image_file`
 - optional `content`
 
 Realtime result:
 
 - Chat room receives `chat_message` with `message_type=image`
-- Customer orders socket receives `new_message`
+- On order chat, customer orders socket receives `new_message`
+- On support chat, customer orders socket receives `support_message`
 - Customer orders socket receives refreshed snapshots
 
 ### 12.5 Send current location
@@ -1033,7 +1312,8 @@ Realtime result:
 
 - Chat room receives `chat_message` with `message_type=location`
 - Sender receives `ack`
-- Customer orders socket receives `new_message`
+- On order chat, customer orders socket receives `new_message`
+- On support chat, customer orders socket receives `support_message`
 - Customer orders socket receives refreshed snapshots
 
 ### 12.6 Mark messages as read
@@ -1055,7 +1335,8 @@ Realtime result:
 
 - Chat room receives `messages_read`
 - Sender receives `ack`
-- Related order streams receive `order_update`
+- On order chat, related order streams receive `order_update`
+- On support chat, related customer/shop streams receive `support_conversation_update`
 - Customer orders socket receives refreshed snapshots
 
 ### 12.7 Send ring / nudge
@@ -1069,6 +1350,8 @@ Possible sockets:
 - `/ws/orders/customer/{customer_id}/?token=<JWT>`
 - `/ws/chat/order/{order_id}/?token=<JWT>&chat_type=shop_customer`
 - `/ws/chat/order/{order_id}/?token=<JWT>&chat_type=driver_customer`
+
+`ring` is not supported on `/ws/chat/support/{support_conversation_id}/`.
 
 Client payload:
 

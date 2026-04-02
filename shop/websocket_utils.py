@@ -165,6 +165,32 @@ def broadcast_chat_message_to_customer(order_id, chat_type, message_payload, req
         send_to_group(f'customer_orders_{order.customer_id}', 'new_message', notification_payload)
 
 
+def broadcast_support_chat_message(conversation_id, message_payload):
+    """Send a support chat message to the standalone support chat room."""
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            f'support_chat_{conversation_id}',
+            {'type': 'chat_message', 'message': message_payload}
+        )
+
+
+def notify_support_conversation_update(shop_owner_id, customer_id, conversation_data):
+    """Notify shop/customer channels that a support conversation was created or updated."""
+    if shop_owner_id:
+        send_to_group(f'shop_orders_{shop_owner_id}', 'support_conversation_update', conversation_data)
+    if customer_id:
+        send_to_group(f'customer_orders_{customer_id}', 'support_conversation_update', conversation_data)
+
+
+def notify_support_message(shop_owner_id, customer_id, message_data):
+    """Notify shop/customer dashboard channels about a new support message."""
+    if shop_owner_id:
+        send_to_group(f'shop_orders_{shop_owner_id}', 'support_message', message_data)
+    if customer_id:
+        send_to_group(f'customer_orders_{customer_id}', 'support_message', message_data)
+
+
 # ==================== Driver Location ====================
 
 def broadcast_driver_location(driver_id, customer_ids, latitude, longitude):

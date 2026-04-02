@@ -18,6 +18,7 @@ migrations/
 shop/migrations/*
 !shop/migrations/__init__.py
 !shop/migrations/0009_driver_chat_backend.py
+!shop/migrations/0009_customer_support_chat.py
 # Static files
 staticfiles/
 

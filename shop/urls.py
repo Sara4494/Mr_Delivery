@@ -66,6 +66,7 @@ urlpatterns = [
     path('shop/driver-chats/mark-read/', driver_chat_views.driver_chat_mark_read_view, name='driver_chat_mark_read'),
     path('shop/driver-chats/resync/', driver_chat_views.driver_chat_resync_view, name='driver_chat_resync'),
     path('shop/driver-chats/calls/<str:call_id>/', driver_chat_views.driver_chat_call_detail_view, name='driver_chat_call_detail'),
+    path('shop/support-chats/', views.shop_support_conversations_view, name='shop_support_conversations'),
     
     # Dashboard Statistics
     path('shop/dashboard/statistics/', views.shop_dashboard_statistics_view, name='dashboard_statistics'),
@@ -100,6 +101,7 @@ urlpatterns = [
     
     # ==================== Customer Orders (طلب أوردر - البند 1، 2، 3، ...) ====================
     path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
+    path('customer/support-chats/', views.customer_support_conversations_view, name='customer_support_conversations'),
     path('customer/shops-conversations/', views.customer_shops_conversations_view, name='customer_shops_conversations'),
     path('customer/orders/on-way/', views.customer_on_way_orders_view, name='customer_orders_on_way'),
     path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
@@ -126,6 +128,8 @@ urlpatterns = [
     
     # ==================== Chat ====================
     path('chat/order/<int:order_id>/send-media/', views.chat_order_media_upload_view, name='chat_order_media_upload'),
+    path('chat/support/<str:conversation_id>/send-media/', views.support_chat_media_upload_view, name='support_chat_media_upload'),
     # الشات يتم عبر WebSocket فقط:
     # ws://server/ws/chat/order/{order_id}/?token=JWT&chat_type=shop_customer
+    # ws://server/ws/chat/support/{conversation_id}/?token=JWT
 ]

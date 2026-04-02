@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
+    CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, ShopReview, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
 )
@@ -35,6 +36,9 @@ from .serializers import (
     ShopOrderListSerializer,
     OrderCreateSerializer,
     CustomerOrderCreateSerializer,
+    CustomerSupportConversationCreateSerializer,
+    CustomerSupportConversationSerializer,
+    CustomerSupportMessageSerializer,
     InvoiceSerializer,
     InvoiceCreateSerializer,
     EmployeeSerializer,
@@ -80,6 +84,8 @@ from .websocket_utils import (
     broadcast_chat_message_to_order,
     broadcast_chat_message_to_customer,
     broadcast_chat_message,
+    notify_support_conversation_update,
+    notify_support_message,
     notify_shop_status_updated,
     notify_driver_status_updated,
 )
@@ -3706,6 +3712,32 @@ def _build_customer_message_summary_payload(message, request):
     }
 
 
+def _build_support_message_payload(message, request=None, base_url=None):
+    serializer = CustomerSupportMessageSerializer(
+        message,
+        context={'request': request, 'base_url': base_url} if request is not None or base_url else {}
+    )
+    serialized = serializer.data
+    return {
+        'id': serialized.get('id'),
+        'support_conversation_id': serialized.get('support_conversation_id'),
+        'chat_type': serialized.get('chat_type'),
+        'conversation_type': serialized.get('conversation_type'),
+        'conversation_type_display': serialized.get('conversation_type_display'),
+        'sender_type': serialized.get('sender_type'),
+        'sender_name': serialized.get('sender_name'),
+        'sender_id': serialized.get('sender_id'),
+        'message_type': serialized.get('message_type'),
+        'content': serialized.get('content'),
+        'is_read': serialized.get('is_read'),
+        'created_at': serialized.get('created_at'),
+        'audio_file_url': serialized.get('audio_file_url'),
+        'image_file_url': serialized.get('image_file_url'),
+        'latitude': serialized.get('latitude'),
+        'longitude': serialized.get('longitude'),
+    }
+
+
 def _build_customer_order_brief_payload(order):
     return {
         'id': order.id,
@@ -3756,6 +3788,39 @@ def _build_customer_shop_conversation_item(order, request, base_url=None):
             'chat_type': 'shop_customer',
             'shop_id': order.shop_owner_id,
         },
+    }
+
+
+def _build_customer_support_shop_conversation_item(conversation, request, base_url=None):
+    payload = CustomerSupportConversationSerializer(
+        conversation,
+        context={'request': request, 'base_url': base_url} if request is not None or base_url else {}
+    ).data
+    return {
+        'shop_id': payload.get('shop_id'),
+        'shop_name': payload.get('shop_name'),
+        'shop_logo_url': payload.get('shop_logo_url'),
+        'subtitle': payload.get('subtitle'),
+        'chat': payload.get('chat'),
+        'support_conversation': payload,
+    }
+
+
+def _build_support_message_notification_payload(conversation, message, request=None, base_url=None):
+    conversation_payload = CustomerSupportConversationSerializer(
+        conversation,
+        context={'request': request, 'base_url': base_url} if request is not None or base_url else {}
+    ).data
+    return {
+        'support_conversation_id': conversation.public_id,
+        'chat_type': 'support_customer',
+        'conversation_type': conversation.conversation_type,
+        'message': _build_support_message_payload(message, request=request, base_url=base_url),
+        'conversation': conversation_payload,
+        'shop_id': conversation.shop_owner_id,
+        'shop_name': conversation.shop_owner.shop_name,
+        'customer_id': conversation.customer_id,
+        'customer_name': conversation.customer.name,
     }
 
 
@@ -3827,6 +3892,19 @@ def _sender_kwargs_for_user(user, user_type):
     return sender_kwargs
 
 
+def _support_sender_kwargs_for_user(user, user_type):
+    sender_kwargs = {'sender_type': user_type}
+    if user_type == 'customer':
+        sender_kwargs['sender_customer'] = user
+    elif user_type == 'shop_owner':
+        sender_kwargs['sender_shop_owner'] = user
+    elif user_type == 'employee':
+        sender_kwargs['sender_employee'] = user
+    else:
+        return None
+    return sender_kwargs
+
+
 def _can_user_access_chat(order, user, user_type, chat_type):
     if user_type == 'shop_owner':
         return chat_type == 'shop_customer' and order.shop_owner_id == user.id
@@ -3838,6 +3916,16 @@ def _can_user_access_chat(order, user, user_type, chat_type):
         if order.customer_id != user.id:
             return False
         return chat_type in {'shop_customer', 'driver_customer'}
+    return False
+
+
+def _can_user_access_support_conversation(conversation, user, user_type):
+    if user_type == 'shop_owner':
+        return conversation.shop_owner_id == getattr(user, 'id', None)
+    if user_type == 'employee':
+        return conversation.shop_owner_id == getattr(user, 'shop_owner_id', None)
+    if user_type == 'customer':
+        return conversation.customer_id == getattr(user, 'id', None)
     return False
 
 
@@ -3931,6 +4019,225 @@ def chat_order_media_upload_view(request, order_id):
         data=serialized,
         message='تم إرسال الوسائط بنجاح',
         status_code=status.HTTP_201_CREATED
+    )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsCustomer])
+def customer_support_conversations_view(request):
+    """
+    Create or list standalone customer support chats.
+    GET /api/customer/support-chats/
+    POST /api/customer/support-chats/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        conversations = (
+            CustomerSupportConversation.objects
+            .filter(customer=customer)
+            .select_related('shop_owner', 'customer')
+            .order_by('-updated_at', '-created_at')
+        )
+        serializer = CustomerSupportConversationSerializer(conversations, many=True, context={'request': request})
+        return success_response(
+            data={
+                'count': len(serializer.data),
+                'results': serializer.data,
+            },
+            message='support_conversations_retrieved_successfully',
+            status_code=status.HTTP_200_OK,
+            request=request,
+        )
+
+    serializer = CustomerSupportConversationCreateSerializer(
+        data=request.data,
+        context={'customer': customer, 'request': request},
+    )
+    if not serializer.is_valid():
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    conversation = serializer.save()
+    initial_message = str(serializer.validated_data.get('initial_message') or '').strip()
+    if initial_message:
+        message = CustomerSupportMessage.objects.create(
+            conversation=conversation,
+            sender_type='customer',
+            sender_customer=customer,
+            message_type='text',
+            content=initial_message,
+        )
+        conversation.last_message_preview = initial_message
+        conversation.last_message_at = message.created_at
+        conversation.unread_for_shop_count = conversation.messages.filter(
+            is_read=False,
+            sender_type='customer',
+        ).count()
+        conversation.unread_for_customer_count = conversation.messages.filter(
+            is_read=False,
+        ).exclude(sender_type='customer').count()
+        conversation.save(update_fields=[
+            'last_message_preview',
+            'last_message_at',
+            'unread_for_shop_count',
+            'unread_for_customer_count',
+            'updated_at',
+        ])
+        support_payload = _build_support_message_notification_payload(conversation, message, request=request)
+        notify_support_message(conversation.shop_owner_id, conversation.customer_id, support_payload)
+
+    response_serializer = CustomerSupportConversationSerializer(conversation, context={'request': request})
+    notify_support_conversation_update(
+        conversation.shop_owner_id,
+        conversation.customer_id,
+        response_serializer.data,
+    )
+    return success_response(
+        data=response_serializer.data,
+        message='تم فتح المحادثة بنجاح',
+        status_code=status.HTTP_201_CREATED,
+        request=request,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsShopOwnerOrEmployee])
+def shop_support_conversations_view(request):
+    """
+    List standalone customer support chats for a shop.
+    GET /api/shop/support-chats/
+    """
+    shop_owner = _get_shop_owner_from_request(request)
+    if not shop_owner:
+        return error_response(message=t(request, 'shop_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    conversations = (
+        CustomerSupportConversation.objects
+        .filter(shop_owner=shop_owner)
+        .select_related('shop_owner', 'customer')
+        .order_by('-updated_at', '-created_at')
+    )
+    serializer = CustomerSupportConversationSerializer(conversations, many=True, context={'request': request})
+    return success_response(
+        data={
+            'count': len(serializer.data),
+            'results': serializer.data,
+        },
+        message='support_conversations_retrieved_successfully',
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def support_chat_media_upload_view(request, conversation_id):
+    """
+    Upload support chat media then broadcast instantly to WebSocket subscribers.
+    POST /api/chat/support/{conversation_id}/send-media/
+    """
+    try:
+        conversation = (
+            CustomerSupportConversation.objects
+            .select_related('shop_owner', 'customer')
+            .get(public_id=conversation_id)
+        )
+    except CustomerSupportConversation.DoesNotExist:
+        return error_response(
+            message='محادثة الدعم غير موجودة.',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    user = request.user
+    user_type = _resolve_user_type(user)
+    if not user_type or not _can_user_access_support_conversation(conversation, user, user_type):
+        return error_response(
+            message='ليس لديك صلاحية للوصول إلى هذه المحادثة.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    image_file = request.FILES.get('image_file')
+    audio_file = request.FILES.get('audio_file')
+    if bool(image_file) == bool(audio_file):
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'file': 'Send exactly one file: image_file or audio_file.'},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    requested_type = str(request.data.get('message_type') or '').strip().lower()
+    if image_file:
+        if requested_type and requested_type != 'image':
+            return error_response(
+                message=t(request, 'invalid_data'),
+                errors={'message_type': 'message_type must be image when image_file is provided.'},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        message_type = 'image'
+        default_preview = 'صورة'
+    else:
+        if requested_type and requested_type != 'audio':
+            return error_response(
+                message=t(request, 'invalid_data'),
+                errors={'message_type': 'message_type must be audio when audio_file is provided.'},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        message_type = 'audio'
+        default_preview = 'رسالة صوتية'
+
+    sender_kwargs = _support_sender_kwargs_for_user(user, user_type)
+    if not sender_kwargs:
+        return error_response(
+            message='ليس لديك صلاحية للإرسال في هذه المحادثة.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    content = str(request.data.get('content') or '').strip() or None
+    message = CustomerSupportMessage.objects.create(
+        conversation=conversation,
+        message_type=message_type,
+        content=content,
+        audio_file=audio_file,
+        image_file=image_file,
+        **sender_kwargs,
+    )
+    conversation.last_message_preview = content or default_preview
+    conversation.last_message_at = message.created_at
+    conversation.unread_for_shop_count = conversation.messages.filter(
+        is_read=False,
+        sender_type='customer',
+    ).count()
+    conversation.unread_for_customer_count = conversation.messages.filter(
+        is_read=False,
+    ).exclude(sender_type='customer').count()
+    conversation.save(update_fields=[
+        'last_message_preview',
+        'last_message_at',
+        'unread_for_shop_count',
+        'unread_for_customer_count',
+        'updated_at',
+    ])
+
+    payload = _build_support_message_payload(message, request=request)
+    from .websocket_utils import broadcast_support_chat_message
+    broadcast_support_chat_message(conversation.public_id, payload)
+    notify_support_message(
+        conversation.shop_owner_id,
+        conversation.customer_id,
+        _build_support_message_notification_payload(conversation, message, request=request),
+    )
+
+    serialized = CustomerSupportMessageSerializer(message, context={'request': request}).data
+    return success_response(
+        data=serialized,
+        message='تم إرسال الوسائط بنجاح',
+        status_code=status.HTTP_201_CREATED,
     )
 
 
@@ -5162,6 +5469,12 @@ def customer_shops_conversations_view(request):
         )
         .order_by('-updated_at', '-created_at')
     )
+    support_conversations = (
+        CustomerSupportConversation.objects
+        .filter(customer=customer)
+        .select_related('shop_owner')
+        .order_by('-updated_at', '-created_at')
+    )
 
     grouped_by_shop = {}
     for order in orders:
@@ -5169,11 +5482,31 @@ def customer_shops_conversations_view(request):
             continue
 
         shop_id = order.shop_owner_id
-        if shop_id not in grouped_by_shop:
-            grouped_by_shop[shop_id] = _build_customer_shop_conversation_item(order, request)
+        order_timestamp = order.updated_at or order.created_at
+        current = grouped_by_shop.get(shop_id)
+        if current is None or order_timestamp >= current['timestamp']:
+            grouped_by_shop[shop_id] = {
+                'timestamp': order_timestamp,
+                'payload': _build_customer_shop_conversation_item(order, request),
+            }
+
+    for conversation in support_conversations:
+        if not conversation.shop_owner_id:
             continue
 
-    results = list(grouped_by_shop.values())
+        shop_id = conversation.shop_owner_id
+        conversation_timestamp = conversation.last_message_at or conversation.updated_at or conversation.created_at
+        current = grouped_by_shop.get(shop_id)
+        if current is None or conversation_timestamp >= current['timestamp']:
+            grouped_by_shop[shop_id] = {
+                'timestamp': conversation_timestamp,
+                'payload': _build_customer_support_shop_conversation_item(conversation, request),
+            }
+
+    results = [
+        item['payload']
+        for item in sorted(grouped_by_shop.values(), key=lambda value: value['timestamp'], reverse=True)
+    ]
     return success_response(
         data={
             'count': len(results),

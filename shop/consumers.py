@@ -5,7 +5,15 @@ from channels.db import database_sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Prefetch
 from django.utils import timezone
-from .models import Order, ChatMessage, Customer, Employee, Driver
+from .models import (
+    Order,
+    ChatMessage,
+    Customer,
+    Employee,
+    Driver,
+    CustomerSupportConversation,
+    CustomerSupportMessage,
+)
 from .presence import (
     build_customer_presence_broadcast_batches,
     get_order_customer_presence_snapshot,
@@ -13,7 +21,12 @@ from .presence import (
     mark_customer_websocket_disconnected,
 )
 from user.models import ShopOwner
-from .serializers import ChatMessageSerializer, OrderSerializer
+from .serializers import (
+    ChatMessageSerializer,
+    OrderSerializer,
+    CustomerSupportConversationSerializer,
+    CustomerSupportMessageSerializer,
+)
 from .driver_chat_service import (
     broadcast_driver_presence_update,
     mark_driver_connected,
@@ -1005,6 +1018,591 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return None
 
 
+class SupportChatConsumer(AsyncWebsocketConsumer):
+    """
+    Standalone support chat between customer and shop without an order.
+
+    Allowed users:
+    - customer <-> shop_owner
+    - customer <-> employee
+
+    URL: ws://server/ws/chat/support/{conversation_id}/?token=JWT_TOKEN
+    """
+
+    async def connect(self):
+        try:
+            self.conversation_id = self.scope['url_route']['kwargs']['conversation_id']
+            query_string = self.scope.get('query_string', b'').decode('utf-8')
+            self.lang = 'ar'
+            if 'lang=' in query_string:
+                self.lang = query_string.split('lang=')[-1].split('&')[0]
+
+            self.chat_type = 'support_customer'
+            self.room_group_name = f'support_chat_{self.conversation_id}'
+            self.base_url = resolve_base_url(scope=self.scope)
+
+            user = self.scope.get('user')
+            user_type = self.scope.get('user_type')
+            if not user or not user_type:
+                await self.close(code=4401)
+                return
+
+            has_access = await self.check_conversation_access(user, user_type)
+            if not has_access:
+                await self.close(code=4403)
+                return
+
+            if user_type not in ['customer', 'shop_owner', 'employee']:
+                await self.close(code=4403)
+                return
+
+            self.user = user
+            self.user_type = user_type
+            self.customer_presence_registered = False
+
+            await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+            await self.accept()
+
+            if self.user_type == 'customer':
+                presence_state = await self.register_customer_presence('support_chat')
+                self.customer_presence_registered = bool(presence_state)
+
+            conversation = await self.get_conversation()
+            await self.send(text_data=_json_dumps(_with_localized_message(
+                {
+                    'type': 'connection',
+                    'support_conversation_id': self.conversation_id,
+                    'chat_type': self.chat_type,
+                    'conversation_type': conversation.conversation_type if conversation else None,
+                    'user_type': self.user_type,
+                },
+                'تم الاتصال بنجاح',
+                lang=self.lang,
+            )))
+
+            previous_messages = await self.get_previous_messages()
+            await self.send(text_data=_json_dumps({
+                'type': 'previous_messages',
+                'messages': previous_messages,
+            }))
+
+        except Exception as e:
+            print(f"[SupportChatConsumer.connect] error: {e}")
+            await self.close(code=1011)
+            if hasattr(self, 'room_group_name'):
+                await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+        if getattr(self, 'customer_presence_registered', False):
+            await self.unregister_customer_presence()
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+            event_type = data.get('type', 'chat_message')
+            request_id = data.get('request_id')
+
+            if event_type in ['chat_message', 'send_message']:
+                if data.get('message_type') == 'location':
+                    await self.handle_location(data, request_id=request_id, action=event_type)
+                else:
+                    await self.handle_chat_message(data, request_id=request_id, action=event_type)
+            elif event_type == 'mark_read':
+                await self.handle_mark_read(request_id=request_id)
+            elif event_type == 'typing':
+                await self.handle_typing(data)
+            elif event_type == 'location':
+                await self.handle_location(data, request_id=request_id, action=event_type)
+            else:
+                await self.send_error_event(
+                    code='UNKNOWN_EVENT',
+                    message='نوع الحدث غير مدعوم',
+                    request_id=request_id,
+                    details={'type': event_type},
+                )
+        except json.JSONDecodeError:
+            await self.send_error_event(
+                code='INVALID_JSON',
+                message='تنسيق البيانات غير صحيح',
+            )
+        except Exception as e:
+            print(f"[SupportChatConsumer.receive] error: {e}")
+            await self.send_error_event(
+                code='UNEXPECTED_ERROR',
+                message='حدث خطأ غير متوقع',
+                details={'error_detail': str(e)},
+            )
+
+    async def handle_chat_message(self, data, request_id=None, action='chat_message'):
+        content = data.get('content', '')
+        msg_type = data.get('message_type', 'text')
+
+        if msg_type not in ['text', 'location']:
+            await self.send_error_event(
+                code='UNSUPPORTED_MESSAGE_TYPE',
+                message='هذا النوع من الرسائل غير مدعوم عبر الـ WebSocket',
+                request_id=request_id,
+                details={'message_type': msg_type},
+            )
+            return
+
+        if msg_type == 'text' and not content:
+            await self.send_error_event(
+                code='MESSAGE_CONTENT_REQUIRED',
+                message='محتوى الرسالة مطلوب',
+                request_id=request_id,
+            )
+            return
+
+        message = await self.save_message(
+            content=content,
+            message_type=msg_type,
+            latitude=data.get('latitude'),
+            longitude=data.get('longitude'),
+        )
+        if not message:
+            await self.send_error_event(
+                code='MESSAGE_SAVE_FAILED',
+                message='تعذر حفظ الرسالة',
+                request_id=request_id,
+            )
+            return
+
+        serialized = await self.serialize_message(message)
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'chat_message',
+                'message': serialized,
+            }
+        )
+        await self.broadcast_support_message_notification(serialized)
+        await self.send_ack(
+            action=action,
+            request_id=request_id,
+            data={
+                'message_id': message.id,
+                'support_conversation_id': self.conversation_id,
+                'chat_type': self.chat_type,
+            },
+        )
+
+    async def handle_location(self, data, request_id=None, action='location'):
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        content = data.get('content', 'موقعي الحالي')
+
+        if latitude is None or longitude is None:
+            await self.send_error_event(
+                code='LOCATION_COORDINATES_REQUIRED',
+                message='الإحداثيات مطلوبة',
+                request_id=request_id,
+            )
+            return
+
+        message = await self.save_message(
+            content=content,
+            message_type='location',
+            latitude=latitude,
+            longitude=longitude,
+        )
+        if not message:
+            await self.send_error_event(
+                code='MESSAGE_SAVE_FAILED',
+                message='تعذر حفظ رسالة الموقع',
+                request_id=request_id,
+            )
+            return
+
+        serialized = await self.serialize_message(message)
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'chat_message',
+                'message': serialized,
+            }
+        )
+        await self.broadcast_support_message_notification(serialized)
+        await self.send_ack(
+            action=action,
+            request_id=request_id,
+            data={
+                'message_id': message.id,
+                'support_conversation_id': self.conversation_id,
+                'chat_type': self.chat_type,
+            },
+        )
+
+    async def handle_mark_read(self, request_id=None):
+        marked_count = await self.mark_messages_as_read()
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'messages_read',
+                'support_conversation_id': self.conversation_id,
+                'reader_type': self.user_type,
+                'count': marked_count,
+            }
+        )
+        await self.broadcast_conversation_update()
+        await self.send_ack(
+            action='mark_read',
+            request_id=request_id,
+            data={
+                'support_conversation_id': self.conversation_id,
+                'count': marked_count,
+            },
+        )
+
+    async def handle_typing(self, data):
+        is_typing = data.get('is_typing', False)
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'typing_indicator',
+                'user_type': self.user_type,
+                'user_name': await self.get_user_name(),
+                'is_typing': is_typing,
+            }
+        )
+
+    async def chat_message(self, event):
+        from user.utils import localize_message
+        msg_data = dict(event['message'])
+        msg_data['content'] = localize_message(None, msg_data.get('content'), lang=getattr(self, 'lang', 'ar'))
+        await self.send(text_data=_json_dumps({
+            'type': 'chat_message',
+            'data': msg_data,
+        }))
+
+    async def messages_read(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'messages_read',
+            'support_conversation_id': event['support_conversation_id'],
+            'reader_type': event['reader_type'],
+            'count': event.get('count', 0),
+        }))
+
+    async def typing_indicator(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'typing',
+            'user_type': event['user_type'],
+            'user_name': event['user_name'],
+            'is_typing': event['is_typing'],
+        }))
+
+    async def send_ack(self, action, request_id=None, data=None, message='تم تنفيذ الطلب بنجاح'):
+        payload = {
+            'type': 'ack',
+            'action': action,
+            'success': True,
+            'data': data or {},
+        }
+        if request_id is not None:
+            payload['request_id'] = request_id
+        await self.send(text_data=_json_dumps(_with_localized_message(payload, message, lang=getattr(self, 'lang', None))))
+
+    async def send_error_event(self, code, message, request_id=None, details=None):
+        payload = {
+            'type': 'error',
+            'success': False,
+            'code': code,
+        }
+        if request_id is not None:
+            payload['request_id'] = request_id
+        if details:
+            payload['details'] = details
+        await self.send(text_data=_json_dumps(_with_localized_message(payload, message, lang=getattr(self, 'lang', None))))
+
+    async def broadcast_support_message_notification(self, message_payload):
+        notification_payload = await self.build_support_message_notification(message_payload)
+        if not notification_payload:
+            return
+
+        shop_owner_id, customer_id = await self.get_support_notification_targets()
+        target_groups = []
+        if shop_owner_id:
+            target_groups.append(f'shop_orders_{shop_owner_id}')
+        if customer_id:
+            target_groups.append(f'customer_orders_{customer_id}')
+
+        for group_name in target_groups:
+            await self.channel_layer.group_send(
+                group_name,
+                {
+                    'type': 'support_message',
+                    'data': notification_payload,
+                }
+            )
+
+    async def broadcast_conversation_update(self):
+        conversation_payload = await self.serialize_conversation()
+        if not conversation_payload:
+            return
+
+        shop_owner_id, customer_id = await self.get_support_notification_targets()
+        target_groups = []
+        if shop_owner_id:
+            target_groups.append(f'shop_orders_{shop_owner_id}')
+        if customer_id:
+            target_groups.append(f'customer_orders_{customer_id}')
+
+        for group_name in target_groups:
+            await self.channel_layer.group_send(
+                group_name,
+                {
+                    'type': 'support_conversation_update',
+                    'data': conversation_payload,
+                }
+            )
+
+    @database_sync_to_async
+    def get_conversation(self):
+        return (
+            CustomerSupportConversation.objects
+            .select_related('shop_owner', 'customer')
+            .filter(public_id=self.conversation_id)
+            .first()
+        )
+
+    @database_sync_to_async
+    def register_customer_presence(self, connection_type):
+        return mark_customer_websocket_connected(
+            customer_id=self.user.id,
+            channel_name=self.channel_name,
+            connection_type=connection_type,
+        )
+
+    @database_sync_to_async
+    def unregister_customer_presence(self):
+        return mark_customer_websocket_disconnected(self.channel_name)
+
+    @database_sync_to_async
+    def check_conversation_access(self, user, user_type):
+        conversation = (
+            CustomerSupportConversation.objects
+            .select_related('shop_owner', 'customer')
+            .filter(public_id=self.conversation_id)
+            .first()
+        )
+        if not conversation:
+            return False
+        if user_type == 'shop_owner':
+            return conversation.shop_owner_id == user.id
+        if user_type == 'employee':
+            return conversation.shop_owner_id == getattr(user, 'shop_owner_id', None)
+        if user_type == 'customer':
+            return conversation.customer_id == user.id
+        return False
+
+    @database_sync_to_async
+    def save_message(self, content, message_type='text', latitude=None, longitude=None):
+        try:
+            conversation = CustomerSupportConversation.objects.get(public_id=self.conversation_id)
+            sender_kwargs = {'sender_type': self.user_type}
+            if self.user_type == 'customer':
+                sender_kwargs['sender_customer'] = self.user
+            elif self.user_type == 'shop_owner':
+                sender_kwargs['sender_shop_owner'] = self.user
+            elif self.user_type == 'employee':
+                sender_kwargs['sender_employee'] = self.user
+            else:
+                return None
+
+            message = CustomerSupportMessage.objects.create(
+                conversation=conversation,
+                message_type=message_type,
+                content=content,
+                latitude=latitude,
+                longitude=longitude,
+                **sender_kwargs,
+            )
+
+            preview = content
+            if not preview:
+                if message_type == 'audio':
+                    preview = 'رسالة صوتية'
+                elif message_type == 'image':
+                    preview = 'صورة'
+                elif message_type == 'location':
+                    preview = 'موقع'
+
+            conversation.last_message_preview = preview
+            conversation.last_message_at = message.created_at
+            conversation.unread_for_shop_count = conversation.messages.filter(
+                is_read=False,
+                sender_type='customer',
+            ).count()
+            conversation.unread_for_customer_count = conversation.messages.filter(
+                is_read=False,
+            ).exclude(sender_type='customer').count()
+            conversation.save(update_fields=[
+                'last_message_preview',
+                'last_message_at',
+                'unread_for_shop_count',
+                'unread_for_customer_count',
+                'updated_at',
+            ])
+            return message
+        except Exception as e:
+            print(f"[SupportChatConsumer.save_message] error: {e}")
+            return None
+
+    @database_sync_to_async
+    def get_previous_messages(self):
+        try:
+            messages = CustomerSupportMessage.objects.filter(
+                conversation__public_id=self.conversation_id,
+            ).order_by('created_at')[:50]
+
+            result = []
+            for msg in messages:
+                serialized = CustomerSupportMessageSerializer(
+                    msg,
+                    context=_serializer_context(lang=self.lang, scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+                ).data
+                result.append({
+                    'id': serialized.get('id'),
+                    'support_conversation_id': serialized.get('support_conversation_id'),
+                    'chat_type': serialized.get('chat_type'),
+                    'conversation_type': serialized.get('conversation_type'),
+                    'conversation_type_display': serialized.get('conversation_type_display'),
+                    'sender_type': serialized.get('sender_type'),
+                    'sender_name': serialized.get('sender_name'),
+                    'sender_id': serialized.get('sender_id'),
+                    'message_type': serialized.get('message_type'),
+                    'content': serialized.get('content'),
+                    'latitude': serialized.get('latitude'),
+                    'longitude': serialized.get('longitude'),
+                    'is_read': serialized.get('is_read'),
+                    'created_at': serialized.get('created_at'),
+                    'audio_file_url': serialized.get('audio_file_url'),
+                    'image_file_url': serialized.get('image_file_url'),
+                })
+            return result
+        except Exception as e:
+            print(f"[SupportChatConsumer.get_previous_messages] error: {e}")
+            return []
+
+    @database_sync_to_async
+    def serialize_message(self, message):
+        serialized = CustomerSupportMessageSerializer(
+            message,
+            context=_serializer_context(lang=self.lang, scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+        ).data
+        return {
+            'id': serialized.get('id'),
+            'support_conversation_id': serialized.get('support_conversation_id'),
+            'chat_type': serialized.get('chat_type'),
+            'conversation_type': serialized.get('conversation_type'),
+            'conversation_type_display': serialized.get('conversation_type_display'),
+            'sender_type': serialized.get('sender_type'),
+            'sender_name': serialized.get('sender_name'),
+            'sender_id': serialized.get('sender_id'),
+            'message_type': serialized.get('message_type'),
+            'content': serialized.get('content'),
+            'latitude': serialized.get('latitude'),
+            'longitude': serialized.get('longitude'),
+            'is_read': serialized.get('is_read'),
+            'created_at': serialized.get('created_at'),
+            'audio_file_url': serialized.get('audio_file_url'),
+            'image_file_url': serialized.get('image_file_url'),
+        }
+
+    @database_sync_to_async
+    def mark_messages_as_read(self):
+        try:
+            conversation = CustomerSupportConversation.objects.get(public_id=self.conversation_id)
+            marked_count = CustomerSupportMessage.objects.filter(
+                conversation=conversation,
+                is_read=False,
+            ).exclude(sender_type=self.user_type).update(is_read=True)
+
+            conversation.unread_for_shop_count = conversation.messages.filter(
+                is_read=False,
+                sender_type='customer',
+            ).count()
+            conversation.unread_for_customer_count = conversation.messages.filter(
+                is_read=False,
+            ).exclude(sender_type='customer').count()
+            conversation.save(update_fields=[
+                'unread_for_shop_count',
+                'unread_for_customer_count',
+                'updated_at',
+            ])
+            return marked_count
+        except Exception as e:
+            print(f"[SupportChatConsumer.mark_messages_as_read] error: {e}")
+            return 0
+
+    @database_sync_to_async
+    def get_user_name(self):
+        if self.user_type == 'customer':
+            return self.user.name
+        if self.user_type == 'shop_owner':
+            return self.user.owner_name
+        if self.user_type == 'employee':
+            return self.user.name
+        return 'غير معروف'
+
+    @database_sync_to_async
+    def get_support_notification_targets(self):
+        conversation = (
+            CustomerSupportConversation.objects
+            .filter(public_id=self.conversation_id)
+            .only('shop_owner_id', 'customer_id')
+            .first()
+        )
+        if not conversation:
+            return None, None
+        return conversation.shop_owner_id, conversation.customer_id
+
+    @database_sync_to_async
+    def build_support_message_notification(self, message_payload):
+        conversation = (
+            CustomerSupportConversation.objects
+            .select_related('shop_owner', 'customer')
+            .filter(public_id=self.conversation_id)
+            .first()
+        )
+        if not conversation:
+            return None
+
+        conversation_payload = CustomerSupportConversationSerializer(
+            conversation,
+            context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+        ).data
+        return {
+            'support_conversation_id': conversation.public_id,
+            'chat_type': self.chat_type,
+            'conversation_type': conversation.conversation_type,
+            'message': message_payload,
+            'conversation': conversation_payload,
+            'shop_id': conversation.shop_owner_id,
+            'shop_name': conversation.shop_owner.shop_name,
+            'customer_id': conversation.customer_id,
+            'customer_name': conversation.customer.name,
+        }
+
+    @database_sync_to_async
+    def serialize_conversation(self):
+        conversation = (
+            CustomerSupportConversation.objects
+            .select_related('shop_owner', 'customer')
+            .filter(public_id=self.conversation_id)
+            .first()
+        )
+        if not conversation:
+            return None
+        return CustomerSupportConversationSerializer(
+            conversation,
+            context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
+        ).data
+
+
 class OrderConsumer(AsyncWebsocketConsumer):
     """
     WebSocket consumer for shop order updates.
@@ -1123,6 +1721,25 @@ class OrderConsumer(AsyncWebsocketConsumer):
             )
         await self.send(text_data=_json_dumps({
             'type': 'new_message',
+            'data': notif_data,
+        }))
+
+    async def support_conversation_update(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'support_conversation_update',
+            'data': event['data'],
+        }))
+
+    async def support_message(self, event):
+        from user.utils import localize_message
+        notif_data = dict(event['data'])
+        if 'message' in notif_data and isinstance(notif_data['message'], dict):
+            notif_data['message'] = dict(notif_data['message'])
+            notif_data['message']['content'] = localize_message(
+                None, notif_data['message'].get('content'), lang=getattr(self, 'lang', 'ar')
+            )
+        await self.send(text_data=_json_dumps({
+            'type': 'support_message',
             'data': notif_data,
         }))
 
@@ -1283,6 +1900,27 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         }))
         await self.send_dashboard_snapshots()
 
+    async def support_conversation_update(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'support_conversation_update',
+            'data': event['data'],
+        }))
+        await self.send_dashboard_snapshots()
+
+    async def support_message(self, event):
+        from user.utils import localize_message
+        notif_data = dict(event['data'])
+        if 'message' in notif_data and isinstance(notif_data['message'], dict):
+            notif_data['message'] = dict(notif_data['message'])
+            notif_data['message']['content'] = localize_message(
+                None, notif_data['message'].get('content'), lang=getattr(self, 'lang', 'ar')
+            )
+        await self.send(text_data=_json_dumps({
+            'type': 'support_message',
+            'data': notif_data,
+        }))
+        await self.send_dashboard_snapshots()
+
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
@@ -1371,6 +2009,7 @@ def _gather_customer_dashboard_snapshots(customer_id, base_url=None):
     from .views import (
         _build_customer_on_way_order_item,
         _build_customer_shop_conversation_item,
+        _build_customer_support_shop_conversation_item,
     )
 
     orders = list(
@@ -1398,13 +2037,37 @@ def _gather_customer_dashboard_snapshots(customer_id, base_url=None):
         )
         .order_by('-updated_at', '-created_at')
     )
+    support_conversations = (
+        CustomerSupportConversation.objects
+        .filter(customer_id=customer_id)
+        .select_related('shop_owner')
+        .order_by('-updated_at', '-created_at')
+    )
     grouped_by_shop = {}
     for order in conversation_orders:
         if not order.shop_owner_id:
             continue
-        if order.shop_owner_id not in grouped_by_shop:
-            grouped_by_shop[order.shop_owner_id] = _build_customer_shop_conversation_item(order, None, base_url=base_url)
-    shops_results = list(grouped_by_shop.values())
+        order_timestamp = order.updated_at or order.created_at
+        current = grouped_by_shop.get(order.shop_owner_id)
+        if current is None or order_timestamp >= current['timestamp']:
+            grouped_by_shop[order.shop_owner_id] = {
+                'timestamp': order_timestamp,
+                'payload': _build_customer_shop_conversation_item(order, None, base_url=base_url),
+            }
+    for conversation in support_conversations:
+        if not conversation.shop_owner_id:
+            continue
+        conversation_timestamp = conversation.last_message_at or conversation.updated_at or conversation.created_at
+        current = grouped_by_shop.get(conversation.shop_owner_id)
+        if current is None or conversation_timestamp >= current['timestamp']:
+            grouped_by_shop[conversation.shop_owner_id] = {
+                'timestamp': conversation_timestamp,
+                'payload': _build_customer_support_shop_conversation_item(conversation, None, base_url=base_url),
+            }
+    shops_results = [
+        item['payload']
+        for item in sorted(grouped_by_shop.values(), key=lambda value: value['timestamp'], reverse=True)
+    ]
 
     on_way_orders = (
         Order.objects

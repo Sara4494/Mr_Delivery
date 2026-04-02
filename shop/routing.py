@@ -8,6 +8,8 @@ websocket_urlpatterns = [
     # الشات بين جميع الأطراف (shop_owner, employee, driver, customer)
     # ws://server/ws/chat/order/{order_id}/?token=JWT&chat_type=shop_customer
     re_path(r'ws/chat/order/(?P<order_id>\d+)/$', consumers.ChatConsumer.as_asgi()),
+    # ws://server/ws/chat/support/{conversation_id}/?token=JWT
+    re_path(r'ws/chat/support/(?P<conversation_id>[\w-]+)/$', consumers.SupportChatConsumer.as_asgi()),
     
     # ==================== Orders WebSocket ====================
     # تحديثات الطلبات للمحل (shop_owner و employee)
