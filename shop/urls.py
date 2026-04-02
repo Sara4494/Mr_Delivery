@@ -125,6 +125,7 @@ urlpatterns = [
     path('driver/location/', views.driver_location_update_view, name='driver_location_update'),
     
     # ==================== Chat ====================
+    re_path(r'^chat/order/(?P<conversation_id>support_[\w-]+)/send-media/$', views.support_chat_media_upload_view, name='chat_order_support_media_upload'),
     path('chat/order/<int:order_id>/send-media/', views.chat_order_media_upload_view, name='chat_order_media_upload'),
     path('chat/support/<str:conversation_id>/send-media/', views.support_chat_media_upload_view, name='support_chat_media_upload'),
     # الشات يتم عبر WebSocket فقط:

@@ -6,6 +6,9 @@ from . import driver_chat_consumers
 websocket_urlpatterns = [
     # ==================== Chat WebSocket ====================
     # الشات بين جميع الأطراف (shop_owner, employee, driver, customer)
+    # Support chats can also reuse the same "order chat" path with a support_* identifier:
+    # ws://server/ws/chat/order/support_12/?token=JWT&chat_type=support_customer
+    re_path(r'ws/chat/order/(?P<conversation_id>support_[\w-]+)/$', consumers.SupportChatConsumer.as_asgi()),
     # ws://server/ws/chat/order/{order_id}/?token=JWT&chat_type=shop_customer
     re_path(r'ws/chat/order/(?P<order_id>\d+)/$', consumers.ChatConsumer.as_asgi()),
     # ws://server/ws/chat/support/{conversation_id}/?token=JWT

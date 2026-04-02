@@ -131,8 +131,11 @@ What happens on connect:
 Used for customer `inquiry` or `complaint` flows that should open chat immediately without creating an order.
 
 ```text
+/ws/chat/order/{support_conversation_id}/?token=<JWT>&chat_type=support_customer
 /ws/chat/support/{support_conversation_id}/?token=<JWT>
 ```
+
+The first path is the preferred alias when you want to reuse the same socket builder used for order chats.
 
 Allowed users:
 
@@ -155,6 +158,7 @@ Subscription is implicit:
 - Opening `/ws/orders/customer/{customer_id}/...` joins the customer orders stream
 - Opening `/ws/chat/order/{order_id}/...?chat_type=shop_customer` joins the shop-customer chat room
 - Opening `/ws/chat/order/{order_id}/...?chat_type=driver_customer` joins the driver-customer chat room
+- Opening `/ws/chat/order/{support_conversation_id}/...?chat_type=support_customer` joins the support chat room through the order-chat-style path
 - Opening `/ws/chat/support/{support_conversation_id}/...` joins the standalone support chat room
 
 Realtime fan-out rules relevant to the customer:
@@ -1050,13 +1054,15 @@ Endpoint:
 
 ```text
 POST /api/chat/order/{order_id}/send-media/
+POST /api/chat/order/{support_conversation_id}/send-media/
 POST /api/chat/support/{support_conversation_id}/send-media/
 ```
 
 Form-data:
 
 - On order chat uploads: `chat_type=shop_customer` or `chat_type=driver_customer`
-- On support chat uploads: no `chat_type` is required because the route already identifies the support conversation
+- On support chat uploads through `/api/chat/order/{support_conversation_id}/send-media/`: send `chat_type=support_customer`
+- On support chat uploads through `/api/chat/support/{support_conversation_id}/send-media/`: no `chat_type` is required because the route already identifies the support conversation
 - `audio_file` or `image_file`
 - optional `content`
 

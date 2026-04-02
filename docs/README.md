@@ -24,6 +24,7 @@ Welcome to **Mr Delivery** documentation - a comprehensive shop management and d
 
 ### 5. Features
 - [Chat System](./CHAT_SYSTEM.md)
+- [Shop Frontend Support Chat Guide](./SHOP_FRONTEND_SUPPORT_CHAT_GUIDE.md)
 - [Flutter Shop Chat Guide](./FLUTTER_SHOP_CHAT_GUIDE.md)
 - [Orders Management](./ORDERS.md)
 - [Driver Tracking](./DRIVER_TRACKING.md)

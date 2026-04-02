@@ -643,6 +643,7 @@ class CustomerSupportMessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(read_only=True)
     sender_id = serializers.SerializerMethodField()
     support_conversation_id = serializers.CharField(source='conversation.public_id', read_only=True)
+    thread_id = serializers.CharField(source='conversation.public_id', read_only=True)
     chat_type = serializers.SerializerMethodField()
     conversation_type = serializers.CharField(source='conversation.conversation_type', read_only=True)
     conversation_type_display = serializers.CharField(source='conversation.get_conversation_type_display', read_only=True)
@@ -655,6 +656,7 @@ class CustomerSupportMessageSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'support_conversation_id',
+            'thread_id',
             'chat_type',
             'conversation_type',
             'conversation_type_display',
@@ -1087,6 +1089,7 @@ class CustomerSupportConversationSerializer(serializers.ModelSerializer):
 
     def get_chat(self, obj):
         return {
+            'thread_id': obj.public_id,
             'support_conversation_id': obj.public_id,
             'chat_type': 'support_customer',
             'conversation_type': obj.conversation_type,

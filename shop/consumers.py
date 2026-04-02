@@ -1071,6 +1071,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=_json_dumps(_with_localized_message(
                 {
                     'type': 'connection',
+                    'thread_id': self.conversation_id,
                     'support_conversation_id': self.conversation_id,
                     'chat_type': self.chat_type,
                     'conversation_type': conversation.conversation_type if conversation else None,
@@ -1185,6 +1186,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             request_id=request_id,
             data={
                 'message_id': message.id,
+                'thread_id': self.conversation_id,
                 'support_conversation_id': self.conversation_id,
                 'chat_type': self.chat_type,
             },
@@ -1231,6 +1233,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             request_id=request_id,
             data={
                 'message_id': message.id,
+                'thread_id': self.conversation_id,
                 'support_conversation_id': self.conversation_id,
                 'chat_type': self.chat_type,
             },
@@ -1252,6 +1255,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             action='mark_read',
             request_id=request_id,
             data={
+                'thread_id': self.conversation_id,
                 'support_conversation_id': self.conversation_id,
                 'count': marked_count,
             },
@@ -1281,6 +1285,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
     async def messages_read(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'messages_read',
+            'thread_id': event['support_conversation_id'],
             'support_conversation_id': event['support_conversation_id'],
             'reader_type': event['reader_type'],
             'count': event.get('count', 0),
@@ -1466,6 +1471,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
                 ).data
                 result.append({
                     'id': serialized.get('id'),
+                    'thread_id': serialized.get('thread_id'),
                     'support_conversation_id': serialized.get('support_conversation_id'),
                     'chat_type': serialized.get('chat_type'),
                     'conversation_type': serialized.get('conversation_type'),
@@ -1495,6 +1501,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
         ).data
         return {
             'id': serialized.get('id'),
+            'thread_id': serialized.get('thread_id'),
             'support_conversation_id': serialized.get('support_conversation_id'),
             'chat_type': serialized.get('chat_type'),
             'conversation_type': serialized.get('conversation_type'),
@@ -1576,6 +1583,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
         ).data
         return {
+            'thread_id': conversation.public_id,
             'support_conversation_id': conversation.public_id,
             'chat_type': self.chat_type,
             'conversation_type': conversation.conversation_type,

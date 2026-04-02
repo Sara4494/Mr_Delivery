@@ -3720,6 +3720,7 @@ def _build_support_message_payload(message, request=None, base_url=None):
     serialized = serializer.data
     return {
         'id': serialized.get('id'),
+        'thread_id': serialized.get('thread_id'),
         'support_conversation_id': serialized.get('support_conversation_id'),
         'chat_type': serialized.get('chat_type'),
         'conversation_type': serialized.get('conversation_type'),
@@ -3784,6 +3785,7 @@ def _build_customer_shop_conversation_item(order, request, base_url=None):
         'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image, base_url=base_url),
         'subtitle': 'تم التواصل مؤخراً' if last_message else 'لا يوجد تواصل بعد',
         'chat': {
+            'thread_id': str(order.id),
             'order_id': order.id,
             'chat_type': 'shop_customer',
             'shop_id': order.shop_owner_id,
@@ -3813,6 +3815,7 @@ def _build_support_message_notification_payload(conversation, message, request=N
     ).data
     return {
         'support_conversation_id': conversation.public_id,
+        'thread_id': conversation.public_id,
         'chat_type': 'support_customer',
         'conversation_type': conversation.conversation_type,
         'message': _build_support_message_payload(message, request=request, base_url=base_url),
@@ -3841,6 +3844,7 @@ def _build_customer_on_way_order_item(order, request, base_url=None):
         'driver_role_label': 'مندوب التوصيل' if driver else None,
         'chat': (
             {
+                'thread_id': str(order.id),
                 'order_id': order.id,
                 'chat_type': 'driver_customer',
                 'driver_id': driver.id,
