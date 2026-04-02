@@ -642,6 +642,7 @@ class CustomerSupportMessageSerializer(serializers.ModelSerializer):
     message_type_display = serializers.CharField(source='get_message_type_display', read_only=True)
     sender_name = serializers.CharField(read_only=True)
     sender_id = serializers.SerializerMethodField()
+    customer_profile_image_url = serializers.SerializerMethodField()
     support_conversation_id = serializers.CharField(source='conversation.public_id', read_only=True)
     thread_id = serializers.CharField(source='conversation.public_id', read_only=True)
     chat_type = serializers.SerializerMethodField()
@@ -664,6 +665,7 @@ class CustomerSupportMessageSerializer(serializers.ModelSerializer):
             'sender_type_display',
             'sender_name',
             'sender_id',
+            'customer_profile_image_url',
             'message_type',
             'message_type_display',
             'content',
@@ -695,6 +697,13 @@ class CustomerSupportMessageSerializer(serializers.ModelSerializer):
         if obj.sender_type == 'employee' and obj.sender_employee:
             return obj.sender_employee.id
         return None
+
+    def get_customer_profile_image_url(self, obj):
+        customer = getattr(getattr(obj, 'conversation', None), 'customer', None)
+        if not customer or not customer.profile_image:
+            return None
+
+        return _context_file_url(self, customer.profile_image)
 
     def get_audio_file_url(self, obj):
         if obj.audio_file:
@@ -1040,6 +1049,8 @@ class CustomerSupportConversationSerializer(serializers.ModelSerializer):
     shop_logo_url = serializers.SerializerMethodField()
     customer_id = serializers.IntegerField(source='customer.id', read_only=True)
     customer_name = serializers.CharField(source='customer.name', read_only=True)
+    customer_profile_image_url = serializers.SerializerMethodField()
+    customer = serializers.SerializerMethodField()
     subtitle = serializers.SerializerMethodField()
     last_message_preview = serializers.SerializerMethodField()
     chat = serializers.SerializerMethodField()
@@ -1057,6 +1068,8 @@ class CustomerSupportConversationSerializer(serializers.ModelSerializer):
             'shop_logo_url',
             'customer_id',
             'customer_name',
+            'customer_profile_image_url',
+            'customer',
             'subtitle',
             'last_message_preview',
             'last_message_at',
@@ -1074,6 +1087,28 @@ class CustomerSupportConversationSerializer(serializers.ModelSerializer):
             scope=self.context.get('scope'),
             base_url=self.context.get('base_url'),
         )
+
+    def get_customer_profile_image_url(self, obj):
+        return build_absolute_file_url(
+            getattr(obj.customer, 'profile_image', None),
+            request=self.context.get('request'),
+            scope=self.context.get('scope'),
+            base_url=self.context.get('base_url'),
+        )
+
+    def get_customer(self, obj):
+        customer = getattr(obj, 'customer', None)
+        if not customer:
+            return None
+
+        return {
+            'id': customer.id,
+            'name': customer.name,
+            'phone_number': customer.phone_number,
+            'profile_image_url': self.get_customer_profile_image_url(obj),
+            'is_online': bool(customer.is_online),
+            'last_seen': format_utc_iso8601(customer.last_seen),
+        }
 
     def get_last_message_preview(self, obj):
         from user.utils import localize_message

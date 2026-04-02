@@ -1593,6 +1593,8 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             'shop_name': conversation.shop_owner.shop_name,
             'customer_id': conversation.customer_id,
             'customer_name': conversation.customer.name,
+            'customer_profile_image_url': conversation_payload.get('customer_profile_image_url'),
+            'customer': conversation_payload.get('customer'),
         }
 
     @database_sync_to_async

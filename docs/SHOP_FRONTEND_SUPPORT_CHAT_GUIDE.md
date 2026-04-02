@@ -97,6 +97,15 @@
     "shop_logo_url": "/media/shops/logo.png",
     "customer_id": 7,
     "customer_name": "Ahmed",
+    "customer_profile_image_url": "/media/customers/7/profile.jpg",
+    "customer": {
+      "id": 7,
+      "name": "Ahmed",
+      "phone_number": "01000000000",
+      "profile_image_url": "/media/customers/7/profile.jpg",
+      "is_online": true,
+      "last_seen": "2026-04-02T20:14:00+02:00"
+    },
     "subtitle": "أرسلت رسالة من قبل ولم يصلني رد",
     "last_message_preview": "أرسلت رسالة من قبل ولم يصلني رد",
     "last_message_at": "2026-04-02T20:15:00+02:00",
@@ -145,6 +154,7 @@
       "sender_type": "customer",
       "sender_name": "Ahmed",
       "sender_id": 7,
+      "customer_profile_image_url": "/media/customers/7/profile.jpg",
       "message_type": "text",
       "content": "أحتاج متابعة من المتجر",
       "is_read": false,
@@ -164,6 +174,15 @@
       "shop_name": "برجر كنچ",
       "customer_id": 7,
       "customer_name": "Ahmed",
+      "customer_profile_image_url": "/media/customers/7/profile.jpg",
+      "customer": {
+        "id": 7,
+        "name": "Ahmed",
+        "phone_number": "01000000000",
+        "profile_image_url": "/media/customers/7/profile.jpg",
+        "is_online": true,
+        "last_seen": "2026-04-02T20:14:00+02:00"
+      },
       "subtitle": "أحتاج متابعة من المتجر",
       "last_message_preview": "أحتاج متابعة من المتجر",
       "chat": {
@@ -177,7 +196,16 @@
     "shop_id": 8,
     "shop_name": "برجر كنچ",
     "customer_id": 7,
-    "customer_name": "Ahmed"
+    "customer_name": "Ahmed",
+    "customer_profile_image_url": "/media/customers/7/profile.jpg",
+    "customer": {
+      "id": 7,
+      "name": "Ahmed",
+      "phone_number": "01000000000",
+      "profile_image_url": "/media/customers/7/profile.jpg",
+      "is_online": true,
+      "last_seen": "2026-04-02T20:14:00+02:00"
+    }
   }
 }
 ```

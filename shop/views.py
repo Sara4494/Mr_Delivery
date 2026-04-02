@@ -3728,6 +3728,7 @@ def _build_support_message_payload(message, request=None, base_url=None):
         'sender_type': serialized.get('sender_type'),
         'sender_name': serialized.get('sender_name'),
         'sender_id': serialized.get('sender_id'),
+        'customer_profile_image_url': serialized.get('customer_profile_image_url'),
         'message_type': serialized.get('message_type'),
         'content': serialized.get('content'),
         'is_read': serialized.get('is_read'),
@@ -3824,6 +3825,8 @@ def _build_support_message_notification_payload(conversation, message, request=N
         'shop_name': conversation.shop_owner.shop_name,
         'customer_id': conversation.customer_id,
         'customer_name': conversation.customer.name,
+        'customer_profile_image_url': conversation_payload.get('customer_profile_image_url'),
+        'customer': conversation_payload.get('customer'),
     }
 
 

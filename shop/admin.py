@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
+    CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
 )
@@ -156,6 +157,106 @@ class ChatMessageAdmin(admin.ModelAdmin):
         }),
         ('المرسل', {
             'fields': ('sender_customer', 'sender_shop_owner', 'sender_employee', 'sender_driver')
+        }),
+        ('الرسالة', {
+            'fields': ('message_type', 'content', 'audio_file', 'image_file')
+        }),
+        ('الموقع (اختياري)', {
+            'fields': ('latitude', 'longitude')
+        }),
+        ('الحالة', {
+            'fields': ('is_read', 'created_at')
+        }),
+    )
+
+
+class CustomerSupportMessageInline(admin.TabularInline):
+    model = CustomerSupportMessage
+    extra = 0
+    show_change_link = True
+    fields = (
+        'created_at',
+        'sender_type',
+        'sender_name',
+        'message_type',
+        'content',
+        'audio_file',
+        'image_file',
+        'is_read',
+    )
+    readonly_fields = ('created_at', 'sender_name')
+
+
+@admin.register(CustomerSupportConversation)
+class CustomerSupportConversationAdmin(admin.ModelAdmin):
+    list_display = (
+        'public_id',
+        'conversation_type',
+        'status',
+        'shop_owner',
+        'customer',
+        'unread_for_shop_count',
+        'unread_for_customer_count',
+        'last_message_at',
+        'updated_at',
+    )
+    list_filter = ('conversation_type', 'status', 'created_at', 'updated_at')
+    search_fields = (
+        'public_id',
+        'customer__name',
+        'customer__phone_number',
+        'shop_owner__shop_name',
+        'shop_owner__owner_name',
+        'last_message_preview',
+    )
+    readonly_fields = ('public_id', 'created_at', 'updated_at', 'last_message_at')
+    inlines = [CustomerSupportMessageInline]
+    fieldsets = (
+        ('معلومات أساسية', {
+            'fields': ('public_id', 'conversation_type', 'status')
+        }),
+        ('الأطراف', {
+            'fields': ('shop_owner', 'customer')
+        }),
+        ('المتابعة', {
+            'fields': (
+                'last_message_preview',
+                'last_message_at',
+                'unread_for_shop_count',
+                'unread_for_customer_count',
+            )
+        }),
+        ('التواريخ', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+
+@admin.register(CustomerSupportMessage)
+class CustomerSupportMessageAdmin(admin.ModelAdmin):
+    list_display = (
+        'conversation',
+        'sender_type',
+        'sender_name',
+        'message_type',
+        'is_read',
+        'created_at',
+    )
+    list_filter = ('sender_type', 'message_type', 'is_read', 'created_at')
+    search_fields = (
+        'conversation__public_id',
+        'conversation__customer__name',
+        'conversation__customer__phone_number',
+        'conversation__shop_owner__shop_name',
+        'content',
+    )
+    readonly_fields = ('created_at', 'sender_name')
+    fieldsets = (
+        ('معلومات أساسية', {
+            'fields': ('conversation', 'sender_type')
+        }),
+        ('المرسل', {
+            'fields': ('sender_customer', 'sender_shop_owner', 'sender_employee')
         }),
         ('الرسالة', {
             'fields': ('message_type', 'content', 'audio_file', 'image_file')

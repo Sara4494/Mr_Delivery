@@ -256,6 +256,15 @@ This shape appears in:
   "shop_logo_url": "/media/shops/logo.png",
   "customer_id": 7,
   "customer_name": "Ahmed",
+  "customer_profile_image_url": "/media/customers/7/profile.jpg",
+  "customer": {
+    "id": 7,
+    "name": "Ahmed",
+    "phone_number": "01000000000",
+    "profile_image_url": "/media/customers/7/profile.jpg",
+    "is_online": true,
+    "last_seen": "2026-04-02T20:14:00+02:00"
+  },
   "subtitle": "استفسار مفتوح",
   "last_message_preview": null,
   "last_message_at": null,
@@ -560,7 +569,16 @@ Sent when a new standalone support chat message is created.
     "shop_id": 8,
     "shop_name": "برجر كنچ",
     "customer_id": 7,
-    "customer_name": "Ahmed"
+    "customer_name": "Ahmed",
+    "customer_profile_image_url": "/media/customers/7/profile.jpg",
+    "customer": {
+      "id": 7,
+      "name": "Ahmed",
+      "phone_number": "01000000000",
+      "profile_image_url": "/media/customers/7/profile.jpg",
+      "is_online": true,
+      "last_seen": "2026-04-02T20:14:00+02:00"
+    }
   }
 }
 ```
