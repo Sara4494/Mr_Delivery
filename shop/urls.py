@@ -10,6 +10,7 @@ urlpatterns = [
     path('shop/driver-chats/ui/', views.driver_chats_ui_view, name='shop_driver_chats_ui'),
     path('driver/dashboard-ui/', views.driver_dashboard_ui_view, name='driver_dashboard_ui'),
     path('customer/dashboard-ui/', views.customer_dashboard_ui_view, name='customer_dashboard_ui'),
+    re_path(r'^app/status/?$', views.app_status_view, name='app_status'),
     # Public shops list (for customers)
     path('shops/', views.public_shops_list_view, name='public_shops_list'),
     path('shops/shop-categories/', views.public_shop_categories_list_view, name='public_shop_categories_list'),

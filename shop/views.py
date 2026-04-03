@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 import json
+from django.conf import settings
 from django.shortcuts import render
 from django.core.cache import cache
 from django.db import IntegrityError
@@ -66,6 +67,7 @@ from .serializers import (
     AddToCartSerializer,
     UpdateCartItemSerializer,
     ChatMessageSerializer,
+    AppStatusSerializer,
 )
 from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
 from user.models import (
@@ -112,6 +114,106 @@ def customer_dashboard_ui_view(request):
 def driver_chats_ui_view(request):
     """Operational UI for shop-side driver chats."""
     return render(request, 'shop/driver_chats_ui.html')
+
+
+def _app_status_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _app_status_text(value, default=''):
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text if text else default
+
+
+def _app_status_int(value):
+    if value in (None, ''):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_app_status_payload():
+    current_version = _app_status_text(
+        getattr(settings, 'APP_STATUS_FORCE_UPDATE_CURRENT_VERSION', ''),
+        '',
+    )
+    required_version = _app_status_text(
+        getattr(settings, 'APP_STATUS_FORCE_UPDATE_REQUIRED_VERSION', current_version),
+        current_version,
+    )
+
+    return {
+        'maintenance_mode': _app_status_bool(
+            getattr(settings, 'APP_STATUS_MAINTENANCE_MODE', False)
+        ),
+        'maintenance': {
+            'title_ar': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_TITLE_AR', ''),
+                'التطبيق تحت الصيانة حاليًا',
+            ),
+            'title_en': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_TITLE_EN', ''),
+                'The app is currently under maintenance',
+            ),
+            'message_ar': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_MESSAGE_AR', ''),
+                'نقوم الآن بتنفيذ تحديثات وتحسينات مهمة. نعتذر عن الإزعاج وسيعود التطبيق قريبًا.',
+            ),
+            'message_en': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_MESSAGE_EN', ''),
+                'We are applying important updates and improvements. Sorry for the interruption.',
+            ),
+            'window_label_ar': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_WINDOW_LABEL_AR', ''),
+                '',
+            ),
+            'window_label_en': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_WINDOW_LABEL_EN', ''),
+                '',
+            ),
+            'show_contact_support': _app_status_bool(
+                getattr(settings, 'APP_STATUS_SHOW_CONTACT_SUPPORT', False)
+            ),
+            'support_whatsapp': _app_status_text(
+                getattr(settings, 'APP_STATUS_SUPPORT_WHATSAPP', ''),
+                '',
+            ),
+            'estimated_minutes': _app_status_int(
+                getattr(settings, 'APP_STATUS_ESTIMATED_MINUTES', None)
+            ),
+        },
+        'force_update': {
+            'enabled': _app_status_bool(
+                getattr(settings, 'APP_STATUS_FORCE_UPDATE_ENABLED', False)
+            ),
+            'current_version': current_version,
+            'required_version': required_version,
+        },
+    }
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def app_status_view(request):
+    """Public splash endpoint for maintenance mode and optional force-update flags."""
+    serializer = AppStatusSerializer(instance=_build_app_status_payload())
+    response = Response(
+        {
+            'success': True,
+            'data': serializer.data,
+        },
+        status=status.HTTP_200_OK,
+    )
+    response['Cache-Control'] = 'no-store'
+    return response
 
 
 class OrderPagination(PageNumberPagination):

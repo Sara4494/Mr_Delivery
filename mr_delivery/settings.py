@@ -40,6 +40,19 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name: str, default=None):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    value = value.strip()
+    if not value:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # CORS
 # NOTE: `file://` pages send Origin as `null`; keep this enabled only for local testing.
 _cors_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
@@ -214,6 +227,45 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '').strip().rstrip('/')
+
+# Public app splash status / maintenance mode
+APP_STATUS_MAINTENANCE_MODE = _env_bool("APP_STATUS_MAINTENANCE_MODE", default=False)
+APP_STATUS_MAINTENANCE_TITLE_AR = os.environ.get(
+    "APP_STATUS_MAINTENANCE_TITLE_AR",
+    "التطبيق تحت الصيانة حاليًا",
+).strip()
+APP_STATUS_MAINTENANCE_TITLE_EN = os.environ.get(
+    "APP_STATUS_MAINTENANCE_TITLE_EN",
+    "The app is currently under maintenance",
+).strip()
+APP_STATUS_MAINTENANCE_MESSAGE_AR = os.environ.get(
+    "APP_STATUS_MAINTENANCE_MESSAGE_AR",
+    "نقوم الآن بتنفيذ تحديثات وتحسينات مهمة. نعتذر عن الإزعاج وسيعود التطبيق قريبًا.",
+).strip()
+APP_STATUS_MAINTENANCE_MESSAGE_EN = os.environ.get(
+    "APP_STATUS_MAINTENANCE_MESSAGE_EN",
+    "We are applying important updates and improvements. Sorry for the interruption.",
+).strip()
+APP_STATUS_MAINTENANCE_WINDOW_LABEL_AR = os.environ.get(
+    "APP_STATUS_MAINTENANCE_WINDOW_LABEL_AR",
+    "",
+).strip()
+APP_STATUS_MAINTENANCE_WINDOW_LABEL_EN = os.environ.get(
+    "APP_STATUS_MAINTENANCE_WINDOW_LABEL_EN",
+    "",
+).strip()
+APP_STATUS_SHOW_CONTACT_SUPPORT = _env_bool("APP_STATUS_SHOW_CONTACT_SUPPORT", default=False)
+APP_STATUS_SUPPORT_WHATSAPP = os.environ.get("APP_STATUS_SUPPORT_WHATSAPP", "").strip()
+APP_STATUS_ESTIMATED_MINUTES = _env_int("APP_STATUS_ESTIMATED_MINUTES", default=None)
+APP_STATUS_FORCE_UPDATE_ENABLED = _env_bool("APP_STATUS_FORCE_UPDATE_ENABLED", default=False)
+APP_STATUS_FORCE_UPDATE_CURRENT_VERSION = os.environ.get(
+    "APP_STATUS_FORCE_UPDATE_CURRENT_VERSION",
+    "",
+).strip()
+APP_STATUS_FORCE_UPDATE_REQUIRED_VERSION = (
+    os.environ.get("APP_STATUS_FORCE_UPDATE_REQUIRED_VERSION", "").strip()
+    or APP_STATUS_FORCE_UPDATE_CURRENT_VERSION
+)
 
 # REST Framework settings
 REST_FRAMEWORK = {

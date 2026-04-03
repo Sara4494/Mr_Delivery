@@ -1942,3 +1942,33 @@ class DriverLocationUpdateSerializer(serializers.Serializer):
     """Serializer لتحديث موقع السائق"""
     latitude = serializers.DecimalField(max_digits=10, decimal_places=7, required=True)
     longitude = serializers.DecimalField(max_digits=10, decimal_places=7, required=True)
+
+
+class AppStatusMaintenanceSerializer(serializers.Serializer):
+    """Public maintenance-mode payload for the splash screen."""
+
+    title_ar = serializers.CharField()
+    title_en = serializers.CharField()
+    message_ar = serializers.CharField()
+    message_en = serializers.CharField()
+    window_label_ar = serializers.CharField(allow_blank=True)
+    window_label_en = serializers.CharField(allow_blank=True)
+    show_contact_support = serializers.BooleanField()
+    support_whatsapp = serializers.CharField(allow_blank=True)
+    estimated_minutes = serializers.IntegerField(allow_null=True)
+
+
+class AppStatusForceUpdateSerializer(serializers.Serializer):
+    """Optional force-update payload returned with app status."""
+
+    enabled = serializers.BooleanField()
+    current_version = serializers.CharField(allow_blank=True)
+    required_version = serializers.CharField(allow_blank=True)
+
+
+class AppStatusSerializer(serializers.Serializer):
+    """Stable public app-status contract used before login."""
+
+    maintenance_mode = serializers.BooleanField()
+    maintenance = AppStatusMaintenanceSerializer()
+    force_update = AppStatusForceUpdateSerializer()
