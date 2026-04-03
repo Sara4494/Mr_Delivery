@@ -3,7 +3,6 @@ import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models import Prefetch
 from django.utils import timezone
 from .models import (
     Order,
@@ -31,6 +30,12 @@ from .driver_chat_service import (
     broadcast_driver_presence_update,
     mark_driver_connected,
     mark_driver_disconnected,
+)
+from .customer_app_realtime import (
+    CUSTOMER_APP_REALTIME_SCOPE,
+    build_all_snapshots,
+    build_order_delta_events,
+    build_support_delta_events,
 )
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
 
@@ -718,12 +723,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         group_names = await self.get_order_channel_targets()
         for group_name in group_names:
+            if group_name.startswith('customer_orders_'):
+                continue
             await self.channel_layer.group_send(
                 group_name,
                 {
                     'type': 'new_message',
                     'data': notification_payload,
                 }
+            )
+
+        if self.chat_type == 'shop_customer':
+            await self.dispatch_customer_delta_events(
+                await self.get_customer_app_order_delta_events(
+                    include_order=True,
+                    include_shop=True,
+                    include_on_way=False,
+                    include_history=True,
+                )
             )
 
     async def broadcast_order_snapshot_update(self):
@@ -733,12 +750,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         group_names = await self.get_order_channel_targets()
         for group_name in group_names:
+            if group_name.startswith('customer_orders_'):
+                continue
             await self.channel_layer.group_send(
                 group_name,
                 {
                     'type': 'order_update',
                     'data': order_snapshot,
                 }
+            )
+
+        if self.user_type == 'customer' and self.chat_type == 'shop_customer':
+            await self.dispatch_customer_delta_events(
+                await self.get_customer_app_order_delta_events(
+                    include_order=True,
+                    include_shop=True,
+                    include_on_way=False,
+                    include_history=True,
+                )
             )
 
     async def broadcast_presence_updates(self, presence_state):
@@ -1005,6 +1034,45 @@ class ChatConsumer(AsyncWebsocketConsumer):
             order,
             context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
         ).data
+
+    @database_sync_to_async
+    def get_customer_app_order_delta_events(self, include_order, include_shop, include_on_way, include_history):
+        customer_id = self.user.id if self.user_type == 'customer' else None
+        if customer_id is None:
+            order = Order.objects.only('customer_id').filter(id=self.order_id).first()
+            customer_id = getattr(order, 'customer_id', None)
+        if not customer_id:
+            return []
+        return build_order_delta_events(
+            customer_id,
+            int(self.order_id),
+            include_order=include_order,
+            include_shop=include_shop,
+            include_on_way=include_on_way,
+            include_history=include_history,
+            lang=getattr(self, 'lang', None),
+            scope=getattr(self, 'scope', None),
+            base_url=getattr(self, 'base_url', None),
+        )
+
+    async def dispatch_customer_delta_events(self, events):
+        customer_group = None
+        for group_name in await self.get_order_channel_targets():
+            if group_name.startswith('customer_orders_'):
+                customer_group = group_name
+                break
+
+        if not customer_group:
+            return
+
+        for event in events or []:
+            await self.channel_layer.group_send(
+                customer_group,
+                {
+                    'type': event['type'],
+                    'data': event['data'],
+                }
+            )
 
     def _get_sender_id(self, message):
         if message.sender_type == 'customer' and message.sender_customer_id:
@@ -1328,19 +1396,21 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             return
 
         shop_owner_id, customer_id = await self.get_support_notification_targets()
-        target_groups = []
         if shop_owner_id:
-            target_groups.append(f'shop_orders_{shop_owner_id}')
-        if customer_id:
-            target_groups.append(f'customer_orders_{customer_id}')
-
-        for group_name in target_groups:
             await self.channel_layer.group_send(
-                group_name,
+                f'shop_orders_{shop_owner_id}',
                 {
                     'type': 'support_message',
                     'data': notification_payload,
                 }
+            )
+
+        if customer_id:
+            await self.dispatch_customer_support_delta_events(
+                await self.get_customer_support_delta_events(
+                    include_shop=True,
+                    include_history=True,
+                )
             )
 
     async def broadcast_conversation_update(self):
@@ -1349,19 +1419,21 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             return
 
         shop_owner_id, customer_id = await self.get_support_notification_targets()
-        target_groups = []
         if shop_owner_id:
-            target_groups.append(f'shop_orders_{shop_owner_id}')
-        if customer_id:
-            target_groups.append(f'customer_orders_{customer_id}')
-
-        for group_name in target_groups:
             await self.channel_layer.group_send(
-                group_name,
+                f'shop_orders_{shop_owner_id}',
                 {
                     'type': 'support_conversation_update',
                     'data': conversation_payload,
                 }
+            )
+
+        if customer_id and self.user_type == 'customer':
+            await self.dispatch_customer_support_delta_events(
+                await self.get_customer_support_delta_events(
+                    include_shop=True,
+                    include_history=True,
+                )
             )
 
     @database_sync_to_async
@@ -1612,6 +1684,44 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
         ).data
 
+    @database_sync_to_async
+    def get_customer_support_delta_events(self, include_shop, include_history):
+        customer_id = self.user.id if self.user_type == 'customer' else None
+        if customer_id is None:
+            conversation = (
+                CustomerSupportConversation.objects
+                .only('customer_id')
+                .filter(public_id=self.conversation_id)
+                .first()
+            )
+            customer_id = getattr(conversation, 'customer_id', None)
+        if not customer_id:
+            return []
+        return build_support_delta_events(
+            customer_id,
+            self.conversation_id,
+            include_shop=include_shop,
+            include_history=include_history,
+            lang=getattr(self, 'lang', None),
+            scope=getattr(self, 'scope', None),
+            base_url=getattr(self, 'base_url', None),
+        )
+
+    async def dispatch_customer_support_delta_events(self, events):
+        shop_owner_id, customer_id = await self.get_support_notification_targets()
+        if not customer_id:
+            return
+
+        customer_group = f'customer_orders_{customer_id}'
+        for event in events or []:
+            await self.channel_layer.group_send(
+                customer_group,
+                {
+                    'type': event['type'],
+                    'data': event['data'],
+                }
+            )
+
 
 class OrderConsumer(AsyncWebsocketConsumer):
     """
@@ -1834,7 +1944,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
     """
 
     async def connect(self):
-        self.customer_id = self.scope['url_route']['kwargs'].get('customer_id')
+        self.customer_id = int(self.scope['url_route']['kwargs'].get('customer_id'))
         self.room_group_name = f'customer_orders_{self.customer_id}'
         self.base_url = resolve_base_url(scope=self.scope)
 
@@ -1846,8 +1956,20 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         user = self.scope.get('user')
         user_type = self.scope.get('user_type')
 
-        if not user or user_type != 'customer' or user.id != int(self.customer_id):
-            await self.close(code=4401)
+        if not user or user_type != 'customer':
+            await self.reject_connection(
+                close_code=4401,
+                error_code='AUTHENTICATION_FAILED',
+                message='Authentication failed for customer realtime channel.',
+            )
+            return
+
+        if user.id != self.customer_id:
+            await self.reject_connection(
+                close_code=4403,
+                error_code='CUSTOMER_MISMATCH',
+                message='The authenticated customer does not match the requested customer_id.',
+            )
             return
 
         self.user = user
@@ -1860,16 +1982,17 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         presence_state = await self.register_customer_presence('orders')
         self.customer_presence_registered = bool(presence_state)
 
-        await self.send(text_data=_json_dumps(_with_localized_message(
-            {'type': 'connection'},
-            'تم الاتصال بنجاح',
-            lang=self.lang,
-        )))
+        await self.send(text_data=_json_dumps({
+            'type': 'connection',
+            'scope': CUSTOMER_APP_REALTIME_SCOPE,
+            'customer_id': self.customer_id,
+            'message': 'connected',
+        }))
 
         if presence_state and presence_state.get('changed'):
             await self.broadcast_presence_updates(presence_state)
 
-        await self.send_dashboard_snapshots()
+        await self.send_initial_snapshots()
 
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
@@ -1888,19 +2011,28 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
 
             if event_type == 'ring':
                 await _handle_ring_request(self, data, request_id=request_id)
-            elif event_type in {'sync_dashboard', 'refresh_dashboard'}:
-                await self.send_dashboard_snapshots(request_id=request_id)
-                await _send_ack(
-                    self,
-                    'sync_dashboard',
-                    request_id=request_id,
-                    message='تمت مزامنة بيانات العميل بنجاح',
-                )
+            elif event_type in {'sync_dashboard', 'refresh_dashboard', 'refresh_all'}:
+                await self.send_initial_snapshots(request_id=request_id)
+                if event_type in {'sync_dashboard', 'refresh_dashboard'}:
+                    await _send_ack(
+                        self,
+                        'sync_dashboard',
+                        request_id=request_id,
+                        message='Customer realtime snapshots refreshed.',
+                    )
+            elif event_type == 'refresh_orders':
+                await self.send_orders_snapshot(request_id=request_id)
+            elif event_type == 'refresh_shops':
+                await self.send_shops_snapshot(request_id=request_id)
+            elif event_type == 'refresh_on_way':
+                await self.send_on_way_snapshot(request_id=request_id)
+            elif event_type == 'refresh_order_history':
+                await self.send_order_history_snapshot(request_id=request_id)
             else:
                 await _send_error_event(
                     self,
                     code='UNKNOWN_EVENT',
-                    message='نوع الحدث غير مدعوم',
+                    message='Unsupported customer realtime event type.',
                     request_id=request_id,
                     details={'type': event_type},
                 )
@@ -1908,23 +2040,30 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             await _send_error_event(
                 self,
                 code='INVALID_JSON',
-                message='تنسيق البيانات غير صحيح',
+                message='Invalid JSON payload.',
             )
         except Exception as e:
             print(f"[CustomerOrderConsumer.receive] error: {e}")
             await _send_error_event(
                 self,
                 code='UNEXPECTED_ERROR',
-                message='حدث خطأ غير متوقع',
+                message='Unexpected customer realtime error.',
                 details={'error_detail': str(e)},
             )
 
     async def order_update(self, event):
-        await self.send(text_data=_json_dumps({
-            'type': 'order_update',
-            'data': event['data'],
-        }))
-        await self.send_dashboard_snapshots()
+        order_id = self._extract_order_id(event.get('data'))
+        if not order_id:
+            return
+        await self.emit_delta_events(
+            await self.get_order_delta_events(
+                order_id,
+                include_order=True,
+                include_shop=True,
+                include_on_way=True,
+                include_history=True,
+            )
+        )
 
     async def driver_location(self, event):
         await self.send(text_data=_json_dumps({
@@ -1933,39 +2072,68 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         }))
 
     async def new_message(self, event):
-        from user.utils import localize_message
-        notif_data = dict(event['data'])
-        if 'message' in notif_data and isinstance(notif_data['message'], dict):
-            notif_data['message'] = dict(notif_data['message'])
-            notif_data['message']['content'] = localize_message(
-                None, notif_data['message'].get('content'), lang=getattr(self, 'lang', 'ar')
+        payload = event.get('data') or {}
+        chat_type = payload.get('chat_type')
+        order_id = self._extract_order_id(payload)
+        if chat_type != 'shop_customer' or not order_id:
+            return
+        await self.emit_delta_events(
+            await self.get_order_delta_events(
+                order_id,
+                include_order=True,
+                include_shop=True,
+                include_on_way=False,
+                include_history=True,
             )
-        await self.send(text_data=_json_dumps({
-            'type': 'new_message',
-            'data': notif_data,
-        }))
-        await self.send_dashboard_snapshots()
+        )
 
     async def support_conversation_update(self, event):
-        await self.send(text_data=_json_dumps({
-            'type': 'support_conversation_update',
-            'data': event['data'],
-        }))
-        await self.send_dashboard_snapshots()
+        conversation_id = self._extract_support_conversation_id(event.get('data'))
+        if not conversation_id:
+            return
+        await self.emit_delta_events(
+            await self.get_support_delta_events(
+                conversation_id,
+                include_shop=True,
+                include_history=True,
+            )
+        )
 
     async def support_message(self, event):
-        from user.utils import localize_message
-        notif_data = dict(event['data'])
-        if 'message' in notif_data and isinstance(notif_data['message'], dict):
-            notif_data['message'] = dict(notif_data['message'])
-            notif_data['message']['content'] = localize_message(
-                None, notif_data['message'].get('content'), lang=getattr(self, 'lang', 'ar')
+        conversation_id = self._extract_support_conversation_id(event.get('data'))
+        if not conversation_id:
+            return
+        await self.emit_delta_events(
+            await self.get_support_delta_events(
+                conversation_id,
+                include_shop=True,
+                include_history=True,
             )
-        await self.send(text_data=_json_dumps({
-            'type': 'support_message',
-            'data': notif_data,
-        }))
-        await self.send_dashboard_snapshots()
+        )
+
+    async def order_upsert(self, event):
+        await self.send_realtime_event('order_upsert', event['data'])
+
+    async def order_remove(self, event):
+        await self.send_realtime_event('order_remove', event['data'])
+
+    async def shop_upsert(self, event):
+        await self.send_realtime_event('shop_upsert', event['data'])
+
+    async def shop_remove(self, event):
+        await self.send_realtime_event('shop_remove', event['data'])
+
+    async def on_way_upsert(self, event):
+        await self.send_realtime_event('on_way_upsert', event['data'])
+
+    async def on_way_remove(self, event):
+        await self.send_realtime_event('on_way_remove', event['data'])
+
+    async def order_history_entry_upsert(self, event):
+        await self.send_realtime_event('order_history_entry_upsert', event['data'])
+
+    async def order_history_entry_remove(self, event):
+        await self.send_realtime_event('order_history_entry_remove', event['data'])
 
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
@@ -1996,47 +2164,142 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
                     }
                 )
 
-    async def send_dashboard_snapshots(self, request_id=None):
-        dashboard_snapshot = await _gather_customer_dashboard_snapshots(
+    async def reject_connection(self, close_code, error_code, message):
+        await self.accept()
+        await _send_error_event(
+            self,
+            code=error_code,
+            message=message,
+        )
+        await self.close(code=close_code)
+
+    async def send_realtime_event(self, event_type, data, request_id=None, message=None):
+        payload = {
+            'type': event_type,
+            'data': data,
+        }
+        if request_id is not None:
+            payload['request_id'] = request_id
+        if message is not None:
+            payload['message'] = message
+        await self.send(text_data=_json_dumps(payload))
+
+    async def send_initial_snapshots(self, request_id=None):
+        snapshots = await self.get_all_snapshots()
+        snapshot_messages = {
+            'orders_snapshot': 'orders synced',
+            'shops_snapshot': 'shops synced',
+            'on_way_snapshot': 'on way synced',
+            'order_history_snapshot': 'order history synced',
+        }
+        for event_type in [
+            'orders_snapshot',
+            'shops_snapshot',
+            'on_way_snapshot',
+            'order_history_snapshot',
+        ]:
+            await self.send_realtime_event(
+                event_type,
+                snapshots[event_type],
+                request_id=request_id,
+                message=snapshot_messages[event_type],
+            )
+
+    async def send_orders_snapshot(self, request_id=None):
+        snapshots = await self.get_all_snapshots()
+        await self.send_realtime_event(
+            'orders_snapshot',
+            snapshots['orders_snapshot'],
+            request_id=request_id,
+            message='orders synced',
+        )
+
+    async def send_shops_snapshot(self, request_id=None):
+        snapshots = await self.get_all_snapshots()
+        await self.send_realtime_event(
+            'shops_snapshot',
+            snapshots['shops_snapshot'],
+            request_id=request_id,
+            message='shops synced',
+        )
+
+    async def send_on_way_snapshot(self, request_id=None):
+        snapshots = await self.get_all_snapshots()
+        await self.send_realtime_event(
+            'on_way_snapshot',
+            snapshots['on_way_snapshot'],
+            request_id=request_id,
+            message='on way synced',
+        )
+
+    async def send_order_history_snapshot(self, request_id=None):
+        snapshots = await self.get_all_snapshots()
+        await self.send_realtime_event(
+            'order_history_snapshot',
+            snapshots['order_history_snapshot'],
+            request_id=request_id,
+            message='order history synced',
+        )
+
+    async def emit_delta_events(self, events):
+        for event in events or []:
+            await self.send_realtime_event(event['type'], event['data'])
+
+    def _extract_order_id(self, payload):
+        if not isinstance(payload, dict):
+            return None
+        order_id = payload.get('order_id') or payload.get('id')
+        order_payload = payload.get('order')
+        if not order_id and isinstance(order_payload, dict):
+            order_id = order_payload.get('id') or order_payload.get('order_id')
+        try:
+            return int(order_id) if order_id is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _extract_support_conversation_id(self, payload):
+        if not isinstance(payload, dict):
+            return None
+        return (
+            payload.get('support_conversation_id')
+            or payload.get('thread_id')
+            or payload.get('conversation', {}).get('support_conversation_id')
+        )
+
+    @database_sync_to_async
+    def get_all_snapshots(self):
+        return build_all_snapshots(
             self.customer_id,
+            lang=self.lang,
+            scope=getattr(self, 'scope', None),
             base_url=getattr(self, 'base_url', None),
         )
 
-        snapshot_events = [
-            (
-                'dashboard_snapshot',
-                dashboard_snapshot,
-                'تمت مزامنة لوحة العميل بنجاح',
-            ),
-            (
-                'orders_snapshot',
-                {'orders': dashboard_snapshot['orders']},
-                'تمت مزامنة الطلبات بنجاح',
-            ),
-            (
-                'shops_snapshot',
-                dashboard_snapshot['shops'],
-                'تمت مزامنة قائمة المحلات بنجاح',
-            ),
-            (
-                'on_way_snapshot',
-                dashboard_snapshot['on_way'],
-                'تمت مزامنة طلبات الطريق بنجاح',
-            ),
-        ]
+    @database_sync_to_async
+    def get_order_delta_events(self, order_id, include_order, include_shop, include_on_way, include_history):
+        return build_order_delta_events(
+            self.customer_id,
+            order_id,
+            include_order=include_order,
+            include_shop=include_shop,
+            include_on_way=include_on_way,
+            include_history=include_history,
+            lang=self.lang,
+            scope=getattr(self, 'scope', None),
+            base_url=getattr(self, 'base_url', None),
+        )
 
-        for event_type, data, message in snapshot_events:
-            payload = {
-                'type': event_type,
-                'data': data,
-            }
-            if request_id:
-                payload['request_id'] = request_id
-            await self.send(text_data=_json_dumps(_with_localized_message(
-                payload,
-                message,
-                lang=self.lang,
-            )))
+    @database_sync_to_async
+    def get_support_delta_events(self, conversation_id, include_shop, include_history):
+        return build_support_delta_events(
+            self.customer_id,
+            conversation_id,
+            include_shop=include_shop,
+            include_history=include_history,
+            lang=self.lang,
+            scope=getattr(self, 'scope', None),
+            base_url=getattr(self, 'base_url', None),
+        )
 
     @database_sync_to_async
     def register_customer_presence(self, connection_type):
@@ -2053,92 +2316,6 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_customer_presence_broadcast_batches(self, customer_id, is_online, last_seen):
         return build_customer_presence_broadcast_batches(customer_id, is_online, last_seen)
-
-
-@database_sync_to_async
-def _gather_customer_dashboard_snapshots(customer_id, base_url=None):
-    from .views import (
-        _build_customer_on_way_order_item,
-        _build_customer_shop_conversation_item,
-        _build_customer_support_shop_conversation_item,
-    )
-
-    orders = list(
-        Order.objects
-        .filter(customer_id=customer_id)
-        .select_related('shop_owner', 'employee', 'driver')
-        .order_by('-created_at')
-    )
-    orders_snapshot = OrderSerializer(
-        orders,
-        many=True,
-        context=_serializer_context(base_url=base_url)
-    ).data
-
-    conversation_orders = (
-        Order.objects
-        .filter(customer_id=customer_id)
-        .select_related('shop_owner', 'shop_owner__shop_category')
-        .prefetch_related(
-            Prefetch(
-                'messages',
-                queryset=ChatMessage.objects.order_by('-created_at'),
-                to_attr='prefetched_messages',
-            )
-        )
-        .order_by('-updated_at', '-created_at')
-    )
-    support_conversations = (
-        CustomerSupportConversation.objects
-        .filter(customer_id=customer_id)
-        .select_related('shop_owner')
-        .order_by('-updated_at', '-created_at')
-    )
-    grouped_by_shop = {}
-    for order in conversation_orders:
-        if not order.shop_owner_id:
-            continue
-        order_timestamp = order.updated_at or order.created_at
-        current = grouped_by_shop.get(order.shop_owner_id)
-        if current is None or order_timestamp >= current['timestamp']:
-            grouped_by_shop[order.shop_owner_id] = {
-                'timestamp': order_timestamp,
-                'payload': _build_customer_shop_conversation_item(order, None, base_url=base_url),
-            }
-    for conversation in support_conversations:
-        if not conversation.shop_owner_id:
-            continue
-        conversation_timestamp = conversation.last_message_at or conversation.updated_at or conversation.created_at
-        current = grouped_by_shop.get(conversation.shop_owner_id)
-        if current is None or conversation_timestamp >= current['timestamp']:
-            grouped_by_shop[conversation.shop_owner_id] = {
-                'timestamp': conversation_timestamp,
-                'payload': _build_customer_support_shop_conversation_item(conversation, None, base_url=base_url),
-            }
-    shops_results = [
-        item['payload']
-        for item in sorted(grouped_by_shop.values(), key=lambda value: value['timestamp'], reverse=True)
-    ]
-
-    on_way_orders = (
-        Order.objects
-        .filter(customer_id=customer_id, status__in=['confirmed', 'preparing', 'on_way'])
-        .select_related('shop_owner', 'shop_owner__shop_category', 'driver')
-        .order_by('-updated_at', '-created_at')
-    )
-    on_way_results = [_build_customer_on_way_order_item(order, None, base_url=base_url) for order in on_way_orders]
-
-    return {
-        'orders': orders_snapshot,
-        'shops': {
-            'count': len(shops_results),
-            'results': shops_results,
-        },
-        'on_way': {
-            'count': len(on_way_results),
-            'results': on_way_results,
-        },
-    }
 
 
 class DriverConsumer(AsyncWebsocketConsumer):

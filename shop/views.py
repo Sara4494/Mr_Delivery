@@ -89,6 +89,7 @@ from .websocket_utils import (
     notify_shop_status_updated,
     notify_driver_status_updated,
 )
+from .customer_app_realtime import broadcast_customer_order_removed
 from .presence import format_utc_iso8601
 from .driver_chat_service import request_transfer_for_order, sync_order_assignment_change
 
@@ -2901,7 +2902,22 @@ def order_detail_view(request, order_id):
         )
     
     elif request.method == 'DELETE':
+        deleted_order_id = order.id
+        deleted_customer_id = order.customer_id
+        deleted_shop_owner_id = order.shop_owner_id
         order.delete()
+        try:
+            broadcast_customer_order_removed(
+                deleted_customer_id,
+                deleted_order_id,
+                shop_owner_id=deleted_shop_owner_id,
+                include_shop=True,
+                include_on_way=True,
+                include_history=True,
+                base_url=request.build_absolute_uri('/').rstrip('/'),
+            )
+        except Exception as e:
+            print(f"customer realtime remove broadcast error: {e}")
         return success_response(
             message=t(request, 'order_deleted_successfully'),
             status_code=status.HTTP_200_OK

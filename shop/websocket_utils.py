@@ -7,6 +7,10 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from .models import Driver, Order
 from .serializers import DriverSerializer, OrderSerializer
+from .customer_app_realtime import (
+    broadcast_customer_order_changed,
+    broadcast_customer_support_changed,
+)
 from .driver_chat_service import broadcast_driver_presence_update
 
 
@@ -86,10 +90,18 @@ def notify_order_update(shop_owner_id, customer_id, driver_id, order_data):
     """إشعار جميع الأطراف بتحديث الطلب"""
     if shop_owner_id:
         send_to_group(f'shop_orders_{shop_owner_id}', 'order_update', order_data)
-    
-    if customer_id:
-        send_to_group(f'customer_orders_{customer_id}', 'order_update', order_data)
-    
+
+    if customer_id and order_data.get('id'):
+        broadcast_customer_order_changed(
+            order_data['id'],
+            customer_id=customer_id,
+            shop_owner_id=shop_owner_id,
+            include_order=True,
+            include_shop=True,
+            include_on_way=True,
+            include_history=True,
+        )
+
     if driver_id:
         send_to_group(f'driver_{driver_id}', 'order_update', order_data)
 
@@ -124,7 +136,21 @@ def broadcast_chat_message(order_id, chat_type, message_payload, request=None, b
         base_url=base_url,
     )
     for group_name in _get_message_target_groups(order, chat_type):
+        if group_name == f'customer_orders_{order.customer_id}':
+            continue
         send_to_group(group_name, 'new_message', notification_payload)
+
+    if chat_type == 'shop_customer' and order.customer_id:
+        broadcast_customer_order_changed(
+            order.id,
+            customer_id=order.customer_id,
+            shop_owner_id=order.shop_owner_id,
+            include_order=True,
+            include_shop=True,
+            include_on_way=False,
+            include_history=True,
+            base_url=base_url,
+        )
 
 
 def broadcast_chat_message_to_order(order_id, message_payload, request=None, base_url=None):
@@ -161,8 +187,17 @@ def broadcast_chat_message_to_customer(order_id, chat_type, message_payload, req
         request=request,
         base_url=base_url,
     )
-    if order.customer_id:
-        send_to_group(f'customer_orders_{order.customer_id}', 'new_message', notification_payload)
+    if order.customer_id and chat_type == 'shop_customer':
+        broadcast_customer_order_changed(
+            order.id,
+            customer_id=order.customer_id,
+            shop_owner_id=order.shop_owner_id,
+            include_order=True,
+            include_shop=True,
+            include_on_way=False,
+            include_history=True,
+            base_url=base_url,
+        )
 
 
 def broadcast_support_chat_message(conversation_id, message_payload):
@@ -180,7 +215,13 @@ def notify_support_conversation_update(shop_owner_id, customer_id, conversation_
     if shop_owner_id:
         send_to_group(f'shop_orders_{shop_owner_id}', 'support_conversation_update', conversation_data)
     if customer_id:
-        send_to_group(f'customer_orders_{customer_id}', 'support_conversation_update', conversation_data)
+        broadcast_customer_support_changed(
+            conversation_data.get('support_conversation_id'),
+            customer_id=customer_id,
+            shop_owner_id=shop_owner_id,
+            include_shop=True,
+            include_history=True,
+        )
 
 
 def notify_support_message(shop_owner_id, customer_id, message_data):
@@ -188,7 +229,13 @@ def notify_support_message(shop_owner_id, customer_id, message_data):
     if shop_owner_id:
         send_to_group(f'shop_orders_{shop_owner_id}', 'support_message', message_data)
     if customer_id:
-        send_to_group(f'customer_orders_{customer_id}', 'support_message', message_data)
+        broadcast_customer_support_changed(
+            message_data.get('support_conversation_id') or message_data.get('thread_id'),
+            customer_id=customer_id,
+            shop_owner_id=shop_owner_id,
+            include_shop=True,
+            include_history=True,
+        )
 
 
 # ==================== Driver Location ====================

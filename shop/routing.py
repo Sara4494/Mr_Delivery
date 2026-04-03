@@ -22,6 +22,8 @@ websocket_urlpatterns = [
     # تحديثات الطلبات للعميل
     # ws://server/ws/orders/customer/{customer_id}/?token=JWT
     re_path(r'ws/orders/customer/(?P<customer_id>\d+)/$', consumers.CustomerOrderConsumer.as_asgi()),
+    # ws://server/ws/customer/app/{customer_id}/?token=JWT
+    re_path(r'ws/customer/app/(?P<customer_id>\d+)/$', consumers.CustomerOrderConsumer.as_asgi()),
     
     # ==================== Driver WebSocket ====================
     # قناة السائق (طلبات جديدة، رسائل، تحديث الموقع)
