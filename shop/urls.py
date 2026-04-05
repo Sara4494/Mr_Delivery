@@ -10,6 +10,7 @@ urlpatterns = [
     path('shop/dashboard-ui/', views.shop_dashboard_ui_view, name='shop_dashboard_ui'),
     path('shop/driver-chats/ui/', views.driver_chats_ui_view, name='shop_driver_chats_ui'),
     path('driver/dashboard-ui/', views.driver_dashboard_ui_view, name='driver_dashboard_ui'),
+    path('driver/store-chats-ui/', views.driver_store_chats_ui_view, name='driver_store_chats_ui'),
     path('customer/dashboard-ui/', views.customer_dashboard_ui_view, name='customer_dashboard_ui'),
     re_path(r'^app/status/?$', views.app_status_view, name='app_status'),
     # Public shops list (for customers)
@@ -65,6 +66,7 @@ urlpatterns = [
     path('shop/drivers/available-for-transfer/', driver_chat_views.driver_chat_available_transfer_drivers_view, name='driver_chat_available_transfer_drivers'),
     path('shop/driver-chats/voice/upload-url/', driver_chat_views.driver_chat_voice_upload_url_view, name='driver_chat_voice_upload_url'),
     path('shop/driver-chats/voice/upload/', driver_chat_views.driver_chat_voice_upload_view, name='driver_chat_voice_upload'),
+    path('driver/driver-chats/voice/upload/', driver_chat_views.driver_chat_driver_voice_upload_view, name='driver_chat_driver_voice_upload'),
     path('shop/driver-chats/mark-read/', driver_chat_views.driver_chat_mark_read_view, name='driver_chat_mark_read'),
     path('shop/driver-chats/resync/', driver_chat_views.driver_chat_resync_view, name='driver_chat_resync'),
     path('shop/driver-chats/calls/<str:call_id>/', driver_chat_views.driver_chat_call_detail_view, name='driver_chat_call_detail'),

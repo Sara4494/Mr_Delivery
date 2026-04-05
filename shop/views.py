@@ -106,6 +106,11 @@ def driver_dashboard_ui_view(request):
     return render(request, 'shop/driver_dashboard_ui.html')
 
 
+def driver_store_chats_ui_view(request):
+    """Experimental UI for driver-side shop chats."""
+    return render(request, 'shop/driver_store_chats_ui.html')
+
+
 def customer_dashboard_ui_view(request):
     """Experimental operational UI for the customer dashboard."""
     return render(request, 'shop/customer_dashboard_ui.html')

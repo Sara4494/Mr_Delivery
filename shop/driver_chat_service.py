@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from user.models import ShopOwner
 from user.utils import build_absolute_file_url
 
 from .models import (
@@ -120,6 +121,15 @@ def serialize_driver_chat_driver(driver: Driver, *, request=None, scope=None, ba
     }
 
 
+def serialize_driver_chat_shop(shop_owner: ShopOwner):
+    return {
+        'id': str(shop_owner.id),
+        'shop_name': shop_owner.shop_name,
+        'shop_number': shop_owner.shop_number,
+        'owner_name': shop_owner.owner_name,
+    }
+
+
 def serialize_driver_chat_order(link: DriverChatOrder):
     order = link.order
     customer = getattr(order, 'customer', None)
@@ -201,6 +211,7 @@ def serialize_driver_chat_conversation(conversation: DriverChatConversation, *, 
 
     return {
         'id': conversation.public_id or f'conv_{conversation.pk}',
+        'shop': serialize_driver_chat_shop(conversation.shop_owner),
         'driver': serialize_driver_chat_driver(conversation.driver, request=request, scope=scope, base_url=base_url),
         'orders': orders,
         'status': conversation.status,
@@ -871,7 +882,7 @@ def get_shop_snapshot(shop_owner, *, request=None, scope=None, base_url=None):
     conversations = (
         DriverChatConversation.objects
         .filter(shop_owner=shop_owner)
-        .select_related('driver')
+        .select_related('driver', 'shop_owner')
         .order_by('-updated_at', '-created_at')
     )
     latest_event = (

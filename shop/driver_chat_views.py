@@ -18,7 +18,7 @@ from .driver_chat_service import (
     serialize_driver_chat_driver,
     serialize_driver_chat_order,
 )
-from .permissions import IsShopOwnerOrEmployee
+from .permissions import IsDriver, IsShopOwnerOrEmployee
 from .presence import format_utc_iso8601
 
 
@@ -35,6 +35,30 @@ def _driver_chat_not_found(request):
     return error_response(
         message='محادثة السائق غير موجودة',
         status_code=status.HTTP_404_NOT_FOUND,
+        request=request,
+    )
+
+
+def _handle_driver_chat_voice_upload(request):
+    uploaded_file = request.FILES.get('file')
+    if not uploaded_file:
+        return error_response(
+            message='ملف الصوت مطلوب',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    extension = os.path.splitext(uploaded_file.name or '')[-1] or '.webm'
+    storage_path = f"driver_chats/voice/{uuid.uuid4().hex}{extension}"
+    saved_path = default_storage.save(storage_path, uploaded_file)
+    audio_url = request.build_absolute_uri(default_storage.url(saved_path))
+    return success_response(
+        data={
+            'audio_url': audio_url,
+            'path': saved_path,
+        },
+        message='تم رفع الملف الصوتي بنجاح',
+        status_code=status.HTTP_201_CREATED,
         request=request,
     )
 
@@ -172,27 +196,13 @@ def driver_chat_voice_upload_url_view(request):
 @api_view(['POST'])
 @permission_classes([IsShopOwnerOrEmployee])
 def driver_chat_voice_upload_view(request):
-    uploaded_file = request.FILES.get('file')
-    if not uploaded_file:
-        return error_response(
-            message='ملف الصوت مطلوب',
-            status_code=status.HTTP_400_BAD_REQUEST,
-            request=request,
-        )
+    return _handle_driver_chat_voice_upload(request)
 
-    extension = os.path.splitext(uploaded_file.name or '')[-1] or '.webm'
-    storage_path = f"driver_chats/voice/{uuid.uuid4().hex}{extension}"
-    saved_path = default_storage.save(storage_path, uploaded_file)
-    audio_url = request.build_absolute_uri(default_storage.url(saved_path))
-    return success_response(
-        data={
-            'audio_url': audio_url,
-            'path': saved_path,
-        },
-        message='تم رفع الملف الصوتي بنجاح',
-        status_code=status.HTTP_201_CREATED,
-        request=request,
-    )
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_chat_driver_voice_upload_view(request):
+    return _handle_driver_chat_voice_upload(request)
 
 
 @api_view(['POST'])
