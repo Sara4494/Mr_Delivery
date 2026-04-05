@@ -385,6 +385,48 @@ class DriverPresenceConnection(models.Model):
         return f"{self.driver_id} - {self.connection_type} - {self.channel_name}"
 
 
+class FCMDeviceToken(models.Model):
+    """Registered mobile device tokens for Firebase Cloud Messaging."""
+
+    USER_TYPE_CHOICES = [
+        ('customer', 'عميل'),
+        ('shop_owner', 'صاحب المحل'),
+        ('employee', 'موظف'),
+        ('driver', 'سائق'),
+    ]
+    PLATFORM_CHOICES = [
+        ('android', 'Android'),
+        ('ios', 'iOS'),
+    ]
+
+    user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, verbose_name="نوع المستخدم")
+    user_id = models.PositiveBigIntegerField(verbose_name="معرف المستخدم")
+    device_id = models.CharField(max_length=191, verbose_name="معرف الجهاز")
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES, verbose_name="المنصة")
+    fcm_token = models.TextField(verbose_name="رمز FCM")
+    app_version = models.CharField(max_length=50, blank=True, null=True, verbose_name="إصدار التطبيق")
+    is_active = models.BooleanField(default=True, verbose_name="نشط")
+    last_used_at = models.DateTimeField(blank=True, null=True, verbose_name="آخر استخدام")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "رمز جهاز FCM"
+        verbose_name_plural = "رموز أجهزة FCM"
+        ordering = ['-updated_at', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['user_type', 'user_id', 'device_id'], name='unique_fcm_device_per_user'),
+        ]
+        indexes = [
+            models.Index(fields=['user_type', 'user_id', 'is_active'], name='fcm_user_active_idx'),
+            models.Index(fields=['device_id'], name='fcm_device_id_idx'),
+            models.Index(fields=['is_active', '-updated_at'], name='fcm_active_updated_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user_type}:{self.user_id}:{self.device_id}"
+
+
 class DriverChatConversation(models.Model):
     STATUS_CHOICES = [
         ('waiting_reply', 'في انتظار الرد'),

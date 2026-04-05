@@ -267,6 +267,25 @@ APP_STATUS_FORCE_UPDATE_REQUIRED_VERSION = (
     or APP_STATUS_FORCE_UPDATE_CURRENT_VERSION
 )
 
+# Firebase Cloud Messaging (FCM)
+DEFAULT_FCM_SERVICE_ACCOUNT_FILE = BASE_DIR / "zaygo-user-firebase-adminsdk-fbsvc-fc21d26812.json"
+FCM_SERVICE_ACCOUNT_FILE = os.environ.get(
+    "FCM_SERVICE_ACCOUNT_FILE",
+    str(DEFAULT_FCM_SERVICE_ACCOUNT_FILE if DEFAULT_FCM_SERVICE_ACCOUNT_FILE.exists() else ""),
+).strip()
+FCM_SERVICE_ACCOUNT_JSON = os.environ.get("FCM_SERVICE_ACCOUNT_JSON", "").strip()
+FCM_PROJECT_ID = os.environ.get("FCM_PROJECT_ID", "").strip()
+FCM_ENABLED = _env_bool(
+    "FCM_ENABLED",
+    default=bool(FCM_SERVICE_ACCOUNT_FILE or FCM_SERVICE_ACCOUNT_JSON),
+)
+FCM_RING_CHANNEL_ID = os.environ.get("FCM_RING_CHANNEL_ID", "ring_channel").strip() or "ring_channel"
+FCM_CHAT_CHANNEL_ID = os.environ.get("FCM_CHAT_CHANNEL_ID", "chat_channel").strip() or "chat_channel"
+FCM_RING_SOUND = os.environ.get("FCM_RING_SOUND", "incoming_call").strip() or "incoming_call"
+FCM_RING_IOS_SOUND = os.environ.get("FCM_RING_IOS_SOUND", "incoming_call.mp3").strip() or "incoming_call.mp3"
+FCM_CHAT_SOUND = os.environ.get("FCM_CHAT_SOUND", "default").strip() or "default"
+FCM_CHAT_IOS_SOUND = os.environ.get("FCM_CHAT_IOS_SOUND", "default").strip() or "default"
+
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

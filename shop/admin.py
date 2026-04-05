@@ -3,7 +3,7 @@ from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, PaymentMethod,
-    Notification, Cart, CartItem, ShopDriver
+    Notification, Cart, CartItem, ShopDriver, FCMDeviceToken
 )
 
 
@@ -168,6 +168,22 @@ class ChatMessageAdmin(admin.ModelAdmin):
             'fields': ('is_read', 'created_at')
         }),
     )
+
+
+@admin.register(FCMDeviceToken)
+class FCMDeviceTokenAdmin(admin.ModelAdmin):
+    list_display = (
+        'user_type',
+        'user_id',
+        'device_id',
+        'platform',
+        'is_active',
+        'last_used_at',
+        'updated_at',
+    )
+    list_filter = ('user_type', 'platform', 'is_active', 'created_at', 'updated_at')
+    search_fields = ('device_id', 'fcm_token', 'user_id')
+    readonly_fields = ('created_at', 'updated_at', 'last_used_at')
 
 
 class CustomerSupportMessageInline(admin.TabularInline):

@@ -3,6 +3,8 @@ WebSocket Utility Functions
 للإرسال من REST APIs إلى WebSocket Channels
 """
 
+import logging
+
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from .models import Driver, Order
@@ -12,6 +14,10 @@ from .customer_app_realtime import (
     broadcast_customer_support_changed,
 )
 from .driver_chat_service import broadcast_driver_presence_update
+from .fcm_service import send_order_chat_push_fallback
+
+
+logger = logging.getLogger(__name__)
 
 
 def send_to_group(group_name, message_type, data):
@@ -152,6 +158,17 @@ def broadcast_chat_message(order_id, chat_type, message_payload, request=None, b
             base_url=base_url,
         )
 
+    try:
+        send_order_chat_push_fallback(
+            order.id,
+            chat_type,
+            message_payload,
+            request=request,
+            base_url=base_url,
+        )
+    except Exception as exc:
+        logger.exception('fcm chat fallback failed for order_id=%s chat_type=%s: %s', order.id, chat_type, exc)
+
 
 def broadcast_chat_message_to_order(order_id, message_payload, request=None, base_url=None):
     """
@@ -198,6 +215,17 @@ def broadcast_chat_message_to_customer(order_id, chat_type, message_payload, req
             include_history=True,
             base_url=base_url,
         )
+
+    try:
+        send_order_chat_push_fallback(
+            order.id,
+            chat_type,
+            message_payload,
+            request=request,
+            base_url=base_url,
+        )
+    except Exception as exc:
+        logger.exception('fcm customer chat fallback failed for order_id=%s chat_type=%s: %s', order.id, chat_type, exc)
 
 
 def broadcast_support_chat_message(conversation_id, message_payload):

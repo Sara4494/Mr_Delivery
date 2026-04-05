@@ -1678,6 +1678,113 @@
       ]
     },
     {
+      "name": "FCM Devices",
+      "item": [
+        {
+          "name": "Register FCM Device",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": \"abc-123\",\n  \"platform\": \"android\",\n  \"fcm_token\": \"your-fcm-token-here\",\n  \"app_version\": \"1.0.0\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/devices/fcm/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "devices",
+                "fcm",
+                "register"
+              ]
+            },
+            "description": "Register an FCM device token for the authenticated user. By default this request uses {{customer_token}}; swap it with {{access_token}}, {{employee_token}}, or {{driver_token}} when testing other roles."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh FCM Device",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": \"abc-123\",\n  \"platform\": \"android\",\n  \"fcm_token\": \"your-new-fcm-token-here\",\n  \"app_version\": \"1.0.1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/devices/fcm/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "devices",
+                "fcm",
+                "refresh"
+              ]
+            },
+            "description": "Refresh the stored FCM token for a device that already belongs to the authenticated user."
+          },
+          "response": []
+        },
+        {
+          "name": "Unregister FCM Device",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customer_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": \"abc-123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/devices/fcm/unregister",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "devices",
+                "fcm",
+                "unregister"
+              ]
+            },
+            "description": "Deactivate the authenticated user's FCM token for the provided device_id or fcm_token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Shops",
       "item": [
         {

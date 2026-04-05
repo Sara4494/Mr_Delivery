@@ -1,5 +1,7 @@
 ﻿import json
 import uuid
+import logging
+from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
@@ -37,7 +39,11 @@ from .customer_app_realtime import (
     build_order_delta_events,
     build_support_delta_events,
 )
+from .fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
+
+
+logger = logging.getLogger(__name__)
 
 
 def _with_localized_message(payload, message, lang=None):
@@ -323,6 +329,16 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
                 'data': ring_context['payload'],
             }
         )
+
+    try:
+        await sync_to_async(send_ring_push_fallback, thread_sensitive=False)(
+            int(order_id),
+            ring_context['payload'],
+            scope=getattr(consumer, 'scope', None),
+            base_url=getattr(consumer, 'base_url', None),
+        )
+    except Exception:
+        logger.exception('fcm ring fallback failed for order_id=%s', order_id)
 
     await _send_ack(
         consumer,
@@ -741,6 +757,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     include_on_way=False,
                     include_history=True,
                 )
+            )
+
+        try:
+            await sync_to_async(send_order_chat_push_fallback, thread_sensitive=False)(
+                int(self.order_id),
+                self.chat_type,
+                message_payload,
+                scope=getattr(self, 'scope', None),
+                base_url=getattr(self, 'base_url', None),
+            )
+        except Exception:
+            logger.exception(
+                'fcm chat fallback failed for order_id=%s chat_type=%s',
+                self.order_id,
+                self.chat_type,
             )
 
     async def broadcast_order_snapshot_update(self):

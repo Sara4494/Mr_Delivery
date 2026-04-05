@@ -1,6 +1,7 @@
 from django.urls import path, re_path
 
 from . import driver_chat_views
+from . import fcm_views
 from . import views
 
 app_name = 'shop'
@@ -113,6 +114,11 @@ urlpatterns = [
     # ==================== Customer Payment Methods ====================
     path('customer/payment-methods/', views.payment_method_list_view, name='payment_method_list'),
     path('customer/payment-methods/<int:method_id>/', views.payment_method_delete_view, name='payment_method_delete'),
+
+    # ==================== Firebase Cloud Messaging ====================
+    re_path(r'^devices/fcm/register/?$', fcm_views.fcm_register_device_view, name='fcm_register_device'),
+    re_path(r'^devices/fcm/refresh/?$', fcm_views.fcm_refresh_device_view, name='fcm_refresh_device'),
+    re_path(r'^devices/fcm/unregister/?$', fcm_views.fcm_unregister_device_view, name='fcm_unregister_device'),
     
     # ==================== Order Rating ====================
     path('orders/rate/', views.order_rating_create_view, name='order_rating_create'),
