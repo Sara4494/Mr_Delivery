@@ -1687,7 +1687,8 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{customer_token}}"
+                "value": "Bearer {{customer_token}}",
+                "disabled": true
               },
               {
                 "key": "Content-Type",
@@ -1696,7 +1697,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"device_id\": \"abc-123\",\n  \"platform\": \"android\",\n  \"fcm_token\": \"your-fcm-token-here\",\n  \"app_version\": \"1.0.0\"\n}"
+              "raw": "{\n  \"device_id\": \"abc-123\",\n  \"platform\": \"android\",\n  \"fcm_token\": \"your-fcm-token-here\",\n  \"app_version\": \"1.0.0\",\n  \"access_token\": \"{{customer_token}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/devices/fcm/register",
@@ -1710,7 +1711,7 @@
                 "register"
               ]
             },
-            "description": "Register an FCM device token for the authenticated user. By default this request uses {{customer_token}}; swap it with {{access_token}}, {{employee_token}}, or {{driver_token}} when testing other roles."
+            "description": "Register an FCM device token for the authenticated user. You can send the JWT access token inside the body using access_token, or enable the Authorization header if you prefer."
           },
           "response": []
         },
@@ -1721,7 +1722,8 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{customer_token}}"
+                "value": "Bearer {{customer_token}}",
+                "disabled": true
               },
               {
                 "key": "Content-Type",
@@ -1730,7 +1732,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"device_id\": \"abc-123\",\n  \"platform\": \"android\",\n  \"fcm_token\": \"your-new-fcm-token-here\",\n  \"app_version\": \"1.0.1\"\n}"
+              "raw": "{\n  \"device_id\": \"abc-123\",\n  \"platform\": \"android\",\n  \"fcm_token\": \"your-new-fcm-token-here\",\n  \"app_version\": \"1.0.1\",\n  \"access_token\": \"{{customer_token}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/devices/fcm/refresh",
@@ -1744,7 +1746,7 @@
                 "refresh"
               ]
             },
-            "description": "Refresh the stored FCM token for a device that already belongs to the authenticated user."
+            "description": "Refresh the stored FCM token for a device that already belongs to the authenticated user. access_token in the body is supported in addition to Authorization."
           },
           "response": []
         },
@@ -1755,7 +1757,8 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{customer_token}}"
+                "value": "Bearer {{customer_token}}",
+                "disabled": true
               },
               {
                 "key": "Content-Type",
@@ -1764,7 +1767,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"device_id\": \"abc-123\"\n}"
+              "raw": "{\n  \"device_id\": \"abc-123\",\n  \"access_token\": \"{{customer_token}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/devices/fcm/unregister",
@@ -1778,7 +1781,7 @@
                 "unregister"
               ]
             },
-            "description": "Deactivate the authenticated user's FCM token for the provided device_id or fcm_token."
+            "description": "Deactivate the authenticated user's FCM token for the provided device_id or fcm_token. access_token in the body is supported in addition to Authorization."
           },
           "response": []
         }

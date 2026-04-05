@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
 from shop.fcm_views import (
@@ -43,6 +44,22 @@ class FCMDeviceApiTests(TestCase):
         force_authenticate(request, user=user)
         return view(request)
 
+    def _access_token_for_user(self, user, user_type):
+        refresh = RefreshToken()
+        if user_type == 'customer':
+            refresh['customer_id'] = user.id
+        elif user_type == 'driver':
+            refresh['driver_id'] = user.id
+        elif user_type == 'employee':
+            refresh['employee_id'] = user.id
+            refresh['shop_owner_id'] = user.shop_owner_id
+        elif user_type == 'shop_owner':
+            refresh['shop_owner_id'] = user.id
+        else:
+            raise ValueError(f'Unsupported user_type: {user_type}')
+        refresh['user_type'] = user_type
+        return str(refresh.access_token)
+
     def test_register_endpoint_creates_device_token_for_authenticated_user(self):
         response = self._request(
             fcm_register_device_view,
@@ -64,6 +81,27 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(token.platform, 'android')
         self.assertEqual(token.fcm_token, 'token-123')
         self.assertTrue(token.is_active)
+
+    def test_register_endpoint_accepts_access_token_in_body(self):
+        request = self.factory.post(
+            '/api/devices/fcm/register',
+            {
+                'device_id': 'device-body-token',
+                'platform': 'android',
+                'fcm_token': 'token-body-123',
+                'app_version': '1.0.0',
+                'access_token': self._access_token_for_user(self.customer, 'customer'),
+            },
+            format='json',
+        )
+
+        response = fcm_register_device_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        token = FCMDeviceToken.objects.get(device_id='device-body-token')
+        self.assertEqual(token.user_type, 'customer')
+        self.assertEqual(token.user_id, self.customer.id)
+        self.assertEqual(token.fcm_token, 'token-body-123')
 
     def test_refresh_endpoint_updates_existing_device_token(self):
         token = FCMDeviceToken.objects.create(
@@ -94,6 +132,36 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(token.fcm_token, 'new-token')
         self.assertEqual(token.app_version, '2.0.0')
         self.assertTrue(token.is_active)
+
+    def test_refresh_endpoint_accepts_bearer_token_in_body(self):
+        token = FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-body-refresh',
+            platform='android',
+            fcm_token='old-body-token',
+            is_active=True,
+        )
+
+        request = self.factory.post(
+            '/api/devices/fcm/refresh',
+            {
+                'device_id': 'device-body-refresh',
+                'platform': 'ios',
+                'fcm_token': 'new-body-token',
+                'app_version': '3.0.0',
+                'access_token': f'Bearer {self._access_token_for_user(self.customer, "customer")}',
+            },
+            format='json',
+        )
+
+        response = fcm_refresh_device_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        token.refresh_from_db()
+        self.assertEqual(token.platform, 'ios')
+        self.assertEqual(token.fcm_token, 'new-body-token')
+        self.assertEqual(token.app_version, '3.0.0')
 
     def test_unregister_endpoint_only_deactivates_current_users_tokens(self):
         own_token = FCMDeviceToken.objects.create(
@@ -128,6 +196,31 @@ class FCMDeviceApiTests(TestCase):
         other_token.refresh_from_db()
         self.assertFalse(own_token.is_active)
         self.assertTrue(other_token.is_active)
+
+    def test_unregister_endpoint_accepts_access_token_in_body(self):
+        own_token = FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-body-unregister',
+            platform='android',
+            fcm_token='customer-body-token',
+            is_active=True,
+        )
+
+        request = self.factory.delete(
+            '/api/devices/fcm/unregister',
+            {
+                'device_id': 'device-body-unregister',
+                'access_token': self._access_token_for_user(self.customer, 'customer'),
+            },
+            format='json',
+        )
+
+        response = fcm_unregister_device_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        own_token.refresh_from_db()
+        self.assertFalse(own_token.is_active)
 
 
 class FCMFallbackDispatchTests(TestCase):

@@ -3,6 +3,18 @@ from rest_framework import serializers
 from .models import FCMDeviceToken
 
 
+class FCMAccessTokenSerializer(serializers.Serializer):
+    access_token = serializers.CharField(required=False, allow_blank=False, write_only=True)
+
+    def validate_access_token(self, value):
+        value = str(value or '').strip()
+        if value.lower().startswith('bearer '):
+            value = value[7:].strip()
+        if not value:
+            raise serializers.ValidationError('access_token is required when provided.')
+        return value
+
+
 class FCMDeviceTokenSerializer(serializers.ModelSerializer):
     class Meta:
         model = FCMDeviceToken
@@ -30,7 +42,7 @@ class FCMDeviceTokenSerializer(serializers.ModelSerializer):
         )
 
 
-class FCMDeviceRegisterSerializer(serializers.Serializer):
+class FCMDeviceRegisterSerializer(FCMAccessTokenSerializer):
     device_id = serializers.CharField(max_length=191)
     platform = serializers.ChoiceField(choices=[choice[0] for choice in FCMDeviceToken.PLATFORM_CHOICES])
     fcm_token = serializers.CharField()
@@ -53,7 +65,7 @@ class FCMDeviceRefreshSerializer(FCMDeviceRegisterSerializer):
     pass
 
 
-class FCMDeviceUnregisterSerializer(serializers.Serializer):
+class FCMDeviceUnregisterSerializer(FCMAccessTokenSerializer):
     device_id = serializers.CharField(max_length=191, required=False, allow_blank=False)
     fcm_token = serializers.CharField(required=False, allow_blank=False)
 
