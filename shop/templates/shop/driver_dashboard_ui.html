@@ -144,7 +144,7 @@
         </section>
     </main>
     <script>
-        const EP={login:'/api/driver/login/',dash:'/api/driver/dashboard/',orders:'/api/driver/orders/',invites:'/api/driver/invitations/',status:'/api/driver/status/',detail:id=>`/api/driver/orders/${id}/`,chat:id=>`/api/driver/orders/${id}/chat/`,media:id=>`/api/chat/order/${id}/send-media/`,invite:id=>`/api/driver/invitations/${id}/respond/`};
+        const EP={login:'/api/driver/login/',dash:'/api/driver/home/',orders:'/api/driver/orders/',invites:'/api/driver/invitations/',status:'/api/driver/status/',detail:id=>`/api/driver/orders/${id}/`,chat:id=>`/api/driver/orders/${id}/chat/`,media:id=>`/api/chat/order/${id}/send-media/`,invite:id=>`/api/driver/invitations/${id}/respond/`};
         const KEY={a:'mr_delivery_driver_access',r:'mr_delivery_driver_refresh',u:'mr_delivery_driver_user'};
         const $=id=>document.getElementById(id);
         const fmtMoney=v=>new Intl.NumberFormat('ar-EG',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(v||0));

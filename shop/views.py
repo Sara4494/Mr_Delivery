@@ -1854,7 +1854,7 @@ def driver_invitation_action_view(request, invitation_id):
 def driver_dashboard_view(request):
     """
     Driver home dashboard payload.
-    GET /api/driver/dashboard/
+    GET /api/driver/home/
     """
     driver = _get_driver_from_request(request)
     if not driver:

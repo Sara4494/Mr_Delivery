@@ -4938,10 +4938,10 @@
           ]
         },
         {
-          "name": "Dashboard",
+          "name": "Home",
           "item": [
             {
-              "name": "Driver Dashboard",
+              "name": "Driver Home",
               "request": {
                 "method": "GET",
                 "header": [
@@ -4951,14 +4951,14 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/driver/dashboard/",
+                  "raw": "{{base_url}}/api/driver/home/",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "driver",
-                    "dashboard",
+                    "home",
                     ""
                   ]
                 },
