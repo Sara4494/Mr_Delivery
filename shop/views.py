@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 import json
+from django.apps import apps as django_apps
 from django.conf import settings
 from django.shortcuts import render
 from django.core.cache import cache
@@ -12,6 +13,7 @@ from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
     CustomerSupportConversation, CustomerSupportMessage,
@@ -30,6 +32,9 @@ from .serializers import (
     CustomerAppAddressSerializer,
     DriverSerializer,
     DriverAppSerializer,
+    DriverProfileSerializer,
+    DriverProfileResponseSerializer,
+    DriverProfileUpdateSerializer,
     DriverCreateSerializer,
     DriverRegisterSerializer,
     DriverLocationUpdateSerializer,
@@ -948,6 +953,13 @@ def _get_driver_from_request(request):
         return Driver.objects.get(id=user.id)
     except (Driver.DoesNotExist, AttributeError):
         return None
+
+
+DRIVER_PHONE_CHANGE_OTP_TTL_SECONDS = 600
+
+
+def _driver_phone_change_cache_key(driver_id):
+    return f"driver_phone_change:{driver_id}"
 
 
 def _coerce_bool(value):
@@ -1961,6 +1973,363 @@ def driver_status_view(request):
         },
         message=t(request, 'driver_status_updated_successfully'),
         status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsDriver])
+def driver_profile_view(request):
+    """
+    Load and update the authenticated driver's profile.
+    GET/PATCH /api/user/profile/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(
+            message=t(request, 'driver_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    if request.method == 'GET':
+        completed_orders_count = driver.orders.filter(status='delivered').count()
+        serializer = DriverProfileSerializer(
+            driver,
+            context={
+                'request': request,
+                'completed_orders_count': completed_orders_count,
+                'overall_rating': driver.rating,
+            },
+        )
+        return success_response(
+            data=serializer.data,
+            message=t(request, 'profile_loaded_successfully'),
+            status_code=status.HTTP_200_OK,
+            request=request,
+        )
+
+    payload = {}
+
+    name_value = request.data.get('name', request.data.get('full_name'))
+    if name_value is not None:
+        payload['name'] = name_value
+
+    phone_value = request.data.get('phone_number', request.data.get('phone'))
+    if phone_value is not None:
+        normalized_phone = normalize_phone(phone_value)
+        payload['phone_number'] = normalized_phone
+        if normalized_phone and len(normalized_phone) >= 12 and normalized_phone != driver.phone_number:
+            return error_response(
+                message=t(request, 'phone_number_change_requires_otp_verification'),
+                errors={
+                    'phone_number': [
+                        t(request, 'phone_number_change_requires_otp_verification')
+                    ]
+                },
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                request=request,
+            )
+
+    vehicle_type = request.data.get('vehicle_type', request.data.get('vehicle'))
+    if vehicle_type is not None:
+        payload['vehicle_type'] = vehicle_type
+
+    remove_profile_image = request.data.get('remove_profile_image', request.data.get('delete_profile_image'))
+    if remove_profile_image is not None:
+        payload['remove_profile_image'] = remove_profile_image
+
+    profile_image = (
+        request.FILES.get('profile_image')
+        or request.FILES.get('avatar')
+        or request.FILES.get('image')
+    )
+    if profile_image is not None:
+        payload['profile_image'] = profile_image
+
+    serializer = DriverProfileUpdateSerializer(
+        driver,
+        data=payload,
+        partial=True,
+        context={'request': request},
+    )
+    if not serializer.is_valid():
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=serializer.errors,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    serializer.save()
+    response_serializer = DriverProfileResponseSerializer(driver, context={'request': request})
+    return success_response(
+        data=response_serializer.data,
+        message=t(request, 'profile_updated_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_profile_phone_send_otp_view(request):
+    """
+    Request OTP before changing the driver's phone number.
+    POST /api/user/profile/phone/send-otp/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(
+            message=t(request, 'driver_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    new_phone_number = request.data.get('new_phone_number', request.data.get('phone_number'))
+    if not new_phone_number:
+        return error_response(
+            message=t(request, 'phone_number_is_required'),
+            errors={'phone_number': [t(request, 'phone_number_is_required')]},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    normalized_phone = normalize_phone(new_phone_number)
+    if not normalized_phone or len(normalized_phone) < 12:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'phone_number': [t(request, 'invalid_phone_number')]},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    if normalized_phone == driver.phone_number:
+        return error_response(
+            message=t(request, 'new_phone_number_matches_current_phone_number'),
+            errors={'phone_number': [t(request, 'new_phone_number_matches_current_phone_number')]},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    phone_variants = DriverProfileUpdateSerializer._phone_variants(new_phone_number)
+    existing_driver = Driver.objects.filter(phone_number__in=phone_variants).exclude(pk=driver.pk)
+    if existing_driver.exists():
+        return error_response(
+            message=t(request, 'phone_number_is_already_registered'),
+            errors={'phone_number': [t(request, 'phone_number_is_already_registered')]},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    send_ok, send_msg = otp_send(normalized_phone)
+    if not send_ok:
+        return error_response(
+            message=localize_message(request, send_msg),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    cache.set(
+        _driver_phone_change_cache_key(driver.id),
+        {'phone_number': normalized_phone},
+        DRIVER_PHONE_CHANGE_OTP_TTL_SECONDS,
+    )
+
+    return success_response(
+        data={'phone_number': normalized_phone},
+        message=t(request, 'otp_sent_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_profile_phone_verify_otp_view(request):
+    """
+    Verify OTP and complete the driver's phone number change.
+    POST /api/user/profile/phone/verify-otp/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(
+            message=t(request, 'driver_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    new_phone_number = request.data.get('new_phone_number', request.data.get('phone_number'))
+    otp_code = request.data.get('otp')
+
+    errors = {}
+    if not new_phone_number:
+        errors['phone_number'] = [t(request, 'phone_number_is_required')]
+    if not otp_code:
+        errors['otp'] = [t(request, 'verification_code_is_required')]
+    if errors:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=errors,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    normalized_phone = normalize_phone(new_phone_number)
+    if not normalized_phone or len(normalized_phone) < 12:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'phone_number': [t(request, 'invalid_phone_number')]},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    pending_change = cache.get(_driver_phone_change_cache_key(driver.id))
+    if not pending_change:
+        return error_response(
+            message=t(request, 'phone_number_change_otp_request_not_found'),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    if normalized_phone != pending_change.get('phone_number'):
+        return error_response(
+            message=t(request, 'phone_number_change_otp_phone_mismatch'),
+            errors={'phone_number': [t(request, 'phone_number_change_otp_phone_mismatch')]},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    phone_variants = DriverProfileUpdateSerializer._phone_variants(normalized_phone)
+    existing_driver = Driver.objects.filter(phone_number__in=phone_variants).exclude(pk=driver.pk)
+    if existing_driver.exists():
+        return error_response(
+            message=t(request, 'phone_number_is_already_registered'),
+            errors={'phone_number': [t(request, 'phone_number_is_already_registered')]},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    if not otp_verify(normalized_phone, otp_code):
+        return error_response(
+            message=t(request, 'verification_code_is_invalid_or_expired'),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            request=request,
+        )
+
+    driver.phone_number = normalized_phone
+    driver.save(update_fields=['phone_number', 'updated_at'])
+    cache.delete(_driver_phone_change_cache_key(driver.id))
+
+    return success_response(
+        data={'phone_number': normalized_phone},
+        message=t(request, 'phone_number_verified_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_change_password_view(request):
+    """
+    Change password for the authenticated driver.
+    POST /api/driver/password/change/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(
+            message=t(request, 'driver_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    current_password = (
+        request.data.get('current_password')
+        or request.data.get('old_password')
+        or request.data.get('password')
+    )
+    new_password = request.data.get('new_password')
+    confirm_password = (
+        request.data.get('confirm_password')
+        or request.data.get('confirm_new_password')
+        or request.data.get('new_password_confirmation')
+    )
+
+    errors = {}
+    if not current_password:
+        errors['current_password'] = [t(request, 'current_password_is_required')]
+    if not new_password:
+        errors['new_password'] = [t(request, 'new_password_is_required')]
+    elif len(str(new_password)) < 6:
+        errors['new_password'] = [t(request, 'password_must_be_at_least_6_characters')]
+    if not confirm_password:
+        errors['confirm_password'] = [t(request, 'confirm_password_is_required')]
+    elif new_password and str(confirm_password) != str(new_password):
+        errors['confirm_password'] = [t(request, 'new_password_confirmation_does_not_match')]
+    if current_password and not driver.check_password(current_password):
+        errors['current_password'] = [t(request, 'current_password_is_incorrect')]
+
+    if errors:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors=errors,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            request=request,
+        )
+
+    driver.set_password(new_password)
+    driver.save(update_fields=['password', 'updated_at'])
+    return success_response(
+        data={},
+        message=t(request, 'password_changed_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_logout_view(request):
+    """
+    Log out the authenticated driver.
+    POST /api/driver/logout/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(
+            message=t(request, 'driver_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    refresh_token = request.data.get('refresh') or request.data.get('refresh_token')
+    if refresh_token and django_apps.is_installed('rest_framework_simplejwt.token_blacklist'):
+        try:
+            RefreshToken(refresh_token).blacklist()
+        except Exception:
+            pass
+
+    update_fields = ['last_seen_at', 'updated_at']
+    driver.last_seen_at = timezone.now()
+
+    active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
+    if active_orders_count == 0 and driver.status != 'offline':
+        driver.status = 'offline'
+        update_fields.append('status')
+
+    driver.save(update_fields=update_fields)
+
+    if 'status' in update_fields:
+        try:
+            notify_driver_status_updated(driver)
+        except Exception as e:
+            print(f"driver_status_updated WebSocket error: {e}")
+
+    return success_response(
+        data={},
+        message=t(request, 'logged_out_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request,
     )
 
 

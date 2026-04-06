@@ -473,6 +473,123 @@ class DriverAppSerializer(serializers.ModelSerializer):
         return list(shops)
 
 
+class DriverProfileResponseSerializer(serializers.ModelSerializer):
+    """Driver profile payload for the profile and personal-info screens."""
+
+    profile_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Driver
+        fields = [
+            'id',
+            'name',
+            'phone_number',
+            'profile_image_url',
+            'vehicle_type',
+        ]
+        read_only_fields = fields
+
+    def get_profile_image_url(self, obj):
+        if obj.profile_image:
+            return _context_file_url(self, obj.profile_image)
+        return None
+
+
+class DriverProfileSerializer(DriverProfileResponseSerializer):
+    """Extended driver profile payload including statistics cards."""
+
+    stats = serializers.SerializerMethodField()
+
+    class Meta(DriverProfileResponseSerializer.Meta):
+        fields = DriverProfileResponseSerializer.Meta.fields + ['stats']
+        read_only_fields = fields
+
+    def get_stats(self, obj):
+        completed_orders_count = self.context.get('completed_orders_count')
+        if completed_orders_count is None:
+            completed_orders_count = obj.orders.filter(status='delivered').count()
+
+        rating_value = self.context.get('overall_rating', obj.rating or 0)
+        try:
+            overall_rating = round(float(rating_value), 2)
+        except (TypeError, ValueError):
+            overall_rating = 0.0
+
+        return {
+            'overall_rating': overall_rating,
+            'completed_orders_count': int(completed_orders_count or 0),
+        }
+
+
+class DriverProfileUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating the authenticated driver's personal data."""
+
+    profile_image = serializers.ImageField(required=False, allow_null=True)
+    remove_profile_image = serializers.BooleanField(write_only=True, required=False, default=False)
+
+    class Meta:
+        model = Driver
+        fields = [
+            'name',
+            'phone_number',
+            'profile_image',
+            'remove_profile_image',
+            'vehicle_type',
+        ]
+
+    @staticmethod
+    def _phone_variants(phone_number):
+        raw = str(phone_number or '').strip()
+        normalized = normalize_phone(raw)
+        variants = {raw, normalized}
+        if normalized.startswith('+20'):
+            variants.add(normalized[1:])
+            variants.add(normalized[3:])
+            variants.add('0' + normalized[3:])
+        return [variant for variant in variants if variant]
+
+    def validate_name(self, value):
+        request = self.context.get('request')
+        name = str(value or '').strip()
+        if not name:
+            raise serializers.ValidationError(t(request, 'name_is_required'))
+        return name
+
+    def validate_phone_number(self, value):
+        request = self.context.get('request')
+        raw_phone = str(value or '').strip()
+        if not raw_phone:
+            raise serializers.ValidationError(t(request, 'phone_number_is_required'))
+
+        normalized_phone = normalize_phone(raw_phone)
+        existing_driver = Driver.objects.filter(phone_number__in=self._phone_variants(raw_phone))
+        if self.instance and self.instance.pk:
+            existing_driver = existing_driver.exclude(pk=self.instance.pk)
+        if existing_driver.exists():
+            raise serializers.ValidationError(t(request, 'phone_number_is_already_registered'))
+        return normalized_phone
+
+    def validate_vehicle_type(self, value):
+        request = self.context.get('request')
+        vehicle_type = str(value or '').strip()
+        if not vehicle_type:
+            raise serializers.ValidationError(t(request, 'vehicle_type_is_required'))
+        if vehicle_type not in {choice[0] for choice in Driver.VEHICLE_TYPE_CHOICES}:
+            raise serializers.ValidationError(t(request, 'invalid_vehicle_type'))
+        return vehicle_type
+
+    def update(self, instance, validated_data):
+        remove_profile_image = validated_data.pop('remove_profile_image', False)
+        if remove_profile_image:
+            instance.profile_image = None
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        instance.save()
+        return instance
+
+
 class DriverRegisterSerializer(serializers.ModelSerializer):
     """Serializer for self-registering a driver account in the delivery app."""
 

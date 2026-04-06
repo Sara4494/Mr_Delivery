@@ -92,8 +92,13 @@ urlpatterns = [
     path('driver/orders/<int:order_id>/transfer/', views.driver_order_transfer_view, name='driver_order_transfer'),
     path('driver/orders/<int:order_id>/chat/', views.driver_order_chat_view, name='driver_order_chat'),
     path('driver/status/', views.driver_status_view, name='driver_status'),
+    path('user/profile/', views.driver_profile_view, name='driver_profile'),
+    path('user/profile/phone/send-otp/', views.driver_profile_phone_send_otp_view, name='driver_profile_phone_send_otp'),
+    path('user/profile/phone/verify-otp/', views.driver_profile_phone_verify_otp_view, name='driver_profile_phone_verify_otp'),
+    path('driver/password/change/', views.driver_change_password_view, name='driver_password_change'),
     path('driver/password/send-otp/', views.driver_password_send_otp_view, name='driver_password_send_otp'),
     path('driver/password/reset/', views.driver_password_reset_view, name='driver_password_reset'),
+    path('driver/logout/', views.driver_logout_view, name='driver_logout'),
     path('driver/invitation/respond/', views.driver_invitation_respond_view, name='driver_invitation_respond'),
     
     # ==================== Customer Auth ====================

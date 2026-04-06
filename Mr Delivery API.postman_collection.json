@@ -4660,14 +4660,15 @@
                 {
                   "listen": "test",
                   "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "    var jsonData = pm.response.json();",
-                      "    if (jsonData && jsonData.data && jsonData.data.access) {",
-                      "        pm.environment.set(\"driver_token\", jsonData.data.access);",
-                      "    }",
-                      "}"
-                    ],
+                      "exec": [
+                        "if (pm.response.code === 200) {",
+                        "    var jsonData = pm.response.json();",
+                        "    if (jsonData && jsonData.data) {",
+                        "        if (jsonData.data.access) pm.environment.set(\"driver_token\", jsonData.data.access);",
+                        "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
+                        "    }",
+                        "}"
+                      ],
                     "type": "text/javascript",
                     "packages": {},
                     "requests": {}
@@ -4709,14 +4710,15 @@
                 {
                   "listen": "test",
                   "script": {
-                    "exec": [
-                      "if (pm.response.code === 200) {",
-                      "    var jsonData = pm.response.json();",
-                      "    if (jsonData && jsonData.data && jsonData.data.access) {",
-                      "        pm.environment.set(\"driver_token\", jsonData.data.access);",
-                      "    }",
-                      "}"
-                    ],
+                      "exec": [
+                        "if (pm.response.code === 200) {",
+                        "    var jsonData = pm.response.json();",
+                        "    if (jsonData && jsonData.data) {",
+                        "        if (jsonData.data.access) pm.environment.set(\"driver_token\", jsonData.data.access);",
+                        "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
+                        "    }",
+                        "}"
+                      ],
                     "type": "text/javascript",
                     "packages": {},
                     "requests": {}
@@ -5031,6 +5033,277 @@
                   ]
                 },
                 "description": "تحويل حالة السائق إلى غير متصل إذا لم يكن لديه طلبات جارية."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Profile",
+          "item": [
+            {
+              "name": "Get Driver Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/user/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "user",
+                    "profile",
+                    ""
+                  ]
+                },
+                "description": "Load the driver profile payload for the Profile screen, including statistics cards."
+              },
+              "response": []
+            },
+            {
+              "name": "Update Driver Profile (JSON)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name\": \"Mohammed Badawy\",\n    \"phone_number\": \"+201024305305\",\n    \"vehicle_type\": \"motorcycle\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/user/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "user",
+                    "profile",
+                    ""
+                  ]
+                },
+                "description": "Update the driver personal data via JSON. If the phone number changes, complete the OTP flow first."
+              },
+              "response": []
+            },
+            {
+              "name": "Update Driver Profile (form-data + Image)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "Mohammed Badawy",
+                      "type": "text"
+                    },
+                    {
+                      "key": "phone_number",
+                      "value": "+201024305305",
+                      "type": "text"
+                    },
+                    {
+                      "key": "vehicle_type",
+                      "value": "motorcycle",
+                      "type": "text"
+                    },
+                    {
+                      "key": "profile_image",
+                      "type": "file",
+                      "value": null
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/user/profile/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "user",
+                    "profile",
+                    ""
+                  ]
+                },
+                "description": "Update the driver personal data and upload a new profile image via multipart/form-data."
+              },
+              "response": []
+            },
+            {
+              "name": "Send OTP - Change Driver Phone",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"+201055555555\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/user/profile/phone/send-otp/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "user",
+                    "profile",
+                    "phone",
+                    "send-otp",
+                    ""
+                  ]
+                },
+                "description": "Send OTP to the new phone number before applying the driver's phone change."
+              },
+              "response": []
+            },
+            {
+              "name": "Verify OTP - Change Driver Phone",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"phone_number\": \"+201055555555\",\n    \"otp\": \"123456\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/user/profile/phone/verify-otp/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "user",
+                    "profile",
+                    "phone",
+                    "verify-otp",
+                    ""
+                  ]
+                },
+                "description": "Verify OTP to complete the driver's phone number change."
+              },
+              "response": []
+            },
+            {
+              "name": "Change Driver Password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"current_password\": \"Etony@010\",\n    \"new_password\": \"Etony@011\",\n    \"confirm_password\": \"Etony@011\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/password/change/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "password",
+                    "change",
+                    ""
+                  ]
+                },
+                "description": "Change the driver's password from the personal information screen."
+              },
+              "response": []
+            },
+            {
+              "name": "Driver Logout",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    pm.environment.unset(\"driver_token\");",
+                      "    pm.environment.unset(\"refresh_token\");",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/logout/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "logout",
+                    ""
+                  ]
+                },
+                "description": "Log out the driver. If refresh-token blacklisting is enabled on the backend, refresh_token will also be used."
               },
               "response": []
             }

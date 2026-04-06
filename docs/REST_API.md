@@ -212,6 +212,78 @@ Content-Type: application/json
 }
 ```
 
+### Driver App Profile
+```http
+GET /api/user/profile/
+Authorization: Bearer {driver_token}
+```
+
+Returns:
+- `id`
+- `name`
+- `phone_number`
+- `profile_image_url`
+- `vehicle_type`
+- `stats.overall_rating`
+- `stats.completed_orders_count`
+
+### Update Driver Personal Info
+```http
+PATCH /api/user/profile/
+Authorization: Bearer {driver_token}
+Content-Type: multipart/form-data
+```
+
+Supported fields:
+- `name`
+- `phone_number` (changing it requires OTP verification first)
+- `vehicle_type` (`motorcycle` or `bicycle`)
+- `profile_image`
+
+### Driver Phone Change OTP
+```http
+POST /api/user/profile/phone/send-otp/
+POST /api/user/profile/phone/verify-otp/
+Authorization: Bearer {driver_token}
+Content-Type: application/json
+```
+
+Example:
+```json
+{
+    "phone_number": "+201012345678"
+}
+```
+
+```json
+{
+    "phone_number": "+201012345678",
+    "otp": "123456"
+}
+```
+
+### Driver Password Change
+```http
+POST /api/driver/password/change/
+Authorization: Bearer {driver_token}
+Content-Type: application/json
+```
+
+```json
+{
+    "current_password": "old_password",
+    "new_password": "new_password",
+    "confirm_password": "new_password"
+}
+```
+
+### Driver Logout
+```http
+POST /api/driver/logout/
+Authorization: Bearer {driver_token}
+Content-Type: application/json
+```
+
 ---
 
 ## 📦 Products & Categories
