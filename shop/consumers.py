@@ -739,24 +739,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         group_names = await self.get_order_channel_targets()
         for group_name in group_names:
-            if group_name.startswith('customer_orders_'):
-                continue
             await self.channel_layer.group_send(
                 group_name,
                 {
                     'type': 'new_message',
                     'data': notification_payload,
                 }
-            )
-
-        if self.chat_type == 'shop_customer':
-            await self.dispatch_customer_delta_events(
-                await self.get_customer_app_order_delta_events(
-                    include_order=True,
-                    include_shop=True,
-                    include_on_way=False,
-                    include_history=True,
-                )
             )
 
         try:

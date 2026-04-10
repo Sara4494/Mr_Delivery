@@ -142,21 +142,7 @@ def broadcast_chat_message(order_id, chat_type, message_payload, request=None, b
         base_url=base_url,
     )
     for group_name in _get_message_target_groups(order, chat_type):
-        if group_name == f'customer_orders_{order.customer_id}':
-            continue
         send_to_group(group_name, 'new_message', notification_payload)
-
-    if chat_type == 'shop_customer' and order.customer_id:
-        broadcast_customer_order_changed(
-            order.id,
-            customer_id=order.customer_id,
-            shop_owner_id=order.shop_owner_id,
-            include_order=True,
-            include_shop=True,
-            include_on_way=False,
-            include_history=True,
-            base_url=base_url,
-        )
 
     try:
         send_order_chat_push_fallback(

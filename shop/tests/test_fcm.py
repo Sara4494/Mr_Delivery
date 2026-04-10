@@ -133,6 +133,81 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(token.app_version, '2.0.0')
         self.assertTrue(token.is_active)
 
+    def test_register_endpoint_reuses_existing_user_record_for_new_device(self):
+        token = FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-old',
+            platform='android',
+            fcm_token='old-token',
+            is_active=True,
+        )
+
+        response = self._request(
+            fcm_register_device_view,
+            'POST',
+            '/api/devices/fcm/register',
+            self.customer,
+            {
+                'device_id': 'device-new',
+                'platform': 'ios',
+                'fcm_token': 'new-token',
+                'app_version': '4.0.0',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            FCMDeviceToken.objects.filter(user_type='customer', user_id=self.customer.id).count(),
+            1,
+        )
+        token.refresh_from_db()
+        self.assertEqual(token.device_id, 'device-new')
+        self.assertEqual(token.platform, 'ios')
+        self.assertEqual(token.fcm_token, 'new-token')
+        self.assertEqual(token.app_version, '4.0.0')
+        self.assertTrue(token.is_active)
+
+    def test_register_endpoint_removes_other_user_tokens(self):
+        FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-old',
+            platform='android',
+            fcm_token='old-token',
+            is_active=True,
+        )
+        latest_token = FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-current',
+            platform='android',
+            fcm_token='current-token',
+            is_active=True,
+        )
+
+        response = self._request(
+            fcm_register_device_view,
+            'POST',
+            '/api/devices/fcm/register',
+            self.customer,
+            {
+                'device_id': 'device-fresh',
+                'platform': 'android',
+                'fcm_token': 'fresh-token',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        latest_token.refresh_from_db()
+        self.assertTrue(latest_token.is_active)
+        self.assertEqual(latest_token.device_id, 'device-fresh')
+        self.assertEqual(latest_token.fcm_token, 'fresh-token')
+        self.assertEqual(
+            FCMDeviceToken.objects.filter(user_type='customer', user_id=self.customer.id).count(),
+            1,
+        )
+
     def test_refresh_endpoint_accepts_bearer_token_in_body(self):
         token = FCMDeviceToken.objects.create(
             user_type='customer',

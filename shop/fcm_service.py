@@ -199,26 +199,41 @@ def register_device_token(*, user, device_id, platform, fcm_token, app_version=_
     now = timezone.now()
 
     with transaction.atomic():
+        FCMDeviceToken.objects.filter(
+            user_type=user_type,
+            user_id=user_id,
+        ).exclude(
+            device_id=device_id,
+        ).update(is_active=False, updated_at=now)
+
         FCMDeviceToken.objects.filter(fcm_token=fcm_token).exclude(
             user_type=user_type,
             user_id=user_id,
             device_id=device_id,
         ).update(is_active=False, updated_at=now)
 
-        token_record, created = FCMDeviceToken.objects.select_for_update().get_or_create(
-            user_type=user_type,
-            user_id=user_id,
-            device_id=device_id,
-            defaults={
-                'platform': platform,
-                'fcm_token': fcm_token,
-                'app_version': None if app_version is _UNSET else app_version,
-                'is_active': True,
-                'last_used_at': now,
-            },
+        token_record = (
+            FCMDeviceToken.objects.select_for_update()
+            .filter(user_type=user_type, user_id=user_id)
+            .order_by('-updated_at', '-created_at')
+            .first()
         )
+        created = token_record is None
+
+        if created:
+            token_record = FCMDeviceToken.objects.create(
+                user_type=user_type,
+                user_id=user_id,
+                device_id=device_id,
+                platform=platform,
+                fcm_token=fcm_token,
+                app_version=None if app_version is _UNSET else app_version,
+                is_active=True,
+                last_used_at=now,
+            )
 
         field_updates = [
+            ('device_id', device_id),
             ('platform', platform),
             ('fcm_token', fcm_token),
             ('is_active', True),
@@ -238,6 +253,11 @@ def register_device_token(*, user, device_id, platform, fcm_token, app_version=_
         elif changed_fields:
             changed_fields.append('updated_at')
             token_record.save(update_fields=changed_fields)
+
+        FCMDeviceToken.objects.filter(
+            user_type=user_type,
+            user_id=user_id,
+        ).exclude(pk=token_record.pk).delete()
 
     logger.info(
         'fcm.token.%s user_type=%s user_id=%s device_id=%s platform=%s token=%s created=%s',
