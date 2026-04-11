@@ -423,6 +423,9 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(mock_send.call_count, 2)
         target_types = sorted(call.args[0].user_type for call in mock_send.call_args_list)
         self.assertEqual(target_types, ['employee', 'shop_owner'])
+        for call in mock_send.call_args_list:
+            self.assertEqual(call.kwargs['channel_id'], 'incoming_ring_channel')
+            self.assertTrue(call.kwargs['high_priority'])
 
 
 class FCMServiceTests(TestCase):

@@ -279,7 +279,7 @@ FCM_ENABLED = _env_bool(
     "FCM_ENABLED",
     default=bool(FCM_SERVICE_ACCOUNT_FILE or FCM_SERVICE_ACCOUNT_JSON),
 )
-FCM_RING_CHANNEL_ID = os.environ.get("FCM_RING_CHANNEL_ID", "ring_channel").strip() or "ring_channel"
+FCM_RING_CHANNEL_ID = os.environ.get("FCM_RING_CHANNEL_ID", "incoming_ring_channel").strip() or "incoming_ring_channel"
 FCM_CHAT_CHANNEL_ID = os.environ.get("FCM_CHAT_CHANNEL_ID", "chat_channel").strip() or "chat_channel"
 FCM_RING_SOUND = os.environ.get("FCM_RING_SOUND", "incoming_call").strip() or "incoming_call"
 FCM_RING_IOS_SOUND = os.environ.get("FCM_RING_IOS_SOUND", "incoming_call.mp3").strip() or "incoming_call.mp3"
