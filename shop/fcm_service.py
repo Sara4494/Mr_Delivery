@@ -550,6 +550,7 @@ def _send_push_to_token_records(
         'tokens_invalidated': 0,
     }
     if not token_records:
+        logger.info('fcm.send.batch.skip reason=no_active_tokens')
         return summary
 
     try:
@@ -636,7 +637,20 @@ def _send_push_to_token_records(
                     last_used_at=now,
                     updated_at=now,
                 )
+            logger.info(
+                'fcm.send.batch.chunk tokens=%s success=%s failure=%s',
+                len(chunk),
+                sum(1 for response in batch_response.responses if response.success),
+                sum(1 for response in batch_response.responses if not response.success),
+            )
 
+        logger.info(
+            'fcm.send.batch.complete tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+            summary['tokens_total'],
+            summary['tokens_sent'],
+            summary['tokens_failed'],
+            summary['tokens_invalidated'],
+        )
         return summary
 
     for token_record in token_records:
@@ -657,6 +671,22 @@ def _send_push_to_token_records(
             if result.get('invalid_token'):
                 summary['tokens_invalidated'] += 1
 
+    logger.info(
+        'fcm.send.batch.complete tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+        summary['tokens_total'],
+        summary['tokens_sent'],
+        summary['tokens_failed'],
+        summary['tokens_invalidated'],
+    )
+    logger.info(
+        'fcm.ring.result order_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+        order.id,
+        summary['users_targeted'],
+        summary['tokens_total'],
+        summary['tokens_sent'],
+        summary['tokens_failed'],
+        summary['tokens_invalidated'],
+    )
     return summary
 
 
@@ -815,7 +845,7 @@ def send_to_users(
     exclude_device_ids=None,
 ):
     identities = [resolve_user_identity(user) for user in users]
-    return send_push_to_identities(
+    summary = send_push_to_identities(
         identities,
         title=title,
         body=body,
@@ -989,7 +1019,7 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
         sender_type,
         recipient_identities,
     )
-    return send_push_to_identities(
+    summary = send_push_to_identities(
         recipient_identities,
         title=_trim_text(shop_name, default='Mr Delivery', max_length=120),
         body=_trim_text(message_preview, default='رسالة جديدة', max_length=180),
@@ -999,6 +1029,16 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
         ios_sound=getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default'),
         high_priority=False,
     )
+    logger.info(
+        'fcm.chat.result order_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+        order.id,
+        summary['users_targeted'],
+        summary['tokens_total'],
+        summary['tokens_sent'],
+        summary['tokens_failed'],
+        summary['tokens_invalidated'],
+    )
+    return summary
 
 
 def _ring_notification_body(order, ring_payload, target):
