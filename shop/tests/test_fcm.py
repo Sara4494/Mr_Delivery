@@ -4,7 +4,12 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from shop.fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
+from shop.fcm_service import (
+    send_order_chat_push_fallback,
+    send_push_to_token_record,
+    send_push_to_user,
+    send_ring_push_fallback,
+)
 from shop.fcm_views import (
     fcm_refresh_device_view,
     fcm_register_device_view,
@@ -133,8 +138,8 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(token.app_version, '2.0.0')
         self.assertTrue(token.is_active)
 
-    def test_register_endpoint_reuses_existing_user_record_for_new_device(self):
-        token = FCMDeviceToken.objects.create(
+    def test_register_endpoint_creates_additional_record_for_new_device(self):
+        existing_token = FCMDeviceToken.objects.create(
             user_type='customer',
             user_id=self.customer.id,
             device_id='device-old',
@@ -159,30 +164,32 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             FCMDeviceToken.objects.filter(user_type='customer', user_id=self.customer.id).count(),
-            1,
+            2,
         )
-        token.refresh_from_db()
-        self.assertEqual(token.device_id, 'device-new')
-        self.assertEqual(token.platform, 'ios')
-        self.assertEqual(token.fcm_token, 'new-token')
-        self.assertEqual(token.app_version, '4.0.0')
-        self.assertTrue(token.is_active)
+        existing_token.refresh_from_db()
+        created_token = FCMDeviceToken.objects.get(device_id='device-new')
+        self.assertEqual(existing_token.device_id, 'device-old')
+        self.assertTrue(existing_token.is_active)
+        self.assertEqual(created_token.platform, 'ios')
+        self.assertEqual(created_token.fcm_token, 'new-token')
+        self.assertEqual(created_token.app_version, '4.0.0')
+        self.assertTrue(created_token.is_active)
 
-    def test_register_endpoint_removes_other_user_tokens(self):
+    def test_register_endpoint_deactivates_same_token_for_other_user(self):
+        other_user_token = FCMDeviceToken.objects.create(
+            user_type='driver',
+            user_id=self.driver.id,
+            device_id='driver-device',
+            platform='android',
+            fcm_token='shared-token',
+            is_active=True,
+        )
         FCMDeviceToken.objects.create(
             user_type='customer',
             user_id=self.customer.id,
             device_id='device-old',
             platform='android',
             fcm_token='old-token',
-            is_active=True,
-        )
-        latest_token = FCMDeviceToken.objects.create(
-            user_type='customer',
-            user_id=self.customer.id,
-            device_id='device-current',
-            platform='android',
-            fcm_token='current-token',
             is_active=True,
         )
 
@@ -192,21 +199,22 @@ class FCMDeviceApiTests(TestCase):
             '/api/devices/fcm/register',
             self.customer,
             {
-                'device_id': 'device-fresh',
+                'device_id': 'device-current',
                 'platform': 'android',
-                'fcm_token': 'fresh-token',
+                'fcm_token': 'shared-token',
             },
         )
 
         self.assertEqual(response.status_code, 200)
-        latest_token.refresh_from_db()
-        self.assertTrue(latest_token.is_active)
-        self.assertEqual(latest_token.device_id, 'device-fresh')
-        self.assertEqual(latest_token.fcm_token, 'fresh-token')
-        self.assertEqual(
-            FCMDeviceToken.objects.filter(user_type='customer', user_id=self.customer.id).count(),
-            1,
+        other_user_token.refresh_from_db()
+        self.assertFalse(other_user_token.is_active)
+        current_user_token = FCMDeviceToken.objects.get(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-current',
         )
+        self.assertTrue(current_user_token.is_active)
+        self.assertEqual(current_user_token.fcm_token, 'shared-token')
 
     def test_refresh_endpoint_accepts_bearer_token_in_body(self):
         token = FCMDeviceToken.objects.create(
@@ -414,3 +422,82 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(mock_send.call_count, 2)
         target_types = sorted(call.args[0].user_type for call in mock_send.call_args_list)
         self.assertEqual(target_types, ['employee', 'shop_owner'])
+
+
+class FCMServiceTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.category = ShopCategory.objects.create(name='Groceries')
+        self.shop = ShopOwner.objects.create(
+            owner_name='مالك المحل',
+            shop_name='شاورما',
+            shop_number='SHOP-300',
+            phone_number='01010000003',
+            password='secret123',
+            shop_category=self.category,
+        )
+        self.customer = Customer.objects.create(
+            shop_owner=self.shop,
+            name='أحمد',
+            phone_number='01020000003',
+            password='secret123',
+        )
+
+    @patch('shop.fcm_service._firebase_modules', side_effect=Exception('mock firebase unavailable'))
+    @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
+    def test_send_push_to_user_targets_all_active_devices(self, mock_send, mock_firebase_modules):
+        FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-a',
+            platform='android',
+            fcm_token='token-a',
+            is_active=True,
+        )
+        FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-b',
+            platform='ios',
+            fcm_token='token-b',
+            is_active=True,
+        )
+
+        summary = send_push_to_user(
+            user_type='customer',
+            user_id=self.customer.id,
+            title='رسالة جديدة',
+            body='لديك رسالة جديدة',
+            data={'type': 'chat_message'},
+            channel_id='chat_channel',
+            sound='default',
+        )
+
+        self.assertEqual(summary['tokens_total'], 2)
+        self.assertEqual(summary['tokens_sent'], 2)
+        self.assertEqual(mock_send.call_count, 2)
+
+    @patch('shop.fcm_service._send_push_to_fcm_token', side_effect=Exception('UNREGISTERED'))
+    def test_send_push_to_token_record_deactivates_invalid_tokens(self, mock_send):
+        token_record = FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-invalid',
+            platform='android',
+            fcm_token='invalid-token',
+            is_active=True,
+        )
+
+        result = send_push_to_token_record(
+            token_record,
+            title='رسالة جديدة',
+            body='لديك رسالة جديدة',
+            data={'type': 'chat_message'},
+            channel_id='chat_channel',
+            sound='default',
+        )
+
+        self.assertFalse(result['success'])
+        self.assertTrue(result['invalid_token'])
+        token_record.refresh_from_db()
+        self.assertFalse(token_record.is_active)

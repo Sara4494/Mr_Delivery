@@ -406,6 +406,7 @@ class FCMDeviceToken(models.Model):
     fcm_token = models.TextField(verbose_name="رمز FCM")
     app_version = models.CharField(max_length=50, blank=True, null=True, verbose_name="إصدار التطبيق")
     is_active = models.BooleanField(default=True, verbose_name="نشط")
+    last_seen_at = models.DateTimeField(blank=True, null=True, verbose_name="آخر ظهور")
     last_used_at = models.DateTimeField(blank=True, null=True, verbose_name="آخر استخدام")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
@@ -420,6 +421,7 @@ class FCMDeviceToken(models.Model):
         indexes = [
             models.Index(fields=['user_type', 'user_id', 'is_active'], name='fcm_user_active_idx'),
             models.Index(fields=['device_id'], name='fcm_device_id_idx'),
+            models.Index(fields=['fcm_token'], name='fcm_token_idx'),
             models.Index(fields=['is_active', '-updated_at'], name='fcm_active_updated_idx'),
         ]
 
