@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 _FIREBASE_APP = None
 _FIREBASE_LOCK = threading.Lock()
 _UNSET = object()
+_FCM_RESERVED_DATA_KEYS = {
+    'from',
+    'message_type',
+}
+_FCM_RESERVED_KEY_RENAMES = {
+    'message_type': 'content_type',
+}
 
 
 class FCMConfigurationError(RuntimeError):
@@ -62,10 +69,16 @@ def _stringify_payload(data):
     for key, value in (data or {}).items():
         if value is None:
             continue
+        normalized_key = str(key).strip()
+        if not normalized_key:
+            continue
+        normalized_key = _FCM_RESERVED_KEY_RENAMES.get(normalized_key, normalized_key)
+        if normalized_key in _FCM_RESERVED_DATA_KEYS:
+            normalized_key = f'app_{normalized_key}'
         if isinstance(value, bool):
-            payload[str(key)] = 'true' if value else 'false'
+            payload[normalized_key] = 'true' if value else 'false'
         else:
-            payload[str(key)] = str(value)
+            payload[normalized_key] = str(value)
     return payload
 
 

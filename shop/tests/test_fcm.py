@@ -5,6 +5,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.fcm_service import (
+    _stringify_payload,
     send_order_chat_push_fallback,
     send_push_to_token_record,
     send_push_to_user,
@@ -501,3 +502,17 @@ class FCMServiceTests(TestCase):
         self.assertTrue(result['invalid_token'])
         token_record.refresh_from_db()
         self.assertFalse(token_record.is_active)
+
+    def test_stringify_payload_renames_reserved_fcm_keys(self):
+        payload = _stringify_payload(
+            {
+                'message_type': 'text',
+                'type': 'chat_message',
+                'is_urgent': True,
+            }
+        )
+
+        self.assertEqual(payload['content_type'], 'text')
+        self.assertEqual(payload['type'], 'chat_message')
+        self.assertEqual(payload['is_urgent'], 'true')
+        self.assertNotIn('message_type', payload)
