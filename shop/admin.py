@@ -3,7 +3,7 @@ from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, PaymentMethod,
-    Notification, Cart, CartItem, ShopDriver, FCMDeviceToken
+    Notification, Cart, CartItem, ShopDriver, FCMDeviceToken ,
 )
 
 
@@ -37,6 +37,7 @@ class CustomerAddressAdmin(admin.ModelAdmin):
 class ShopDriverInline(admin.TabularInline):
     model = ShopDriver
     extra = 1
+
 
 
 @admin.register(Driver)

@@ -41,6 +41,8 @@ ADMIN_DESKTOP_ALL_PERMISSIONS = [code for code, _ in ADMIN_DESKTOP_PERMISSION_CH
 
 ADMIN_DESKTOP_ROLE_CHOICES = (
     ("dashboard_manager", "مدير النظام"),
+    ("technical_support", "الدعم الفني"),
+    ("store_supervisor", "مشرف المتاجر"),
     ("system_developer", "مطور النظام"),
 )
 
@@ -50,6 +52,21 @@ def get_admin_desktop_role_permissions(role: str) -> list[str]:
         return list(ADMIN_DESKTOP_ALL_PERMISSIONS)
     if role == "dashboard_manager":
         return [code for code in ADMIN_DESKTOP_ALL_PERMISSIONS if code != "app_updates"]
+    if role == "technical_support":
+        return [
+            "dashboard",
+            "support_center",
+            "abuse_reports",
+            "notifications",
+        ]
+    if role == "store_supervisor":
+        return [
+            "dashboard",
+            "store_management",
+            "approvals",
+            "reports",
+            "notifications",
+        ]
     return []
 
 
