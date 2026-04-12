@@ -5566,6 +5566,399 @@
         }
       ]
     }
+  ,
+    {
+      "name": "Admin Desktop",
+      "item": [
+        {
+          "name": "Auth",
+          "item": [
+            {
+              "name": "Login - Admin Desktop",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data) {",
+                      "        if (jsonData.data.access) pm.environment.set(\"admin_desktop_token\", jsonData.data.access);",
+                      "        if (jsonData.data.refresh) pm.environment.set(\"admin_desktop_refresh_token\", jsonData.data.refresh);",
+                      "        if (jsonData.data.user && jsonData.data.user.id) pm.environment.set(\"admin_desktop_user_id\", jsonData.data.user.id);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone_number\": \"01012345678\",\n  \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/auth/login/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "auth",
+                    "login",
+                    ""
+                  ]
+                },
+                "description": "تسجيل دخول مستخدم الديسكتوب برقم الهاتف وكلمة المرور. عند النجاح يُحفظ admin_desktop_token و admin_desktop_refresh_token."
+              },
+              "response": []
+            },
+            {
+              "name": "Refresh Token - Admin Desktop",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data && jsonData.data.access) {",
+                      "        pm.environment.set(\"admin_desktop_token\", jsonData.data.access);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refresh\": \"{{admin_desktop_refresh_token}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/auth/token/refresh/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "auth",
+                    "token",
+                    "refresh",
+                    ""
+                  ]
+                },
+                "description": "تحديث access token لمستخدم الديسكتوب."
+              },
+              "response": []
+            },
+            {
+              "name": "Get My Profile - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/auth/me/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "auth",
+                    "me",
+                    ""
+                  ]
+                },
+                "description": "جلب بيانات المستخدم الحالي بعد تسجيل الدخول."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Roles & Permissions",
+          "item": [
+            {
+              "name": "Get Roles & Permissions",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/roles-permissions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "roles-permissions",
+                    ""
+                  ]
+                },
+                "description": "يرجع كل الأدوار الجاهزة والصلاحيات المتاحة للداشبورد مثل القوائم والـ checkboxes في الصور."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Users",
+          "item": [
+            {
+              "name": "List Users - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/users/?search=&role=&is_active=&page=1&page_size=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "users",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "search",
+                      "value": ""
+                    },
+                    {
+                      "key": "role",
+                      "value": ""
+                    },
+                    {
+                      "key": "is_active",
+                      "value": ""
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "قائمة مستخدمي الديسكتوب مع summary للكروت العلوية والـ pagination."
+              },
+              "response": []
+            },
+            {
+              "name": "Create User - Admin Desktop",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data && jsonData.data.user && jsonData.data.user.id) {",
+                      "        pm.environment.set(\"admin_desktop_user_id\", jsonData.data.user.id);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"أحمد سامي\",\n  \"phone_number\": \"01012345678\",\n  \"email\": \"ahmed.samy@zaygo.com\",\n  \"password\": \"password123\",\n  \"role\": \"dashboard_manager\",\n  \"permissions\": [\n    \"dashboard\",\n    \"store_management\",\n    \"approvals\",\n    \"invoices_payments\",\n    \"reports\",\n    \"abuse_reports\",\n    \"support_center\",\n    \"notifications\"\n  ],\n  \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/users/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "users",
+                    ""
+                  ]
+                },
+                "description": "إضافة مستخدم جديد للداشبورد. إذا لم ترسل permissions سيتم تعيين الصلاحيات الافتراضية حسب الدور."
+              },
+              "response": []
+            },
+            {
+              "name": "Get User Details - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/users/{{admin_desktop_user_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "users",
+                    "{{admin_desktop_user_id}}",
+                    ""
+                  ]
+                },
+                "description": "عرض تفاصيل مستخدم معين مثل شاشة view."
+              },
+              "response": []
+            },
+            {
+              "name": "Update User - Admin Desktop",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"أحمد سامي المعدل\",\n  \"phone_number\": \"01012345678\",\n  \"email\": \"ahmed.samy@zaygo.com\",\n  \"role\": \"system_developer\",\n  \"permissions\": [\n    \"dashboard\",\n    \"store_management\",\n    \"approvals\",\n    \"invoices_payments\",\n    \"reports\",\n    \"abuse_reports\",\n    \"support_center\",\n    \"app_updates\",\n    \"notifications\"\n  ],\n  \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/users/{{admin_desktop_user_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "users",
+                    "{{admin_desktop_user_id}}",
+                    ""
+                  ]
+                },
+                "description": "تعديل كامل لبيانات مستخدم الديسكتوب."
+              },
+              "response": []
+            },
+            {
+              "name": "Patch User Status - Admin Desktop",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"is_active\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/users/{{admin_desktop_user_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "users",
+                    "{{admin_desktop_user_id}}",
+                    ""
+                  ]
+                },
+                "description": "تعطيل أو تفعيل المستخدم بسرعة من الجدول."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete User - Admin Desktop",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/users/{{admin_desktop_user_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "users",
+                    "{{admin_desktop_user_id}}",
+                    ""
+                  ]
+                },
+                "description": "حذف مستخدم الديسكتوب. لا يمكن حذف الحساب المستخدم حاليا."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
   ],
   "variable": [
     {
@@ -5605,6 +5998,21 @@
     },
     {
       "key": "driver_order_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "admin_desktop_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "admin_desktop_refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "admin_desktop_user_id",
       "value": "1",
       "type": "string"
     }

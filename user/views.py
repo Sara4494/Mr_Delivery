@@ -1,11 +1,22 @@
+from math import ceil
+
+from django.db.models import Count, Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.utils import timezone
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
-from .models import ShopOwner
+from .models import (
+    ADMIN_DESKTOP_PERMISSION_CHOICES,
+    ADMIN_DESKTOP_ROLE_CHOICES,
+    AdminDesktopUser,
+    ShopOwner,
+    get_admin_desktop_role_permissions,
+)
+from .permissions import IsAdminDesktopUser
 from .utils import success_response, error_response, t, localize_message
 from .otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 
@@ -68,6 +79,455 @@ class ShopOwnerTokenRefreshView(TokenRefreshView):
             message=t(request, 'token_refreshed_successfully'),
             status_code=status.HTTP_200_OK
         )
+
+
+def _admin_desktop_phone_variants(phone_number):
+    if not phone_number:
+        return []
+    normalized = normalize_phone(phone_number)
+    variants = [normalized, str(phone_number).strip()]
+    if normalized.startswith("+20"):
+        variants.extend([normalized[3:], "0" + normalized[3:]])
+    return list(dict.fromkeys(v for v in variants if v))
+
+
+def _serialize_admin_desktop_user(request, user):
+    profile_image = user.profile_image.url if user.profile_image else None
+    profile_image_url = request.build_absolute_uri(profile_image) if profile_image else None
+    return {
+        "id": user.id,
+        "name": user.name,
+        "phone_number": user.phone_number,
+        "email": user.email,
+        "role": user.role,
+        "role_display": user.get_role_display(),
+        "permissions": user.permissions or [],
+        "is_active": user.is_active,
+        "profile_image": profile_image,
+        "profile_image_url": profile_image_url,
+        "last_login_at": user.last_login_at,
+        "created_at": user.created_at,
+    }
+
+
+def _build_admin_desktop_auth_payload(request, user):
+    refresh = RefreshToken()
+    refresh["admin_desktop_user_id"] = user.id
+    refresh["phone_number"] = user.phone_number
+    refresh["role"] = user.role
+    refresh["permissions"] = user.permissions or []
+    refresh["user_type"] = "admin_desktop"
+
+    return {
+        "refresh": str(refresh),
+        "access": str(refresh.access_token),
+        "user": _serialize_admin_desktop_user(request, user),
+        "role": "admin_desktop",
+    }
+
+
+def _admin_desktop_permission_catalog():
+    return [
+        {
+            "code": code,
+            "label": label,
+        }
+        for code, label in ADMIN_DESKTOP_PERMISSION_CHOICES
+    ]
+
+
+def _admin_desktop_role_catalog():
+    role_labels = dict(ADMIN_DESKTOP_ROLE_CHOICES)
+    return [
+        {
+            "code": role_code,
+            "label": role_labels.get(role_code, role_code),
+            "default_permissions": get_admin_desktop_role_permissions(role_code),
+        }
+        for role_code, _ in ADMIN_DESKTOP_ROLE_CHOICES
+    ]
+
+
+def _normalize_admin_desktop_permissions(role, permissions):
+    allowed_permissions = {code for code, _ in ADMIN_DESKTOP_PERMISSION_CHOICES}
+    base_permissions = permissions or get_admin_desktop_role_permissions(role)
+    normalized = []
+    for permission in base_permissions:
+        if permission in allowed_permissions and permission not in normalized:
+            normalized.append(permission)
+    return normalized
+
+
+def _parse_bool(value, default=None):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _serialize_admin_desktop_user_list_item(user):
+    role_labels = dict(ADMIN_DESKTOP_ROLE_CHOICES)
+    return {
+        "id": user.id,
+        "name": user.name,
+        "phone_number": user.phone_number,
+        "email": user.email,
+        "role": user.role,
+        "role_display": role_labels.get(user.role, user.role),
+        "permissions": user.permissions or [],
+        "permissions_count": len(user.permissions or []),
+        "permissions_preview": [
+            dict(ADMIN_DESKTOP_PERMISSION_CHOICES).get(code, code)
+            for code in (user.permissions or [])[:3]
+        ],
+        "is_active": user.is_active,
+        "status_label": "نشط" if user.is_active else "غير نشط",
+        "created_at": user.created_at,
+    }
+
+
+def _admin_desktop_users_summary(queryset):
+    role_counts = queryset.values("role").annotate(total=Count("id"))
+    active_count = queryset.filter(is_active=True).count()
+    total_count = queryset.count()
+    role_labels = dict(ADMIN_DESKTOP_ROLE_CHOICES)
+    roles = [
+        {
+            "role": item["role"],
+            "role_display": role_labels.get(item["role"], item["role"]),
+            "users_count": item["total"],
+        }
+        for item in role_counts
+    ]
+    return {
+        "cards": {
+            "total_roles": len(ADMIN_DESKTOP_ROLE_CHOICES),
+            "linked_users": total_count,
+            "active_roles": len([item for item in role_counts if item["total"] > 0]),
+            "active_users": active_count,
+        },
+        "roles": roles,
+    }
+
+
+def _validate_admin_desktop_user_payload(request, *, partial=False, instance=None):
+    role_values = {code for code, _ in ADMIN_DESKTOP_ROLE_CHOICES}
+
+    name = request.data.get("name")
+    phone_number = request.data.get("phone_number")
+    email = request.data.get("email")
+    password = request.data.get("password")
+    role = request.data.get("role")
+    permissions = request.data.get("permissions")
+    is_active = request.data.get("is_active")
+    profile_image = request.FILES.get("profile_image")
+
+    errors = {}
+    payload = {}
+
+    if not partial or name is not None:
+        if not name:
+            errors["name"] = [t(request, "name_is_required")]
+        else:
+            payload["name"] = str(name).strip()
+
+    if not partial or phone_number is not None:
+        if not phone_number:
+            errors["phone_number"] = [t(request, "phone_number_is_required")]
+        else:
+            normalized_phone = normalize_phone(phone_number)
+            existing = AdminDesktopUser.objects.filter(phone_number=normalized_phone)
+            if instance:
+                existing = existing.exclude(id=instance.id)
+            if existing.exists():
+                errors["phone_number"] = [t(request, "phone_number_is_already_registered")]
+            else:
+                payload["phone_number"] = normalized_phone
+
+    if email is not None:
+        email_value = str(email).strip() or None
+        existing = AdminDesktopUser.objects.filter(email=email_value) if email_value else AdminDesktopUser.objects.none()
+        if instance:
+            existing = existing.exclude(id=instance.id)
+        if email_value and existing.exists():
+            errors["email"] = ["البريد الإلكتروني مستخدم بالفعل"]
+        else:
+            payload["email"] = email_value
+    elif not partial and instance is None:
+        payload["email"] = None
+
+    if not partial or role is not None:
+        if not role:
+            errors["role"] = [t(request, "user_type_role_is_required")]
+        elif role not in role_values:
+            errors["role"] = ["الدور غير صحيح"]
+        else:
+            payload["role"] = role
+
+    if not partial or instance is None or password is not None:
+        if instance is None and not password:
+            errors["password"] = [t(request, "password_is_required")]
+        elif password:
+            if len(str(password)) < 6:
+                errors["password"] = [t(request, "password_must_be_at_least_6_characters")]
+            else:
+                payload["password"] = str(password)
+
+    if permissions is not None:
+        if not isinstance(permissions, list):
+            errors["permissions"] = ["الصلاحيات يجب أن تكون قائمة"]
+        else:
+            payload["permissions"] = _normalize_admin_desktop_permissions(
+                payload.get("role") or getattr(instance, "role", None),
+                permissions,
+            )
+    elif "role" in payload:
+        payload["permissions"] = get_admin_desktop_role_permissions(payload["role"])
+
+    parsed_is_active = _parse_bool(is_active, default=None)
+    if is_active is not None and parsed_is_active is None:
+        errors["is_active"] = ["قيمة الحالة غير صحيحة"]
+    elif parsed_is_active is not None:
+        payload["is_active"] = parsed_is_active
+
+    if profile_image is not None:
+        payload["profile_image"] = profile_image
+
+    return payload, errors
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def admin_desktop_login_view(request):
+    phone_number = request.data.get("phone_number")
+    password = request.data.get("password")
+
+    if not phone_number:
+        return error_response(
+            message=t(request, "phone_number_is_required"),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    if not password:
+        return error_response(
+            message=t(request, "password_is_required"),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    user = (
+        AdminDesktopUser.objects
+        .filter(phone_number__in=_admin_desktop_phone_variants(phone_number))
+        .order_by("-updated_at")
+        .first()
+    )
+
+    if not user or not user.check_password(password):
+        return error_response(
+            message=t(request, "phone_number_or_password_is_incorrect"),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            request=request,
+        )
+
+    if not user.is_active:
+        return error_response(
+            message=t(request, "account_is_inactive"),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            request=request,
+        )
+
+    user.last_login_at = timezone.now()
+    user.save(update_fields=["last_login_at"])
+
+    return success_response(
+        data=_build_admin_desktop_auth_payload(request, user),
+        message=t(request, "login_successful"),
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_me_view(request):
+    return success_response(
+        data={"user": _serialize_admin_desktop_user(request, request.user)},
+        message=t(request, "viewer_profile_retrieved_successfully"),
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_roles_permissions_view(request):
+    return success_response(
+        data={
+            "roles": _admin_desktop_role_catalog(),
+            "permissions": _admin_desktop_permission_catalog(),
+        },
+        message="تم جلب الأدوار والصلاحيات بنجاح",
+        request=request,
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_users_view(request):
+    if request.method == "GET":
+        search = str(request.query_params.get("search", "")).strip()
+        role = str(request.query_params.get("role", "")).strip()
+        is_active = _parse_bool(request.query_params.get("is_active"), default=None)
+        page = max(int(request.query_params.get("page", 1) or 1), 1)
+        page_size = max(min(int(request.query_params.get("page_size", 10) or 10), 100), 1)
+
+        queryset = AdminDesktopUser.objects.all().order_by("-created_at")
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search)
+                | Q(phone_number__icontains=search)
+                | Q(email__icontains=search)
+            )
+        if role:
+            queryset = queryset.filter(role=role)
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active)
+
+        total_count = queryset.count()
+        total_pages = ceil(total_count / page_size) if total_count else 1
+        start = (page - 1) * page_size
+        users = list(queryset[start:start + page_size])
+
+        return success_response(
+            data={
+                "summary": _admin_desktop_users_summary(AdminDesktopUser.objects.all()),
+                "filters": {
+                    "search": search,
+                    "role": role or None,
+                    "is_active": is_active,
+                },
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_count": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_previous": page > 1,
+                },
+                "users": [_serialize_admin_desktop_user_list_item(user) for user in users],
+            },
+            message="تم جلب مستخدمي الديسكتوب بنجاح",
+            request=request,
+        )
+
+    payload, errors = _validate_admin_desktop_user_payload(request, partial=False)
+    if errors:
+        return error_response(
+            message="بيانات المستخدم غير صحيحة",
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    user = AdminDesktopUser(
+        name=payload["name"],
+        phone_number=payload["phone_number"],
+        email=payload.get("email"),
+        role=payload["role"],
+        permissions=payload.get("permissions") or get_admin_desktop_role_permissions(payload["role"]),
+        is_active=payload.get("is_active", True),
+    )
+    user.password = payload["password"]
+    if "profile_image" in payload:
+        user.profile_image = payload["profile_image"]
+    user.save()
+
+    return success_response(
+        data={"user": _serialize_admin_desktop_user(request, user)},
+        message="تم إضافة مستخدم الديسكتوب بنجاح",
+        status_code=status.HTTP_201_CREATED,
+        request=request,
+    )
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_user_detail_view(request, user_id):
+    try:
+        target_user = AdminDesktopUser.objects.get(id=user_id)
+    except AdminDesktopUser.DoesNotExist:
+        return error_response(
+            message="مستخدم الديسكتوب غير موجود",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    if request.method == "GET":
+        return success_response(
+            data={
+                "user": _serialize_admin_desktop_user(request, target_user),
+                "permission_tags": [
+                    {
+                        "code": code,
+                        "label": dict(ADMIN_DESKTOP_PERMISSION_CHOICES).get(code, code),
+                    }
+                    for code in (target_user.permissions or [])
+                ],
+            },
+            message="تم جلب تفاصيل مستخدم الديسكتوب بنجاح",
+            request=request,
+        )
+
+    if request.method in {"PUT", "PATCH"}:
+        payload, errors = _validate_admin_desktop_user_payload(
+            request,
+            partial=request.method == "PATCH",
+            instance=target_user,
+        )
+        if errors:
+            return error_response(
+                message="بيانات المستخدم غير صحيحة",
+                errors=errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
+            )
+
+        update_fields = []
+        for field in ("name", "phone_number", "email", "role", "permissions", "is_active", "profile_image"):
+            if field in payload:
+                setattr(target_user, field, payload[field])
+                update_fields.append(field)
+
+        if "password" in payload:
+            target_user.password = payload["password"]
+            update_fields.append("password")
+
+        if update_fields:
+            target_user.save(update_fields=update_fields)
+
+        return success_response(
+            data={"user": _serialize_admin_desktop_user(request, target_user)},
+            message="تم تحديث مستخدم الديسكتوب بنجاح",
+            request=request,
+        )
+
+    if request.user.id == target_user.id:
+        return error_response(
+            message="لا يمكن حذف الحساب المستخدم حاليا",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    target_user.delete()
+    return success_response(
+        message="تم حذف مستخدم الديسكتوب بنجاح",
+        request=request,
+    )
 
 
 # ==================== Unified Auth APIs ====================

@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import ShopCategory, ShopOwner
+
+from .models import AdminDesktopUser, ShopCategory, ShopOwner
 
 
 @admin.register(ShopCategory)
@@ -34,4 +35,33 @@ class ShopOwnerAdmin(admin.ModelAdmin):
         """تشفير كلمة المرور عند الحفظ من الـ Admin"""
         if 'password' in form.changed_data:
             obj.set_password(obj.password)
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(AdminDesktopUser)
+class AdminDesktopUserAdmin(admin.ModelAdmin):
+    list_display = ("name", "phone_number", "role", "is_active", "last_login_at", "created_at")
+    list_filter = ("role", "is_active", "created_at")
+    search_fields = ("name", "phone_number", "email")
+    readonly_fields = ("created_at", "updated_at", "last_login_at")
+    fieldsets = (
+        ("البيانات الأساسية", {
+            "fields": ("name", "phone_number", "email", "profile_image")
+        }),
+        ("الصلاحيات", {
+            "fields": ("role", "permissions", "is_active")
+        }),
+        ("الأمان", {
+            "fields": ("password", "last_login_at")
+        }),
+        ("معلومات إضافية", {
+            "fields": ("created_at", "updated_at")
+        }),
+    )
+
+    def save_model(self, request, obj, form, change):
+        if "password" in form.changed_data:
+            obj.set_password(obj.password)
+        if "role" in form.changed_data and "permissions" not in form.changed_data:
+            obj.apply_role_permissions()
         super().save_model(request, obj, form, change)

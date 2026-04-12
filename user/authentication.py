@@ -1,7 +1,7 @@
 ﻿from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, AuthenticationFailed
 
-from .models import ShopOwner
+from .models import AdminDesktopUser, ShopOwner
 
 
 class ShopOwnerJWTAuthentication(JWTAuthentication):
@@ -65,5 +65,16 @@ class ShopOwnerJWTAuthentication(JWTAuthentication):
                 return shop_owner
             except ShopOwner.DoesNotExist as exc:
                 raise AuthenticationFailed('Shop owner not found or inactive') from exc
+
+        if user_type == 'admin_desktop':
+            admin_desktop_user_id = validated_token.get('admin_desktop_user_id')
+            if not admin_desktop_user_id:
+                raise InvalidToken('Admin desktop token missing admin_desktop_user_id')
+            try:
+                admin_user = AdminDesktopUser.objects.get(id=admin_desktop_user_id, is_active=True)
+                admin_user.user_type = 'admin_desktop'
+                return admin_user
+            except AdminDesktopUser.DoesNotExist as exc:
+                raise AuthenticationFailed('Admin desktop user not found or inactive') from exc
 
         raise InvalidToken('Unsupported user_type in token')

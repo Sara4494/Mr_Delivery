@@ -7,6 +7,12 @@ urlpatterns = [
     # Legacy endpoints (للتوافق مع الكود القديم)
     path('shop/login/', views.ShopOwnerTokenObtainPairView.as_view(), name='shop_login'),
     path('shop/token/refresh/', views.ShopOwnerTokenRefreshView.as_view(), name='token_refresh'),
+    path('admin-desktop/auth/login/', views.admin_desktop_login_view, name='admin_desktop_login'),
+    path('admin-desktop/auth/token/refresh/', views.ShopOwnerTokenRefreshView.as_view(), name='admin_desktop_token_refresh'),
+    path('admin-desktop/auth/me/', views.admin_desktop_me_view, name='admin_desktop_me'),
+    path('admin-desktop/roles-permissions/', views.admin_desktop_roles_permissions_view, name='admin_desktop_roles_permissions'),
+    path('admin-desktop/users/', views.admin_desktop_users_view, name='admin_desktop_users'),
+    path('admin-desktop/users/<int:user_id>/', views.admin_desktop_user_detail_view, name='admin_desktop_user_detail'),
     
     # ==================== Unified Auth ====================
     # تسجيل دخول موحد لجميع المستخدمين
