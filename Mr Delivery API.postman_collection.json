@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "3fe5af42-d406-442d-8a44-c6118ad21190",
+    "_postman_id": "74943a6f-4f02-4dbf-8d04-3ae998c7fda0",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-3fe5af42-d406-442d-8a44-c6118ad21190?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-74943a6f-4f02-4dbf-8d04-3ae998c7fda0?source=collection_link"
   },
   "item": [
     {
@@ -4660,15 +4660,15 @@
                 {
                   "listen": "test",
                   "script": {
-                      "exec": [
-                        "if (pm.response.code === 200) {",
-                        "    var jsonData = pm.response.json();",
-                        "    if (jsonData && jsonData.data) {",
-                        "        if (jsonData.data.access) pm.environment.set(\"driver_token\", jsonData.data.access);",
-                        "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
-                        "    }",
-                        "}"
-                      ],
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data) {",
+                      "        if (jsonData.data.access) pm.environment.set(\"driver_token\", jsonData.data.access);",
+                      "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
+                      "    }",
+                      "}"
+                    ],
                     "type": "text/javascript",
                     "packages": {},
                     "requests": {}
@@ -4710,15 +4710,15 @@
                 {
                   "listen": "test",
                   "script": {
-                      "exec": [
-                        "if (pm.response.code === 200) {",
-                        "    var jsonData = pm.response.json();",
-                        "    if (jsonData && jsonData.data) {",
-                        "        if (jsonData.data.access) pm.environment.set(\"driver_token\", jsonData.data.access);",
-                        "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
-                        "    }",
-                        "}"
-                      ],
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData && jsonData.data) {",
+                      "        if (jsonData.data.access) pm.environment.set(\"driver_token\", jsonData.data.access);",
+                      "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
+                      "    }",
+                      "}"
+                    ],
                     "type": "text/javascript",
                     "packages": {},
                     "requests": {}
@@ -5313,6 +5313,131 @@
           "name": "Orders",
           "item": [
             {
+              "name": "List Available Driver Orders",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    var results = (((jsonData || {}).data || {}).results) || [];",
+                      "    if (results.length && results[0].order_id) {",
+                      "        pm.collectionVariables.set(\"driver_order_id\", String(results[0].order_id));",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/available/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "available",
+                    ""
+                  ]
+                },
+                "description": "Fetch available delivery orders for the logged-in driver and save the first order_id automatically."
+              },
+              "response": []
+            },
+            {
+              "name": "Accept Available Driver Order",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    var orderObj = ((((jsonData || {}).data || {}).order) || {});",
+                      "    if (orderObj.order_id) {",
+                      "        pm.collectionVariables.set(\"driver_order_id\", String(orderObj.order_id));",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/{{driver_order_id}}/accept/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "{{driver_order_id}}",
+                    "accept",
+                    ""
+                  ]
+                },
+                "description": "Accept an available order and move it into the driver's assigned orders flow."
+              },
+              "response": []
+            },
+            {
+              "name": "Reject Available Driver Order",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"reason\": \"not suitable right now\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/{{driver_order_id}}/reject/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "{{driver_order_id}}",
+                    "reject",
+                    ""
+                  ]
+                },
+                "description": "Reject an available order for the current driver only."
+              },
+              "response": []
+            },
+            {
               "name": "List Driver Orders",
               "event": [
                 {
@@ -5451,6 +5576,52 @@
           "name": "Chat",
           "item": [
             {
+              "name": "Open Driver Order Chat",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    var data = (jsonData || {}).data || {};",
+                      "    if (data.order_id) {",
+                      "        pm.collectionVariables.set(\"driver_order_id\", String(data.order_id));",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{driver_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/driver/orders/{{driver_order_id}}/chat/open/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "driver",
+                    "orders",
+                    "{{driver_order_id}}",
+                    "chat",
+                    "open",
+                    ""
+                  ]
+                },
+                "description": "Prepare the driver-customer chat session. This is the explicit first step before opening the chat websocket."
+              },
+              "response": []
+            },
+            {
               "name": "Get Driver Order Chat",
               "request": {
                 "method": "GET",
@@ -5565,8 +5736,7 @@
           ]
         }
       ]
-    }
-  ,
+    },
     {
       "name": "Admin Desktop",
       "item": [
@@ -6015,6 +6185,11 @@
       "key": "admin_desktop_user_id",
       "value": "1",
       "type": "string"
+    },
+    {
+      "key": "base_Url",
+      "value": "",
+      "type": "default"
     }
   ]
 }

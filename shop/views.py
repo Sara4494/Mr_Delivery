@@ -8,7 +8,7 @@ from django.apps import apps as django_apps
 from django.conf import settings
 from django.shortcuts import render
 from django.core.cache import cache
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -99,6 +99,20 @@ from .websocket_utils import (
 from .customer_app_realtime import broadcast_customer_order_removed
 from .presence import format_utc_iso8601
 from .driver_chat_service import request_transfer_for_order, sync_order_assignment_change
+from .driver_realtime import (
+    build_driver_order_payload,
+    clear_all_driver_rejections,
+    clear_driver_rejection,
+    emit_assigned_order_upsert,
+    emit_available_order_remove,
+    emit_order_accepted,
+    emit_order_rejected,
+    emit_order_transferred,
+    get_available_order_for_driver,
+    list_available_orders_payloads,
+    record_driver_rejection,
+    sync_driver_order_state,
+)
 
 
 def shop_dashboard_ui_view(request):
@@ -2335,6 +2349,117 @@ def driver_logout_view(request):
 
 @api_view(['GET'])
 @permission_classes([IsDriver])
+def driver_available_orders_view(request):
+    """
+    Available delivery orders for the logged-in driver.
+    GET /api/driver/orders/available/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    return success_response(
+        data={
+            'results': list_available_orders_payloads(driver, request=request),
+        },
+        message=t(request, 'driver_available_orders_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_order_accept_view(request, order_id):
+    """
+    Driver accepts an available delivery order.
+    POST /api/driver/orders/{id}/accept/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    with transaction.atomic():
+        order = get_available_order_for_driver(driver, order_id, lock=True)
+        if not order:
+            return error_response(
+                message=t(request, 'driver_order_not_available'),
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        order.driver = driver
+        order.save(update_fields=['driver', 'updated_at'])
+        clear_driver_rejection(order, driver)
+
+    driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
+    driver.save(update_fields=['current_orders_count'])
+
+    try:
+        order_data = OrderSerializer(order, context={'request': request}).data
+        notify_order_update(
+            shop_owner_id=order.shop_owner_id,
+            customer_id=order.customer_id,
+            driver_id=order.driver_id,
+            order_data=order_data,
+        )
+    except Exception as e:
+        print(f"driver_order_accept websocket sync error: {e}")
+
+    order_payload = build_driver_order_payload(order, request=request)
+    active_driver_ids = list(order.shop_owner.shop_drivers.filter(status='active').values_list('driver_id', flat=True).distinct())
+    for target_driver_id in active_driver_ids:
+        emit_available_order_remove(
+            target_driver_id,
+            order.id,
+            'accepted_by_you' if target_driver_id == driver.id else 'accepted_by_another_driver',
+        )
+    emit_assigned_order_upsert(driver.id, order_payload)
+    emit_order_accepted(driver.id, order_payload)
+
+    return success_response(
+        data={'order': order_payload},
+        message=t(request, 'driver_order_accepted_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_order_reject_view(request, order_id):
+    """
+    Driver rejects an available delivery order for himself only.
+    POST /api/driver/orders/{id}/reject/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    with transaction.atomic():
+        order = get_available_order_for_driver(driver, order_id, lock=True)
+        if not order:
+            return error_response(
+                message=t(request, 'driver_order_not_available'),
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        reject_reason = str(request.data.get('reason') or '').strip()
+        record_driver_rejection(order, driver, reject_reason)
+
+    emit_available_order_remove(driver.id, order.id, 'rejected_by_you')
+    emit_order_rejected(driver.id, order.id)
+
+    return success_response(
+        data={
+            'order_id': order.id,
+            'status': order.status,
+            'driver_status': 'rejected',
+        },
+        message=t(request, 'driver_order_rejected_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsDriver])
 def driver_orders_view(request):
     """
     Active assigned orders for the driver app, grouped by shop.
@@ -2353,6 +2478,7 @@ def driver_orders_view(request):
 
     grouped_results = []
     grouped_map = {}
+    flat_results = []
     for order in orders:
         shop = order.shop_owner
         if not shop:
@@ -2372,10 +2498,12 @@ def driver_orders_view(request):
 
         group['orders'].append(_build_driver_order_list_item(order))
         group['orders_count'] += 1
+        flat_results.append(build_driver_order_payload(order, request=request))
 
     return success_response(
         data={
             'results': grouped_results,
+            'assigned_orders': flat_results,
         },
         message=t(request, 'driver_orders_retrieved_successfully'),
         status_code=status.HTTP_200_OK,
@@ -2386,7 +2514,7 @@ def driver_orders_view(request):
 @permission_classes([IsDriver])
 def driver_order_detail_view(request, order_id):
     """
-    Driver order detail with compact delivery payload.
+    Driver order detail with the unified realtime payload.
     GET /api/driver/orders/{id}/
     """
     driver = _get_driver_from_request(request)
@@ -2401,7 +2529,7 @@ def driver_order_detail_view(request, order_id):
         )
 
     return success_response(
-        data=_build_driver_order_detail_payload(order, request),
+        data=build_driver_order_payload(order, request=request),
         message=t(request, 'driver_order_details_retrieved_successfully'),
         status_code=status.HTTP_200_OK,
     )
@@ -2471,10 +2599,12 @@ def driver_order_transfer_view(request, order_id):
         )
 
     old_driver = order.driver
+    old_status = order.status
     if order.status in {'preparing', 'on_way'}:
         order.status = 'confirmed'
     order.driver = None
     order.save(update_fields=['driver', 'status', 'updated_at'])
+    clear_all_driver_rejections(order)
 
     transfer_reason = selected_reason['label']
     if note:
@@ -2523,9 +2653,54 @@ def driver_order_transfer_view(request, order_id):
     except Exception as e:
         print(f"driver_order_transfer WebSocket error: {e}")
 
+    if old_driver:
+        emit_order_transferred(old_driver.id, order.id, reason_key=selected_reason['key'], note=note or None)
+    sync_driver_order_state(
+        order,
+        previous_status=old_status,
+        previous_driver_id=old_driver.id if old_driver else None,
+        request=request,
+    )
+
     return success_response(
         data={},
         message=t(request, 'driver_order_transferred_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_order_chat_open_view(request, order_id):
+    """
+    Prepare the driver-customer chat session without auto-starting it on accept.
+    POST /api/driver/orders/{id}/chat/open/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
+    if not order:
+        return error_response(
+            message=t(request, 'driver_order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    conversation_id = f'order_{order.id}_driver_customer'
+    has_messages = ChatMessage.objects.filter(order=order, chat_type='driver_customer').exists()
+    ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
+
+    return success_response(
+        data={
+            'conversation_id': conversation_id,
+            'order_id': order.id,
+            'chat_type': 'driver_customer',
+            'is_existing': has_messages,
+            'is_new': not has_messages,
+            'ws_url': ws_path,
+        },
+        message=t(request, 'driver_chat_opened_successfully'),
         status_code=status.HTTP_200_OK,
     )
 
@@ -3370,6 +3545,13 @@ def order_detail_view(request, order_id):
                 notify_driver_status_updated(order.driver.id)
         except Exception as e:
             print(f"WebSocket notification error: {e}")
+
+        sync_driver_order_state(
+            order,
+            previous_status=old_status,
+            previous_driver_id=old_driver.id if old_driver else None,
+            request=request,
+        )
         
         return success_response(
             data=response_serializer.data,
@@ -5958,6 +6140,7 @@ def customer_order_confirm_view(request, order_id):
             status_code=status.HTTP_400_BAD_REQUEST
         )
     
+    old_status = order.status
     order.status = 'confirmed'
     order.save()
 
@@ -5984,6 +6167,13 @@ def customer_order_confirm_view(request, order_id):
         )
     except Exception as e:
         print(f"WebSocket notification error: {e}")
+
+    sync_driver_order_state(
+        order,
+        previous_status=old_status,
+        previous_driver_id=order.driver_id,
+        request=request,
+    )
     
     return success_response(
         data=response_serializer.data,
@@ -6023,6 +6213,8 @@ def customer_order_reject_view(request, order_id):
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
+    old_status = order.status
+    current_driver_id = order.driver_id
     order.status = 'cancelled'
     order.save()
 
@@ -6049,6 +6241,13 @@ def customer_order_reject_view(request, order_id):
         )
     except Exception as e:
         print(f"WebSocket notification error: {e}")
+
+    sync_driver_order_state(
+        order,
+        previous_status=old_status,
+        previous_driver_id=current_driver_id,
+        request=request,
+    )
 
     return success_response(
         data=response_serializer.data,

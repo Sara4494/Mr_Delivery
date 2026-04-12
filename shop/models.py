@@ -360,6 +360,41 @@ class Order(models.Model):
         return f"طلب #{self.order_number} - {self.customer.name}"
 
 
+class DriverOrderRejection(models.Model):
+    """Persistent per-driver rejection state for available delivery orders."""
+
+    driver = models.ForeignKey(
+        Driver,
+        on_delete=models.CASCADE,
+        related_name='order_rejections',
+        verbose_name="السائق",
+    )
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='driver_rejections',
+        verbose_name="الطلب",
+    )
+    reason = models.CharField(max_length=120, blank=True, null=True, verbose_name="سبب الرفض")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "رفض سائق للطلب"
+        verbose_name_plural = "رفض السائقين للطلبات"
+        ordering = ['-updated_at', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['driver', 'order'], name='unique_driver_order_rejection'),
+        ]
+        indexes = [
+            models.Index(fields=['driver', '-updated_at'], name='drvordrej_driver_idx'),
+            models.Index(fields=['order', '-updated_at'], name='drvordrej_order_idx'),
+        ]
+
+    def __str__(self):
+        return f"رفض الطلب #{self.order_id} بواسطة السائق #{self.driver_id}"
+
+
 class DriverPresenceConnection(models.Model):
     """Active websocket connections used to derive driver presence."""
 

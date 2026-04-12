@@ -39,6 +39,7 @@ from .customer_app_realtime import (
     build_order_delta_events,
     build_support_delta_events,
 )
+from .driver_realtime import build_driver_snapshot_events
 from .fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
 
@@ -2375,6 +2376,10 @@ class DriverConsumer(AsyncWebsocketConsumer):
             lang=self.lang,
         )))
 
+        snapshots = await self.get_driver_snapshots()
+        for snapshot in snapshots:
+            await self.send(text_data=_json_dumps(snapshot))
+
         if presence_state and presence_state.get('changed'):
             await self.broadcast_driver_presence()
 
@@ -2398,6 +2403,10 @@ class DriverConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def broadcast_driver_presence(self):
         return broadcast_driver_presence_update(self.driver_id)
+
+    @database_sync_to_async
+    def get_driver_snapshots(self):
+        return build_driver_snapshot_events(self.user, scope=self.scope, base_url=self.base_url)
 
     async def receive(self, text_data):
         try:
@@ -2511,3 +2520,6 @@ class DriverConsumer(AsyncWebsocketConsumer):
             'type': 'ring',
             'data': event['data'],
         }))
+
+    async def driver_realtime_event(self, event):
+        await self.send(text_data=_json_dumps(event['payload']))
