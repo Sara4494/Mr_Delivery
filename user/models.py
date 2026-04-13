@@ -134,6 +134,17 @@ class AdminDesktopUser(models.Model):
     def apply_role_permissions(self):
         self.permissions = get_admin_desktop_role_permissions(self.role)
 
+    def get_resolved_permissions(self) -> list[str]:
+        return get_admin_desktop_role_permissions(self.role)
+
+    def sync_role_permissions(self, *, save: bool = False):
+        resolved_permissions = self.get_resolved_permissions()
+        if self.permissions != resolved_permissions:
+            self.permissions = resolved_permissions
+            if save and self.pk:
+                self.save(update_fields=["permissions"])
+        return self.permissions
+
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
 
@@ -168,7 +179,7 @@ class AdminDesktopUser(models.Model):
         return self.get_role_display()
 
     def has_permission(self, permission_code: str) -> bool:
-        return permission_code in (self.permissions or [])
+        return permission_code in self.get_resolved_permissions()
 
     def __str__(self):
         return f"{self.name} - {self.get_role_display()} ({self.phone_number})"

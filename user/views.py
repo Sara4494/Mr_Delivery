@@ -94,6 +94,7 @@ def _admin_desktop_phone_variants(phone_number):
 
 
 def _serialize_admin_desktop_user(request, user):
+    permissions = user.get_resolved_permissions()
     profile_image = user.profile_image.url if user.profile_image else None
     profile_image_url = request.build_absolute_uri(profile_image) if profile_image else None
     return {
@@ -103,7 +104,7 @@ def _serialize_admin_desktop_user(request, user):
         "email": user.email,
         "role": user.role,
         "role_display": user.get_role_display(),
-        "permissions": user.permissions or [],
+        "permissions": permissions,
         "is_active": user.is_active,
         "profile_image": profile_image,
         "profile_image_url": profile_image_url,
@@ -113,11 +114,12 @@ def _serialize_admin_desktop_user(request, user):
 
 
 def _build_admin_desktop_auth_payload(request, user):
+    permissions = user.get_resolved_permissions()
     refresh = RefreshToken()
     refresh["admin_desktop_user_id"] = user.id
     refresh["phone_number"] = user.phone_number
     refresh["role"] = user.role
-    refresh["permissions"] = user.permissions or []
+    refresh["permissions"] = permissions
     refresh["user_type"] = "admin_desktop"
 
     return {
@@ -192,6 +194,7 @@ def _parse_bool(value, default=None):
 
 def _serialize_admin_desktop_user_list_item(user):
     role_labels = dict(ADMIN_DESKTOP_ROLE_CHOICES)
+    permissions = user.get_resolved_permissions()
     return {
         "id": user.id,
         "name": user.name,
@@ -199,11 +202,11 @@ def _serialize_admin_desktop_user_list_item(user):
         "email": user.email,
         "role": user.role,
         "role_display": role_labels.get(user.role, user.role),
-        "permissions": user.permissions or [],
-        "permissions_count": len(user.permissions or []),
+        "permissions": permissions,
+        "permissions_count": len(permissions),
         "permissions_preview": [
             dict(ADMIN_DESKTOP_PERMISSION_CHOICES).get(code, code)
-            for code in (user.permissions or [])[:3]
+            for code in permissions[:3]
         ],
         "is_active": user.is_active,
         "status_label": "نشط" if user.is_active else "غير نشط",
@@ -363,7 +366,8 @@ def admin_desktop_login_view(request):
         )
 
     user.last_login_at = timezone.now()
-    user.save(update_fields=["last_login_at"])
+    user.sync_role_permissions()
+    user.save(update_fields=["last_login_at", "permissions"])
 
     return success_response(
         data=_build_admin_desktop_auth_payload(request, user),
@@ -527,7 +531,7 @@ def admin_desktop_user_detail_view(request, user_id):
                         "code": code,
                         "label": dict(ADMIN_DESKTOP_PERMISSION_CHOICES).get(code, code),
                     }
-                    for code in (target_user.permissions or [])
+                    for code in target_user.get_resolved_permissions()
                 ],
             },
             message="تم جلب تفاصيل مستخدم الديسكتوب بنجاح",

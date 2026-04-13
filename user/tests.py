@@ -59,3 +59,23 @@ class AdminDesktopPermissionsTests(SimpleTestCase):
         self.assertFalse(_can_manage_admin_desktop_users(dashboard_manager))
         self.assertTrue(_can_manage_admin_desktop_users(developer))
         self.assertFalse(_can_view_admin_desktop_users(support))
+
+    def test_existing_dashboard_manager_gets_updated_permissions(self):
+        class DummyUser:
+            role = "dashboard_manager"
+            permissions = [
+                "dashboard",
+                "store_management",
+                "approvals",
+                "invoices_payments",
+                "reports",
+                "abuse_reports",
+                "support_center",
+                "notifications",
+            ]
+
+            def get_resolved_permissions(self):
+                return get_admin_desktop_role_permissions(self.role)
+
+        resolved = DummyUser().get_resolved_permissions()
+        self.assertIn("admin_management", resolved)
