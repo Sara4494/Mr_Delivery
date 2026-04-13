@@ -169,6 +169,8 @@ def normalize_driver_status(order):
     if order.driver_id:
         if order.status == 'on_way':
             return 'in_delivery'
+        if order.status in {'confirmed', 'preparing'}:
+            return 'assigned'
         if order.status in DRIVER_ASSIGNED_ORDER_STATUSES:
             return 'assigned'
     if order.driver_id is None and order.status in DRIVER_AVAILABLE_ORDER_STATUSES:

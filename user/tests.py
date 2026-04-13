@@ -24,6 +24,12 @@ class AdminDesktopPermissionsTests(SimpleTestCase):
             ["store_management", "approvals"],
         )
 
+    def test_accounts_manager_permissions_are_limited(self):
+        self.assertEqual(
+            get_admin_desktop_role_permissions("accounts_manager"),
+            ["dashboard", "reports", "invoices_payments"],
+        )
+
     def test_technical_support_permissions_are_limited(self):
         self.assertEqual(
             get_admin_desktop_role_permissions("technical_support"),

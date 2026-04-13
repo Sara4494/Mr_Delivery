@@ -579,9 +579,9 @@ def _map_order_status_to_driver_chat_status(order: Order):
         return 'cancelled'
     if order.status == 'delivered':
         return 'delivered'
-    if order.status in {'preparing', 'on_way'}:
+    if order.status == 'on_way':
         return 'driver_on_way'
-    if order.status == 'confirmed':
+    if order.status in {'confirmed', 'preparing'}:
         return 'awaiting_driver_acceptance'
     return 'waiting_reply'
 
