@@ -1,17 +1,67 @@
-# Flutter Driver Chats Guide
+﻿# Flutter Driver-Customer Chat Guide
 
-This document is the handoff for the Flutter team for the new shop-side `Driver Chats` module.
+This file now has two separate detailed companions:
 
-It covers:
-- Shop-to-driver realtime conversations
-- Driver presence
-- Invoice/order cards inside the conversation
-- Order transfer flow
-- Voice messages
-- Call signaling
-- Snapshot and resync
+1. Driver -> Customer
+   [FLUTTER_DRIVER_TO_CUSTOMER_CHAT_GUIDE.md](./FLUTTER_DRIVER_TO_CUSTOMER_CHAT_GUIDE.md)
 
-## 1. Base URLs
+2. Driver -> Shop
+   [FLUTTER_DRIVER_TO_SHOP_CHAT_GUIDE.md](./FLUTTER_DRIVER_TO_SHOP_CHAT_GUIDE.md)
+
+Additional broader reference:
+
+- [FLUTTER_DRIVER_APP_CHAT_GUIDE.md](./FLUTTER_DRIVER_APP_CHAT_GUIDE.md)
+
+---
+
+This document is only for the chat between:
+
+- Driver
+- Customer
+
+Inside one order using:
+
+- `chat_type=driver_customer`
+
+Out of scope:
+
+- Shop-to-driver chats
+- Shop-to-customer chats
+- Support chats
+- Driver invitations
+- Driver order realtime list socket
+
+## Scope
+
+This guide covers:
+
+- Opening the driver-customer chat explicitly
+- Loading previous chat messages
+- Sending text messages
+- Sending media through the existing upload endpoint
+- Connecting to the chat websocket
+- Receiving realtime messages
+- Marking messages as read
+- Typing indicator
+- Basic reconnect behavior
+
+## Supported Directions
+
+This same chat covers both directions:
+
+1. Driver -> Customer
+   The driver sends a message and the customer receives it on the same `driver_customer` thread.
+
+2. Customer -> Driver
+   The customer sends a message and the driver receives it on the same `driver_customer` thread.
+
+There is no separate conversation type for each direction.
+
+- Both directions use the same `order_id`
+- Both directions use the same `chat_type=driver_customer`
+- The actual direction is determined by `sender_type`
+
+## Base URLs
 
 - REST base: `/api`
 - WebSocket base: `/ws`
@@ -19,515 +69,512 @@ It covers:
 Examples:
 
 ```text
-GET  /api/shop/driver-chats/conversations/
-WSS  /ws/driver-chats/shop/{shop_owner_id}/?token=JWT&lang=ar
+POST /api/driver/orders/123/chat/open/
+GET  /api/driver/orders/123/chat/
+POST /api/driver/orders/123/chat/
+WSS  /ws/chat/order/123/?token=<JWT>&chat_type=driver_customer&lang=ar
 ```
 
-## 2. Authentication
+## Authentication
 
-Use the normal shop JWT.
+Use the normal driver JWT.
 
-- REST:
+REST:
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-- WebSocket:
+WebSocket:
 
 ```text
-?token=<access_token>&lang=ar
+?token=<access_token>&chat_type=driver_customer&lang=ar
 ```
 
-Allowed users:
-- `shop_owner`
-- `employee`
+Allowed users on this chat:
 
-## 3. Main Concept
+- `driver` assigned to the order
+- `customer` owner of the order
 
-The backend is `conversation per driver`, not `conversation per order`.
+## Core Rule
 
-Each conversation contains:
-- one driver
-- list of linked orders/invoices
-- messages between store and driver
-- conversation status
-- unread count for the shop side
+The chat does not start automatically when the driver accepts the order.
 
-## 4. Main Data Shapes
+The chat starts only when the driver presses the chat icon.
 
-## Conversation
+That means Flutter should do this:
+
+1. Call `POST /api/driver/orders/{order_id}/chat/open/`
+2. Read the response
+3. Open the websocket returned by the backend
+4. Load old messages from `GET /api/driver/orders/{order_id}/chat/`
+
+## REST Endpoints
+
+### 1. Open chat
+
+```http
+POST /api/driver/orders/{order_id}/chat/open/
+```
+
+Purpose:
+
+- Prepare the driver-customer chat session
+- Return the conversation identifier
+- Return the websocket path to open
+- Tell Flutter whether chat already had messages or not
+
+Example response:
 
 ```json
 {
-  "id": "conv_12",
-  "driver": {},
-  "orders": [],
-  "status": "driver_on_way",
-  "updated_at": "2026-03-31T12:00:00Z",
-  "unread_count": 2,
-  "last_message_preview": "طلب تحويل الأوردر بسبب...",
-  "messages": [],
-  "messages_next_cursor": "..."
-}
-```
-
-## Driver
-
-```json
-{
-  "id": "15",
-  "name": "محمد علي",
-  "phone": "+201001234567",
-  "avatar_url": "https://...",
-  "rating": 4.8,
-  "vehicle_label": "هيونداي أكسنت",
-  "plate_number": "س ص 1234",
-  "is_online": true,
-  "presence_status": "online",
-  "last_seen_at": "2026-03-31T12:00:00Z"
-}
-```
-
-## Order
-
-```json
-{
-  "id": "order_123",
-  "order_number": "#12345",
-  "customer": {
-    "id": "c_1",
-    "name": "أحمد محمد",
-    "phone": "+2010..."
-  },
-  "delivery_address": "حي الحسين، شارع رقم 12، عمارة 4",
-  "total_amount": 154.0,
-  "currency": "EGP",
-  "items_count": 5,
-  "created_at": "2026-03-31T10:20:00Z",
-  "delivery_note": "العميل طلب التواصل عند الوصول",
-  "status": "driver_on_way",
-  "items": [],
-  "delivery_fee": 40.0,
-  "assigned_driver_name": "محمد علي",
-  "transfer_reason": null
-}
-```
-
-## Message
-
-```json
-{
-  "id": "msg_1001",
-  "type": "text",
-  "sender": "driver",
-  "sent_at": "2026-03-31T12:00:00Z",
-  "text": "أنا أمام المنزل الآن",
-  "audio_url": null,
-  "voice_duration_seconds": null,
-  "invoice_order": null,
-  "client_message_id": null,
-  "delivery_status": "sent"
-}
-```
-
-## Call
-
-```json
-{
-  "call_id": "call_100",
-  "conversation_id": "conv_12",
-  "driver_id": "15",
-  "initiated_by": "store",
-  "status": "ringing",
-  "created_at": "2026-03-31T12:00:00Z",
-  "answered_at": null,
-  "ended_at": null,
-  "duration_seconds": 0,
-  "reason": null,
-  "channel_name": "driver_chat_room_12_150501",
-  "rtc_token": null
-}
-```
-
-## 5. WebSocket
-
-Endpoint:
-
-```text
-/ws/driver-chats/shop/{shop_owner_id}/?token=JWT&lang=ar
-```
-
-On connect, the backend sends:
-
-```json
-{
-  "type": "driver_chats.snapshot",
   "success": true,
   "data": {
-    "conversations": [],
-    "last_event_id": "evt_1"
-  },
-  "sent_at": "2026-03-31T12:00:00Z"
-}
-```
-
-## Unified envelope
-
-```json
-{
-  "type": "driver_chat.message_created",
-  "request_id": "req_123",
-  "success": true,
-  "event_id": "evt_50",
-  "data": {},
-  "sent_at": "2026-03-31T12:00:00Z"
-}
-```
-
-Notes:
-- `event_id` exists on persisted server events and should be stored for resync.
-- `request_id` is echoed on ack/error when applicable.
-
-## 6. Important Server Events
-
-- `driver_chats.snapshot`
-- `driver_chat.conversation_created`
-- `driver_chat.conversation_updated`
-- `driver_chat.message_created`
-- `driver_chat.order_updated`
-- `driver_chat.unread_updated`
-- `driver_chat.driver_presence_updated`
-- `driver_chat.typing`
-- `driver_chat.call_initiated`
-- `driver_chat.call_ringing`
-- `driver_chat.call_accepted`
-- `driver_chat.call_rejected`
-- `driver_chat.call_cancelled`
-- `driver_chat.call_ended`
-- `driver_chat.call_timeout`
-- `driver_chat.call_missed`
-- `driver_chat.webrtc_offer`
-- `driver_chat.webrtc_answer`
-- `driver_chat.webrtc_ice_candidate`
-- `driver_chat.ack`
-- `driver_chat.error`
-
-## Example event payloads
-
-```json
-{ "type": "driver_chat.message_created", "data": { "conversation_id": "conv_1", "message": {} } }
-{ "type": "driver_chat.order_updated", "data": { "conversation_id": "conv_1", "order": {} } }
-{ "type": "driver_chat.unread_updated", "data": { "conversation_id": "conv_1", "unread_count": 3 } }
-{ "type": "driver_chat.driver_presence_updated", "data": { "driver_id": "15", "is_online": true, "presence_status": "online", "last_seen_at": "2026-03-31T12:00:00Z" } }
-```
-
-## 7. Shop Actions Sent from Flutter
-
-## Send text
-
-```json
-{
-  "action": "driver_chat.send_text",
-  "request_id": "req_1",
-  "conversation_id": "conv_1",
-  "client_message_id": "tmp_1",
-  "text": "السلام عليكم"
-}
-```
-
-## Send voice
-
-```json
-{
-  "action": "driver_chat.send_voice",
-  "request_id": "req_2",
-  "conversation_id": "conv_1",
-  "client_message_id": "tmp_2",
-  "audio_url": "https://...",
-  "voice_duration_seconds": 12
-}
-```
-
-## Mark read
-
-```json
-{
-  "action": "driver_chat.mark_read",
-  "request_id": "req_3",
-  "conversation_id": "conv_1"
-}
-```
-
-## Subscribe
-
-```json
-{
-  "action": "driver_chat.subscribe",
-  "request_id": "req_4",
-  "conversation_id": "conv_1"
-}
-```
-
-## Fetch more messages
-
-```json
-{
-  "action": "driver_chat.fetch_more_messages",
-  "request_id": "req_5",
-  "conversation_id": "conv_1",
-  "cursor": "..."
-}
-```
-
-## Transfer to another driver
-
-```json
-{
-  "action": "driver_chat.transfer_to_driver",
-  "request_id": "req_6",
-  "source_conversation_id": "conv_1",
-  "order_id": "order_1",
-  "target_driver_id": "22"
-}
-```
-
-## Start / cancel / end call
-
-```json
-{ "action": "driver_chat.call_start", "request_id": "c1", "conversation_id": "conv_1", "driver_id": "15" }
-{ "action": "driver_chat.call_cancel", "request_id": "c2", "call_id": "call_100" }
-{ "action": "driver_chat.call_end", "request_id": "c3", "call_id": "call_100" }
-```
-
-## WebRTC signaling
-
-```json
-{ "action": "driver_chat.webrtc_offer", "request_id": "rtc1", "call_id": "call_100", "sdp": "..." }
-{ "action": "driver_chat.webrtc_answer", "request_id": "rtc2", "call_id": "call_100", "sdp": "..." }
-{ "action": "driver_chat.webrtc_ice_candidate", "request_id": "rtc3", "call_id": "call_100", "candidate": {} }
-```
-
-## 8. Ack Handling
-
-Every client action should wait for:
-
-```json
-{
-  "type": "driver_chat.ack",
-  "request_id": "req_1",
-  "success": true,
-  "data": {},
-  "sent_at": "2026-03-31T12:00:00Z"
-}
-```
-
-Failure:
-
-```json
-{
-  "type": "driver_chat.ack",
-  "request_id": "req_1",
-  "success": false,
-  "error": {
-    "code": "FORBIDDEN",
-    "message": "..."
+    "conversation_id": "order_123_driver_customer",
+    "order_id": 123,
+    "chat_type": "driver_customer",
+    "is_existing": true,
+    "is_new": false,
+    "ws_url": "/ws/chat/order/123/?chat_type=driver_customer&lang=ar"
   }
 }
 ```
 
-Recommended Flutter rule:
-- keep a map of pending `request_id`
-- mark optimistic UI as confirmed only on `ack.success=true`
-- rollback on `ack.success=false`
+Notes:
 
-## 9. REST Endpoints Used by Flutter
+- `ws_url` is a path; Flutter should append the host and token
+- the backend currently returns `is_existing` and `is_new`
 
-## Conversations list
+### 2. Get chat messages
 
-```text
-GET /api/shop/driver-chats/conversations/?q=
+```http
+GET /api/driver/orders/{order_id}/chat/
 ```
 
-Search works on:
-- driver name
-- order number
-- customer name
-- delivery address
+What it returns:
 
-## Messages page
+- customer block
+- invoice block
+- ordered messages array
+- quick replies
 
-```text
-GET /api/shop/driver-chats/conversations/{conversation_id}/messages/?cursor=...
-```
+Important:
 
-## Orders in a conversation
+- On this GET, unread customer messages in `driver_customer` are marked as read
 
-```text
-GET /api/shop/driver-chats/conversations/{conversation_id}/orders/
-```
+Example response shape:
 
-## Available drivers for transfer
-
-```text
-GET /api/shop/drivers/available-for-transfer/?exclude_driver_id=15
-```
-
-## Voice upload URL
-
-```text
-POST /api/shop/driver-chats/voice/upload-url/
-```
-
-Current backend also supports direct upload:
-
-```text
-POST /api/shop/driver-chats/voice/upload/
-multipart/form-data
-field: file
-```
-
-## Mark read by REST
-
-```text
-POST /api/shop/driver-chats/mark-read/
+```json
 {
-  "conversation_id": "conv_1"
+  "success": true,
+  "data": {
+    "customer": {
+      "id": 22,
+      "name": "أحمد محمود",
+      "phone_number": "01000000000",
+      "profile_image_url": null,
+      "is_online": false,
+      "last_seen": null
+    },
+    "invoice": {
+      "items": [
+        {
+          "name": "وجبة برجر كلاسيك",
+          "quantity": 2,
+          "line_total": 100.0
+        }
+      ],
+      "payment_method": "cash",
+      "amount_to_collect": 150.0
+    },
+    "messages": [
+      {
+        "id": 501,
+        "message_type": "text",
+        "content": "أنا في الطريق",
+        "created_at": "2026-04-12T20:20:00Z",
+        "is_mine": true
+      }
+    ],
+    "quick_replies": [
+      "أنا في الطريق",
+      "وصلت",
+      "من فضلك رد على الهاتف"
+    ]
+  }
 }
 ```
 
-## Resync
+### 3. Send text message
 
-```text
-GET /api/shop/driver-chats/resync/?last_event_id=evt_25
+```http
+POST /api/driver/orders/{order_id}/chat/
+Content-Type: application/json
 ```
 
-Response:
-- `events` if delta is available
-- `requires_snapshot=true` + `snapshot` if the event id is no longer valid
+Body:
 
-## Call details
-
-```text
-GET /api/shop/driver-chats/calls/{call_id}/
+```json
+{
+  "content": "أنا في الطريق"
+}
 ```
 
-## 10. Voice Message Flow
+Success response:
 
-Do not upload audio bytes inside WebSocket.
-
-Flow:
-1. Upload file by REST.
-2. Receive `audio_url`.
-3. Send `driver_chat.send_voice` through WebSocket.
-
-## 11. Enums
-
-## Conversation / order status
-
-```text
-waiting_reply
-awaiting_driver_acceptance
-transfer_requested
-driver_busy
-driver_on_way
-driver_arrived
-transferred_to_another_driver
-delivered
-cancelled
-rejected
+```json
+{
+  "success": true,
+  "data": {
+    "id": 501,
+    "message_type": "text",
+    "content": "أنا في الطريق",
+    "created_at": "2026-04-12T20:20:00Z",
+    "is_mine": true
+  }
+}
 ```
 
-## Message type
+Notes:
 
-```text
-text
-voice
-invoice
-system
-call
+- Current driver REST endpoint sends text only
+- Realtime delivery should still rely on the websocket
+
+### 4. Send media
+
+Use the existing shared upload endpoint:
+
+```http
+POST /api/chat/order/{order_id}/send-media/
 ```
 
-## Sender
+Required form-data fields:
+
+- `chat_type=driver_customer`
+- `message_type=image` or `audio`
+- `image_file` or `audio_file`
+
+Example:
 
 ```text
-store
-driver
-system
+chat_type: driver_customer
+message_type: image
+image_file: <binary>
 ```
 
-## Presence
+After upload succeeds:
+
+- the chat websocket receives a normal `chat_message`
+- the customer side also receives the message
+
+## WebSocket URL
 
 ```text
-online
-offline
-busy
-on_trip
+/ws/chat/order/{order_id}/?token=<JWT>&chat_type=driver_customer&lang=ar
 ```
 
-## Call status
+Example:
 
 ```text
-initiated
-ringing
-accepted
-rejected
-cancelled
-ended
-missed
-timeout
-failed
+wss://example.com/ws/chat/order/123/?token=<JWT>&chat_type=driver_customer&lang=ar
 ```
 
-## 12. Reconnect Strategy for Flutter
+## WebSocket Events
 
-Recommended behavior:
+This chat uses the shared order-chat websocket contract.
 
-1. Open WebSocket after login.
-2. Store `last_event_id` from snapshot and every incoming persisted event.
-3. If socket disconnects:
-   - reconnect with exponential backoff
-   - after reconnect, accept the fresh snapshot
-   - optionally call `/resync` before reconnecting UI-heavy screens
-4. Preserve current selected conversation locally.
-5. On `driver_chat.error` or failed `ack`, show backend message.
+The driver side should expect these server events:
 
-## 13. Suggested Flutter Architecture
+- `messages_snapshot`
+- `chat_message`
+- `messages_read`
+- `typing`
+- `ack`
+- `error`
 
-- `DriverChatsRepository`
-- `DriverChatsSocketService`
-- `DriverChatsCubit` or `Bloc`
-- `DriverChatRoomCubit` for selected conversation detail
-- `CallSignalingService` for WebRTC signaling
+## 1. `messages_snapshot`
 
-State to keep locally:
-- `conversationsById`
-- sorted conversation ids
-- `selectedConversationId`
-- `lastEventId`
-- `pendingRequests`
-- `availableTransferDrivers`
-- `activeCallByConversationId`
+Sent immediately after websocket connect.
 
-## 14. Important UI Rules
+Example:
 
-- Show driver green indicator when `presence_status != offline`
-- Reset unread when the user opens the conversation and `mark_read` succeeds
-- Do not duplicate sent messages after socket echo
-- For invoice messages use `message.invoice_order`
-- For call banners use latest `driver_chat.call_*` event
-- Show transfer reason from `order.transfer_reason`
+```json
+{
+  "type": "messages_snapshot",
+  "chat_type": "driver_customer",
+  "order_id": 123,
+  "data": {
+    "messages": [
+      {
+        "id": 501,
+        "chat_type": "driver_customer",
+        "sender_type": "driver",
+        "sender_name": "محمد علي",
+        "message_type": "text",
+        "content": "أنا في الطريق",
+        "is_read": true,
+        "created_at": "2026-04-12T20:20:00Z"
+      }
+    ]
+  }
+}
+```
 
-## 15. Current Backend Choice for Calls
+Flutter rule:
 
-Current backend implementation supports:
-- call state events
-- WebRTC signaling relay through WebSocket
+- Replace the visible message list with this snapshot on connect
 
-It does **not** currently generate Agora/Twilio/Zego tokens.
+## 2. `chat_message`
 
-So Flutter should implement the call media layer with WebRTC on top of:
-- `driver_chat.webrtc_offer`
-- `driver_chat.webrtc_answer`
-- `driver_chat.webrtc_ice_candidate`
+Sent when either the driver or the customer sends a message.
 
+Example:
+
+```json
+{
+  "type": "chat_message",
+  "message": {
+    "id": 502,
+    "chat_type": "driver_customer",
+    "sender_type": "customer",
+    "sender_name": "أحمد محمود",
+    "message_type": "text",
+    "content": "تمام",
+    "is_read": false,
+    "created_at": "2026-04-12T20:21:00Z"
+  }
+}
+```
+
+Flutter rule:
+
+- Append the new message if it is not already in the list
+- If this screen is open and the sender is the customer, mark as seen locally
+
+### Example A: Driver -> Customer
+
+```json
+{
+  "type": "chat_message",
+  "message": {
+    "id": 601,
+    "chat_type": "driver_customer",
+    "sender_type": "driver",
+    "sender_name": "محمد علي",
+    "message_type": "text",
+    "content": "أنا وصلت تحت البيت",
+    "is_read": false,
+    "created_at": "2026-04-12T20:30:00Z"
+  }
+}
+```
+
+### Example B: Customer -> Driver
+
+```json
+{
+  "type": "chat_message",
+  "message": {
+    "id": 602,
+    "chat_type": "driver_customer",
+    "sender_type": "customer",
+    "sender_name": "أحمد محمود",
+    "message_type": "text",
+    "content": "تمام نازل حالاً",
+    "is_read": false,
+    "created_at": "2026-04-12T20:31:00Z"
+  }
+}
+```
+
+## 3. `messages_read`
+
+Sent when one side marks messages as read.
+
+Example:
+
+```json
+{
+  "type": "messages_read",
+  "order_id": 123,
+  "chat_type": "driver_customer",
+  "reader_type": "driver"
+}
+```
+
+Flutter rule:
+
+- Update read state for outgoing messages when appropriate
+
+## 4. `typing`
+
+Sent when the other side is typing.
+
+Example:
+
+```json
+{
+  "type": "typing",
+  "order_id": 123,
+  "chat_type": "driver_customer",
+  "sender_type": "customer",
+  "is_typing": true
+}
+```
+
+Flutter rule:
+
+- Show a temporary typing indicator
+- Auto-hide it after a short timeout if no follow-up event arrives
+
+## 5. `ack`
+
+Sent after successful websocket actions like sending a message or marking read.
+
+Example:
+
+```json
+{
+  "type": "ack",
+  "action": "chat_message",
+  "request_id": "req_1",
+  "message": "تم تنفيذ الطلب بنجاح"
+}
+```
+
+## 6. `error`
+
+Sent when the websocket request is invalid.
+
+Example:
+
+```json
+{
+  "type": "error",
+  "code": "MESSAGE_CONTENT_REQUIRED",
+  "message": "محتوى الرسالة مطلوب"
+}
+```
+
+## Client-to-Server WebSocket Events
+
+### Send text message
+
+```json
+{
+  "type": "chat_message",
+  "content": "أنا في الطريق",
+  "request_id": "req_1"
+}
+```
+
+You may also send:
+
+```json
+{
+  "type": "send_message",
+  "content": "أنا في الطريق",
+  "request_id": "req_1"
+}
+```
+
+Meaning:
+
+- If the socket is opened by the driver app, this payload means `driver -> customer`
+- If the socket is opened by the customer app on the same order thread, this payload means `customer -> driver`
+- In both cases, the backend sets the real `sender_type` from the authenticated socket user
+
+### Mark messages as read
+
+```json
+{
+  "type": "mark_read",
+  "request_id": "req_2"
+}
+```
+
+### Typing indicator
+
+```json
+{
+  "type": "typing",
+  "is_typing": true
+}
+```
+
+## Recommended Flutter Flow
+
+### Open chat screen
+
+1. Call `POST /api/driver/orders/{order_id}/chat/open/`
+2. Build websocket URL:
+   - host + `ws_url`
+   - append `token`
+3. Open websocket
+4. Call `GET /api/driver/orders/{order_id}/chat/`
+5. Show:
+   - customer header
+   - invoice summary
+   - message list
+   - quick replies
+
+### Send message
+
+Preferred:
+
+1. send websocket `chat_message`
+2. wait for `chat_message` broadcast
+3. append to UI
+
+Fallback:
+
+1. call `POST /api/driver/orders/{order_id}/chat/`
+2. append returned message
+
+### Upload media
+
+1. upload through `/api/chat/order/{order_id}/send-media/`
+2. wait for websocket `chat_message`
+3. append to UI
+
+### Leave chat screen
+
+- close the websocket for that order
+- keep the driver realtime orders socket alive if used elsewhere in app
+
+## Reconnect Strategy
+
+When chat socket disconnects:
+
+1. reconnect with exponential backoff
+2. use the same `order_id` and `chat_type=driver_customer`
+3. after reconnect, trust the new `messages_snapshot`
+4. if needed, refresh with `GET /api/driver/orders/{order_id}/chat/`
+
+## Practical Notes
+
+- `conversation_id` format is currently:
+  - `order_{order_id}_driver_customer`
+- message order from REST is ascending by `created_at`
+- current driver-side REST send endpoint creates text only
+- media should use the shared upload endpoint
+- this chat is tied to one order, not a standalone conversation object in a separate table
+
+## Minimal Integration Checklist
+
+- [ ] Add driver chat repository/service for open/get/send
+- [ ] Add websocket service for `/ws/chat/order/{order_id}/?chat_type=driver_customer`
+- [ ] Open chat only after pressing the chat icon
+- [ ] Render `messages_snapshot`
+- [ ] Handle `chat_message`
+- [ ] Handle `messages_read`
+- [ ] Handle `typing`
+- [ ] Handle `ack`
+- [ ] Handle `error`
+- [ ] Support media upload using `/api/chat/order/{order_id}/send-media/`
+
+## Related Docs
+
+- [driver_realtime_flutter_handoff.md](./driver_realtime_flutter_handoff.md)
+- [CHAT_SYSTEM.md](./CHAT_SYSTEM.md)
+- [WEBSOCKET_CONTRACT.md](./WEBSOCKET_CONTRACT.md)

@@ -10,7 +10,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
 from .models import (
+    ADMIN_DESKTOP_FULL_ADMIN_ROLE,
     ADMIN_DESKTOP_PERMISSION_CHOICES,
+    ADMIN_DESKTOP_READONLY_ADMIN_ROLES,
     ADMIN_DESKTOP_ROLE_CHOICES,
     AdminDesktopUser,
     ShopOwner,
@@ -143,19 +145,36 @@ def _admin_desktop_role_catalog():
             "code": role_code,
             "label": role_labels.get(role_code, role_code),
             "default_permissions": get_admin_desktop_role_permissions(role_code),
+            "capabilities": {
+                "can_view_admin_users": role_code in ADMIN_DESKTOP_READONLY_ADMIN_ROLES
+                or role_code == ADMIN_DESKTOP_FULL_ADMIN_ROLE,
+                "can_manage_admin_users": role_code == ADMIN_DESKTOP_FULL_ADMIN_ROLE,
+            },
         }
         for role_code, _ in ADMIN_DESKTOP_ROLE_CHOICES
     ]
 
 
 def _normalize_admin_desktop_permissions(role, permissions):
-    allowed_permissions = {code for code, _ in ADMIN_DESKTOP_PERMISSION_CHOICES}
-    base_permissions = permissions or get_admin_desktop_role_permissions(role)
+    allowed_permissions = set(get_admin_desktop_role_permissions(role))
+    base_permissions = permissions if permissions is not None else get_admin_desktop_role_permissions(role)
     normalized = []
     for permission in base_permissions:
         if permission in allowed_permissions and permission not in normalized:
             normalized.append(permission)
     return normalized
+
+
+def _can_view_admin_desktop_users(user):
+    if not user:
+        return False
+    return user.role == ADMIN_DESKTOP_FULL_ADMIN_ROLE or user.role in ADMIN_DESKTOP_READONLY_ADMIN_ROLES
+
+
+def _can_manage_admin_desktop_users(user):
+    if not user:
+        return False
+    return user.role == ADMIN_DESKTOP_FULL_ADMIN_ROLE
 
 
 def _parse_bool(value, default=None):
@@ -380,6 +399,13 @@ def admin_desktop_roles_permissions_view(request):
 @permission_classes([IsAuthenticated, IsAdminDesktopUser])
 def admin_desktop_users_view(request):
     if request.method == "GET":
+        if not _can_view_admin_desktop_users(request.user):
+            return error_response(
+                message="ليس لديك صلاحية لعرض المديرين",
+                status_code=status.HTTP_403_FORBIDDEN,
+                request=request,
+            )
+
         search = str(request.query_params.get("search", "")).strip()
         role = str(request.query_params.get("role", "")).strip()
         is_active = _parse_bool(request.query_params.get("is_active"), default=None)
@@ -419,9 +445,20 @@ def admin_desktop_users_view(request):
                     "has_next": page < total_pages,
                     "has_previous": page > 1,
                 },
+                "capabilities": {
+                    "can_view_admin_users": _can_view_admin_desktop_users(request.user),
+                    "can_manage_admin_users": _can_manage_admin_desktop_users(request.user),
+                },
                 "users": [_serialize_admin_desktop_user_list_item(user) for user in users],
             },
             message="تم جلب مستخدمي الديسكتوب بنجاح",
+            request=request,
+        )
+
+    if not _can_manage_admin_desktop_users(request.user):
+        return error_response(
+            message="إضافة المديرين متاحة فقط لمطور النظام",
+            status_code=status.HTTP_403_FORBIDDEN,
             request=request,
         )
 
@@ -458,6 +495,20 @@ def admin_desktop_users_view(request):
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated, IsAdminDesktopUser])
 def admin_desktop_user_detail_view(request, user_id):
+    if request.method == "GET" and not _can_view_admin_desktop_users(request.user):
+        return error_response(
+            message="ليس لديك صلاحية لعرض المديرين",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    if request.method in {"PUT", "PATCH", "DELETE"} and not _can_manage_admin_desktop_users(request.user):
+        return error_response(
+            message="إدارة المديرين متاحة فقط لمطور النظام",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
     try:
         target_user = AdminDesktopUser.objects.get(id=user_id)
     except AdminDesktopUser.DoesNotExist:
