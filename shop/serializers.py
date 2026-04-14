@@ -1015,6 +1015,8 @@ class OrderCreateSerializer(serializers.Serializer):
             customer=customer,
             employee=employee,
             driver=driver,
+            driver_assigned_at=timezone.now() if driver else None,
+            driver_accepted_at=None,
             order_number=order_number,
             **validated_data
         )

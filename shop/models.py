@@ -343,6 +343,8 @@ class Order(models.Model):
     notes = models.TextField(blank=True, null=True, verbose_name="ملاحظات")
     unread_messages_count = models.IntegerField(default=0, verbose_name="عدد الرسائل غير المقروءة")
     estimated_delivery_time = models.DateTimeField(blank=True, null=True, verbose_name="الوقت المتوقع للتوصيل")
+    driver_assigned_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت تعيين السائق")
+    driver_accepted_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت قبول السائق")
     delivered_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت التسليم الفعلي")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")

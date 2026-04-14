@@ -2232,8 +2232,12 @@ def driver_order_accept_view(request, order_id):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
+        accepted_at = timezone.now()
         order.driver = driver
-        order.save(update_fields=['driver', 'updated_at'])
+        if order.driver_assigned_at is None:
+            order.driver_assigned_at = accepted_at
+        order.driver_accepted_at = accepted_at
+        order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'updated_at'])
         clear_driver_rejection(order, driver)
 
     driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
@@ -2380,7 +2384,9 @@ def driver_order_transfer_view(request, order_id):
     if order.status in {'preparing', 'on_way'}:
         order.status = 'confirmed'
     order.driver = None
-    order.save(update_fields=['driver', 'status', 'updated_at'])
+    order.driver_assigned_at = None
+    order.driver_accepted_at = None
+    order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'status', 'updated_at'])
     clear_all_driver_rejections(order)
 
     transfer_reason = selected_reason['label']
@@ -3138,7 +3144,11 @@ def order_detail_view(request, order_id):
                         driver_id=driver_id,
                         status='active',
                     )
-                    order.driver = relation.driver
+                    new_driver = relation.driver
+                    if not old_driver or old_driver.id != new_driver.id:
+                        order.driver_assigned_at = timezone.now()
+                        order.driver_accepted_at = None
+                    order.driver = new_driver
                 except ShopDriver.DoesNotExist:
                     return error_response(
                         message=t(request, 'driver_not_found'),
@@ -3146,6 +3156,8 @@ def order_detail_view(request, order_id):
                     )
             else:
                 order.driver = None
+                order.driver_assigned_at = None
+                order.driver_accepted_at = None
         
         # تحديث باقي الحقول
         for field in ['status', 'items', 'total_amount', 'delivery_fee', 'address', 'notes']:
@@ -6796,3 +6808,4 @@ def order_tracking_view(request, order_id):
         },
         message=t(request, 'tracking_data_retrieved_successfully')
     )
+

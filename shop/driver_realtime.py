@@ -3,6 +3,7 @@ import json
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.utils import timezone
+from django.db.models import Q
 
 from user.utils import build_absolute_file_url, resolve_base_url
 
@@ -167,6 +168,8 @@ def normalize_driver_status(order):
     if order.status == 'cancelled':
         return 'cancelled'
     if order.driver_id:
+        if getattr(order, 'driver_accepted_at', None) is None:
+            return 'pending_acceptance'
         if order.status == 'on_way':
             return 'in_delivery'
         if order.status in {'confirmed', 'preparing'}:
@@ -179,11 +182,19 @@ def normalize_driver_status(order):
 
 
 def is_available_order(order):
-    return order.driver_id is None and order.status in DRIVER_AVAILABLE_ORDER_STATUSES
+    if order.status not in DRIVER_AVAILABLE_ORDER_STATUSES:
+        return False
+    if order.driver_id is None:
+        return True
+    return getattr(order, 'driver_accepted_at', None) is None
 
 
 def is_assigned_order(order):
-    return order.driver_id is not None and order.status in DRIVER_ASSIGNED_ORDER_STATUSES
+    return (
+        order.driver_id is not None
+        and getattr(order, 'driver_accepted_at', None) is not None
+        and order.status in DRIVER_ASSIGNED_ORDER_STATUSES
+    )
 
 
 def build_driver_order_payload(order, *, request=None, scope=None, base_url=None):
@@ -238,8 +249,8 @@ def build_driver_order_payload(order, *, request=None, scope=None, base_url=None
         'timestamps': {
             'created_at': format_utc_iso8601(order.created_at),
             'updated_at': format_utc_iso8601(order.updated_at),
-            'accepted_at': format_utc_iso8601(order.updated_at if order.driver_id else None),
-            'assigned_at': format_utc_iso8601(order.updated_at if order.driver_id else None),
+            'accepted_at': format_utc_iso8601(getattr(order, 'driver_accepted_at', None)),
+            'assigned_at': format_utc_iso8601(getattr(order, 'driver_assigned_at', None)),
         },
     }
 
@@ -260,7 +271,7 @@ def driver_can_receive_new_orders(driver):
     if orders_manager is None or not hasattr(orders_manager, 'filter'):
         return not bool(getattr(driver, 'active_orders_count', 0))
 
-    return not orders_manager.filter(status__in=DRIVER_ASSIGNED_ORDER_STATUSES).exists()
+    return not orders_manager.filter(status__in=DRIVER_ASSIGNED_ORDER_STATUSES, driver_accepted_at__isnull=False).exists()
 
 
 def get_shop_receiving_driver_ids(shop_owner_id):
@@ -273,7 +284,7 @@ def get_shop_receiving_driver_ids(shop_owner_id):
             ).values_list('driver_id', flat=True),
             status='available',
         )
-        .exclude(orders__status__in=DRIVER_ASSIGNED_ORDER_STATUSES)
+        .exclude(orders__status__in=DRIVER_ASSIGNED_ORDER_STATUSES, orders__driver_accepted_at__isnull=False)
         .values_list('id', flat=True)
         .distinct()
     )
@@ -286,10 +297,13 @@ def get_available_orders_queryset(driver):
     return (
         Order.objects
         .filter(
-            driver__isnull=True,
             shop_owner__shop_drivers__driver=driver,
             shop_owner__shop_drivers__status='active',
             status__in=DRIVER_AVAILABLE_ORDER_STATUSES,
+        )
+        .filter(
+            Q(driver__isnull=True)
+            | Q(driver=driver, driver_accepted_at__isnull=True)
         )
         .exclude(driver_rejections__driver=driver)
         .select_related('shop_owner', 'shop_owner__shop_category', 'customer', 'delivery_address')
@@ -301,7 +315,7 @@ def get_available_orders_queryset(driver):
 def get_assigned_orders_queryset(driver):
     return (
         Order.objects
-        .filter(driver=driver, status__in=DRIVER_ASSIGNED_ORDER_STATUSES)
+        .filter(driver=driver, driver_accepted_at__isnull=False, status__in=DRIVER_ASSIGNED_ORDER_STATUSES)
         .select_related('shop_owner', 'shop_owner__shop_category', 'customer', 'delivery_address')
         .order_by('-updated_at', '-created_at')
     )
@@ -415,7 +429,12 @@ def emit_order_cancelled(driver_id, order_id):
 def upsert_available_order_for_all(order, *, request=None, scope=None, base_url=None, exclude_driver_ids=None):
     exclude_driver_ids = set(exclude_driver_ids or [])
     order_payload = build_driver_order_payload(order, request=request, scope=scope, base_url=base_url)
-    for driver_id in get_shop_receiving_driver_ids(order.shop_owner_id):
+    target_driver_ids = (
+        [order.driver_id]
+        if order.driver_id and getattr(order, 'driver_accepted_at', None) is None
+        else get_shop_receiving_driver_ids(order.shop_owner_id)
+    )
+    for driver_id in target_driver_ids:
         if driver_id in exclude_driver_ids:
             continue
         emit_available_order_upsert(driver_id, order_payload)
@@ -489,8 +508,13 @@ def sync_driver_order_state(
     if current_is_available:
         if previous_driver_id is not None or not was_available:
             clear_all_driver_rejections(order)
+        if order.driver_id and getattr(order, 'driver_accepted_at', None) is None:
+            other_driver_ids = [driver_id for driver_id in get_shop_active_driver_ids(order.shop_owner_id) if driver_id != order.driver_id]
+            if other_driver_ids:
+                remove_available_order_for_all(order, 'reserved_for_other_driver', driver_ids=other_driver_ids)
         upsert_available_order_for_all(order, request=request, scope=scope, base_url=base_url)
         return
-
     removal_reason = 'cancelled' if order.status == 'cancelled' else 'unavailable'
     remove_available_order_for_all(order, removal_reason)
+
+
