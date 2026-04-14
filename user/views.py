@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
+from django.utils.crypto import get_random_string
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
 from .models import (
     ADMIN_DESKTOP_FULL_ADMIN_ROLE,
@@ -630,6 +631,13 @@ def _parse_commission_rate(value):
     return commission_rate, None
 
 
+def _generate_admin_store_number():
+    while True:
+        candidate = f"ST-{get_random_string(6, allowed_chars='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')}"
+        if not ShopOwner.objects.filter(shop_number=candidate).exists():
+            return candidate
+
+
 def _admin_store_status_meta(shop):
     status_key = getattr(shop, "admin_status", "active") or "active"
     status_label = dict(ShopOwner.ADMIN_STATUS_CHOICES).get(status_key, status_key)
@@ -656,7 +664,6 @@ def _serialize_admin_store_list_item(request, shop):
         "id": shop.id,
         "shop_name": shop.shop_name,
         "owner_name": shop.owner_name,
-        "shop_number": shop.shop_number,
         "phone_number": shop.phone_number,
         "profile_image_url": _build_media_url(request, shop.profile_image),
         "shop_category_id": shop.shop_category_id,
@@ -729,7 +736,6 @@ def _serialize_admin_store_detail(request, shop):
             "id": shop.id,
             "shop_name": shop.shop_name,
             "owner_name": shop.owner_name,
-            "shop_number": shop.shop_number,
             "phone_number": shop.phone_number,
             "description": shop.description,
             "profile_image_url": _build_media_url(request, shop.profile_image),
@@ -761,7 +767,6 @@ def _validate_admin_store_payload(request, *, partial=False, instance=None):
 
     shop_name = request.data.get("shop_name")
     owner_name = request.data.get("owner_name")
-    shop_number = request.data.get("shop_number")
     phone_number = request.data.get("phone_number")
     password = request.data.get("password")
     shop_category_id = request.data.get("shop_category_id")
@@ -785,19 +790,6 @@ def _validate_admin_store_payload(request, *, partial=False, instance=None):
         payload["owner_name"] = str(owner_name).strip()
     elif not partial and instance is None:
         payload["owner_name"] = str(shop_name or "").strip()
-
-    if not partial or shop_number is not None:
-        if not shop_number:
-            errors["shop_number"] = ["رقم المتجر مطلوب"]
-        else:
-            normalized_shop_number = str(shop_number).strip()
-            existing = ShopOwner.objects.filter(shop_number=normalized_shop_number)
-            if instance:
-                existing = existing.exclude(id=instance.id)
-            if existing.exists():
-                errors["shop_number"] = ["رقم المتجر مستخدم بالفعل"]
-            else:
-                payload["shop_number"] = normalized_shop_number
 
     if not partial or phone_number is not None:
         if not phone_number:
@@ -838,7 +830,9 @@ def _validate_admin_store_payload(request, *, partial=False, instance=None):
     elif not partial and instance is None:
         payload["commission_rate"] = Decimal("0")
 
-    if admin_status is not None:
+    if instance is not None and admin_status is not None:
+        pass
+    elif admin_status is not None:
         admin_status_value = str(admin_status).strip()
         if admin_status_value not in status_values:
             errors["admin_status"] = ["الحالة الإدارية غير صحيحة"]
@@ -913,7 +907,6 @@ def admin_desktop_stores_view(request):
             queryset = queryset.filter(
                 Q(shop_name__icontains=search)
                 | Q(owner_name__icontains=search)
-                | Q(shop_number__icontains=search)
                 | Q(phone_number__icontains=search)
             )
         if admin_status and admin_status != "all":
@@ -968,7 +961,7 @@ def admin_desktop_stores_view(request):
     shop = ShopOwner(
         owner_name=payload.get("owner_name") or payload["shop_name"],
         shop_name=payload["shop_name"],
-        shop_number=payload["shop_number"],
+        shop_number=_generate_admin_store_number(),
         phone_number=payload["phone_number"],
         password=payload["password"],
         shop_category=payload.get("shop_category"),
@@ -1033,14 +1026,11 @@ def admin_desktop_store_detail_view(request, shop_id):
     for field in (
         "owner_name",
         "shop_name",
-        "shop_number",
         "phone_number",
         "shop_category",
         "description",
-        "admin_status",
         "commission_rate",
         "admin_notes",
-        "is_active",
         "profile_image",
     ):
         if field in payload:

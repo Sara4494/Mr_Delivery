@@ -6223,12 +6223,7 @@
                     },
                     {
                       "key": "owner_name",
-                      "value": "???? ???????",
-                      "type": "text"
-                    },
-                    {
-                      "key": "shop_number",
-                      "value": "ST-1001",
+                      "value": "أحمد المنصور",
                       "type": "text"
                     },
                     {
@@ -6253,7 +6248,7 @@
                     },
                     {
                       "key": "description",
-                      "value": "??? ????? ??????",
+                      "value": "متجر متخصص في المواد الغذائية",
                       "type": "text"
                     },
                     {
@@ -6275,7 +6270,7 @@
                     ""
                   ]
                 },
-                "description": "Create a new store account from the admin desktop create-store modal."
+                "description": "Create a new store account from the admin desktop create-store modal. shop_number is generated internally by the backend."
               }
             },
             {
@@ -6319,12 +6314,12 @@
                   "formdata": [
                     {
                       "key": "shop_name",
-                      "value": "???? ?????",
+                      "value": "برجر ستيشن",
                       "type": "text"
                     },
                     {
                       "key": "owner_name",
-                      "value": "???? ???????",
+                      "value": "أحمد المنصور",
                       "type": "text"
                     },
                     {
@@ -6343,18 +6338,13 @@
                       "type": "text"
                     },
                     {
-                      "key": "admin_status",
-                      "value": "active",
-                      "type": "text"
-                    },
-                    {
                       "key": "description",
-                      "value": "????? ?????? ??????",
+                      "value": "تم تحديث معلومات المتجر والإعدادات الأساسية",
                       "type": "text"
                     },
                     {
                       "key": "admin_notes",
-                      "value": "?? ??????? ?? ???? ???????",
+                      "value": "تمت مراجعة بيانات المتجر من لوحة الإدارة",
                       "type": "text"
                     },
                     {
@@ -6377,7 +6367,7 @@
                     ""
                   ]
                 },
-                "description": "Update editable store data from the admin desktop edit modal."
+                "description": "Update editable store data from the edit modal. shop_number is not part of the external store-management payloads. Store suspension/activation should use the dedicated suspend/activate endpoints."
               }
             },
             {
@@ -6396,7 +6386,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"reason\": \"?????? ?????? ???????\",\n  \"duration_days\": 7,\n  \"notify_shop\": true,\n  \"admin_notes\": \"?? ????? ?????? ??? ?????? ???????\"\n}"
+                  "raw": "{\n  \"reason\": \"مخالفة سياسات التشغيل\",\n  \"duration_days\": 7,\n  \"notify_shop\": true,\n  \"admin_notes\": \"تم تعليق المتجر بعد مراجعة الإدارة\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/admin-desktop/stores/{{admin_shop_id}}/suspend/",
@@ -6431,7 +6421,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"admin_notes\": \"??? ????? ????? ?????? ?? ???????\"\n}"
+                  "raw": "{\n  \"admin_notes\": \"تمت إعادة تفعيل المتجر من الإدارة\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/admin-desktop/stores/{{admin_shop_id}}/activate/",
