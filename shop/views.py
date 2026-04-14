@@ -37,7 +37,6 @@ from .serializers import (
     DriverProfileUpdateSerializer,
     DriverCreateSerializer,
     DriverRegisterSerializer,
-    DriverLocationUpdateSerializer,
     OrderSerializer,
     ShopOrderListSerializer,
     OrderCreateSerializer,
@@ -109,7 +108,6 @@ from .driver_realtime import (
     emit_order_rejected,
     emit_order_transferred,
     get_available_order_for_driver,
-    list_available_orders_payloads,
     record_driver_rejection,
     sync_driver_order_state,
 )
@@ -542,16 +540,10 @@ STAFF_TYPE_DRIVER = 'driver'
 VALID_STAFF_TYPES = {STAFF_TYPE_EMPLOYEE, STAFF_TYPE_DRIVER}
 DRIVER_APP_ORDER_STATUSES = {'confirmed', 'preparing', 'on_way'}
 DRIVER_TRANSFER_REASONS = [
-    {'key': 'vehicle_issue', 'label': 'عطل في المركبة', 'requires_note': False},
-    {'key': 'emergency', 'label': 'ظرف طارئ / حادث', 'requires_note': False},
-    {'key': 'store_delay', 'label': 'تأخير كبير من المتجر', 'requires_note': False},
-    {'key': 'other', 'label': 'سبب آخر', 'requires_note': True},
-]
-DRIVER_CHAT_QUICK_REPLIES = [
-    'دقيق؟',
-    'أنا تحت العمارة',
-    'أنا وصلت',
-    'أنا في الطريق',
+    {'key': 'vehicle_issue', 'label': '??? ?? ???????', 'requires_note': False},
+    {'key': 'emergency', 'label': '??? ???? / ????', 'requires_note': False},
+    {'key': 'store_delay', 'label': '????? ???? ?? ??????', 'requires_note': False},
+    {'key': 'other', 'label': '??? ???', 'requires_note': True},
 ]
 PY_WEEKDAY_TO_WORK_DAY = {
     0: 'monday',
@@ -1189,60 +1181,12 @@ def _build_driver_order_address_text(order):
     return next((part for part in address_parts if part), '')
 
 
-def _build_driver_order_list_item(order):
-    return {
-        'order_id': order.id,
-        'order_number': order.order_number,
-        'since_label': _humanize_elapsed_label(order.created_at),
-        'customer_name': order.customer.name if order.customer_id else None,
-        'address_text': _build_driver_order_address_text(order),
-        'amount_to_collect': _to_float_or_none(order.total_amount) or 0.0,
-        'payment_method': order.payment_method,
-    }
-
-
 def _build_driver_order_invoice_payload(order):
     return {
         'items': _parse_driver_order_items(order.items),
         'payment_method': order.payment_method,
         'amount_to_collect': _to_float_or_none(order.total_amount) or 0.0,
     }
-
-
-def _build_driver_order_detail_payload(order, request):
-    customer = order.customer
-    return {
-        'order_number': order.order_number,
-        'status_label': _get_driver_order_status_label(order),
-        'customer': {
-            'id': customer.id if customer else None,
-            'name': customer.name if customer else None,
-            'phone_number': customer.phone_number if customer else None,
-            'profile_image_url': _build_file_url(request, customer.profile_image) if customer else None,
-            'is_online': bool(customer.is_online) if customer else False,
-            'last_seen': format_utc_iso8601(customer.last_seen) if customer else None,
-        },
-        'address_text': _build_driver_order_address_text(order),
-        'invoice': _build_driver_order_invoice_payload(order),
-    }
-
-
-def _build_driver_order_chat_message_payload(message, request, driver):
-    payload = {
-        'id': message.id,
-        'message_type': message.message_type,
-        'content': message.content,
-        'created_at': message.created_at.isoformat() if message.created_at else None,
-        'is_mine': message.sender_type == 'driver' and message.sender_driver_id == driver.id,
-    }
-    if message.audio_file:
-        payload['audio_file_url'] = _build_file_url(request, message.audio_file)
-    if message.image_file:
-        payload['image_file_url'] = _build_file_url(request, message.image_file)
-    if message.message_type == 'location':
-        payload['latitude'] = str(message.latitude) if message.latitude is not None else None
-        payload['longitude'] = str(message.longitude) if message.longitude is not None else None
-    return payload
 
 
 def _get_driver_order_or_none(driver, order_id, statuses=None):
@@ -1383,7 +1327,7 @@ def _invite_driver(request, shop_owner, payload):
     response_data = _serialize_staff_member(existing_account, STAFF_TYPE_DRIVER, request)
     response_data['invitation_sent'] = True
     response_data['invitation_channel'] = 'whatsapp_otp'
-    response_data['invitation_note'] = 'Driver should respond using /api/driver/invitation/respond/'
+    response_data['invitation_note'] = 'Driver should respond using /api/driver/invitations/{invitation_id}/respond/'
     response_data['shop_link_status'] = relation.status
     return success_response(
         data=response_data,
@@ -1724,87 +1668,6 @@ def staff_block_view(request, staff_type, staff_id):
         data=response_data,
         message=t(request, 'staff_block_status_updated_successfully'),
         status_code=status.HTTP_200_OK
-    )
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def driver_invitation_respond_view(request):
-    """
-    Driver accepts/rejects invitation sent by shop owner.
-    POST /api/driver/invitation/respond/
-    Body: {
-      "phone_number": "01000000001",
-      "otp": "123456",
-      "action": "accept|reject"
-    }
-    """
-    phone_number = request.data.get('phone_number')
-    raw_shop_number = request.data.get('shop_number')
-    shop_number = str(raw_shop_number).strip() if raw_shop_number is not None else ''
-    otp_code = request.data.get('otp')
-    action = str(request.data.get('action', '')).strip().lower()
-
-    errors = {}
-    if not phone_number:
-        errors['phone_number'] = [t(request, 'phone_number_is_required')]
-    if not otp_code:
-        errors['otp'] = [t(request, 'otp_is_required')]
-    if action not in {'accept', 'reject'}:
-        errors['action'] = [t(request, 'driver_invitation_action_must_be_accept_or_reject')]
-    if errors:
-        return error_response(
-            message=t(request, 'invalid_data'),
-            errors=errors,
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
-
-    normalized_phone = normalize_phone(phone_number)
-    if not normalized_phone:
-        return error_response(
-            message=t(request, 'invalid_data'),
-            errors={'phone_number': [t(request, 'invalid_phone_number')]},
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
-
-    if not otp_verify(normalized_phone, otp_code):
-        return error_response(
-            message=t(request, 'verification_code_is_invalid_or_expired'),
-            status_code=status.HTTP_401_UNAUTHORIZED
-        )
-
-    driver = Driver.objects.filter(phone_number__in=_driver_phone_variants(normalized_phone)).first()
-    if not driver:
-        return error_response(
-            message='No pending driver invitation found.',
-            status_code=status.HTTP_404_NOT_FOUND
-        )
-
-    pending_links = ShopDriver.objects.filter(
-        driver=driver,
-        status='pending',
-    ).select_related('shop_owner').order_by('-joined_at', '-id')
-
-    if shop_number:
-        if not ShopOwner.objects.filter(shop_number=shop_number).exists():
-            return error_response(
-                message=t(request, 'shop_number_or_password_is_incorrect'),
-                status_code=status.HTTP_404_NOT_FOUND
-            )
-        pending_links = pending_links.filter(shop_owner__shop_number=shop_number)
-
-    shop_driver = pending_links.first()
-    if not shop_driver:
-        return error_response(
-            message='No pending driver invitation found.',
-            status_code=status.HTTP_404_NOT_FOUND
-        )
-    return _respond_to_driver_invitation(
-        request=request,
-        shop_driver=shop_driver,
-        driver=driver,
-        action=action,
-        normalized_phone=normalized_phone,
     )
 
 
@@ -2350,26 +2213,6 @@ def driver_logout_view(request):
     )
 
 
-@api_view(['GET'])
-@permission_classes([IsDriver])
-def driver_available_orders_view(request):
-    """
-    Available delivery orders for the logged-in driver.
-    GET /api/driver/orders/available/
-    """
-    driver = _get_driver_from_request(request)
-    if not driver:
-        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-    return success_response(
-        data={
-            'results': list_available_orders_payloads(driver, request=request),
-        },
-        message=t(request, 'driver_available_orders_retrieved_successfully'),
-        status_code=status.HTTP_200_OK,
-    )
-
-
 @api_view(['POST'])
 @permission_classes([IsDriver])
 def driver_order_accept_view(request, order_id):
@@ -2463,58 +2306,6 @@ def driver_order_reject_view(request, order_id):
 
 @api_view(['GET'])
 @permission_classes([IsDriver])
-def driver_orders_view(request):
-    """
-    Active assigned orders for the driver app, grouped by shop.
-    GET /api/driver/orders/
-    """
-    driver = _get_driver_from_request(request)
-    if not driver:
-        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-    orders = (
-        Order.objects
-        .filter(driver=driver, status__in=DRIVER_APP_ORDER_STATUSES)
-        .select_related('shop_owner', 'shop_owner__shop_category', 'customer', 'delivery_address')
-        .order_by('-updated_at', '-created_at')
-    )
-
-    grouped_results = []
-    grouped_map = {}
-    flat_results = []
-    for order in orders:
-        shop = order.shop_owner
-        if not shop:
-            continue
-
-        group = grouped_map.get(shop.id)
-        if group is None:
-            group = {
-                'shop_name': shop.shop_name,
-                'shop_logo_url': _build_file_url(request, shop.profile_image),
-                'branch_label': _build_driver_branch_label(shop),
-                'orders_count': 0,
-                'orders': [],
-            }
-            grouped_map[shop.id] = group
-            grouped_results.append(group)
-
-        group['orders'].append(_build_driver_order_list_item(order))
-        group['orders_count'] += 1
-        flat_results.append(build_driver_order_payload(order, request=request))
-
-    return success_response(
-        data={
-            'results': grouped_results,
-            'assigned_orders': flat_results,
-        },
-        message=t(request, 'driver_orders_retrieved_successfully'),
-        status_code=status.HTTP_200_OK,
-    )
-
-
-@api_view(['GET'])
-@permission_classes([IsDriver])
 def driver_order_detail_view(request, order_id):
     """
     Driver order detail with the unified realtime payload.
@@ -2534,23 +2325,6 @@ def driver_order_detail_view(request, order_id):
     return success_response(
         data=build_driver_order_payload(order, request=request),
         message=t(request, 'driver_order_details_retrieved_successfully'),
-        status_code=status.HTTP_200_OK,
-    )
-
-
-@api_view(['GET'])
-@permission_classes([IsDriver])
-def driver_order_transfer_reasons_view(request):
-    """
-    Static transfer reasons shown in the driver app.
-    GET /api/driver/orders/transfer-reasons/
-    """
-    return success_response(
-        data={
-            'warning_message': 'يرجى العلم أن كثرة تحويل الطلبات بدون مبرر قد تؤثر على تقييمك في التطبيق.',
-            'reasons': DRIVER_TRANSFER_REASONS,
-        },
-        message=t(request, 'driver_transfer_reasons_retrieved_successfully'),
         status_code=status.HTTP_200_OK,
     )
 
@@ -2705,79 +2479,6 @@ def driver_order_chat_open_view(request, order_id):
         },
         message=t(request, 'driver_chat_opened_successfully'),
         status_code=status.HTTP_200_OK,
-    )
-
-
-@api_view(['GET', 'POST'])
-@permission_classes([IsDriver])
-def driver_order_chat_view(request, order_id):
-    """
-    Driver-customer chat for an assigned order.
-    GET /api/driver/orders/{id}/chat/
-    POST /api/driver/orders/{id}/chat/
-    """
-    driver = _get_driver_from_request(request)
-    if not driver:
-        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
-    if not order:
-        return error_response(
-            message=t(request, 'driver_order_not_found'),
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-
-    if request.method == 'GET':
-        ChatMessage.objects.filter(
-            order=order,
-            chat_type='driver_customer',
-            sender_type='customer',
-            is_read=False,
-        ).update(is_read=True)
-
-        messages = list(
-            ChatMessage.objects
-            .filter(order=order, chat_type='driver_customer')
-            .order_by('created_at')
-        )
-        return success_response(
-            data={
-                'customer': _build_driver_order_detail_payload(order, request)['customer'],
-                'invoice': _build_driver_order_invoice_payload(order),
-                'messages': [
-                    _build_driver_order_chat_message_payload(message, request, driver)
-                    for message in messages
-                ],
-                'quick_replies': DRIVER_CHAT_QUICK_REPLIES,
-            },
-            message=t(request, 'driver_chat_retrieved_successfully'),
-            status_code=status.HTTP_200_OK,
-        )
-
-    content = str(request.data.get('content') or '').strip()
-    if not content:
-        return error_response(
-            message=t(request, 'message_content_is_required'),
-            errors={'content': [t(request, 'message_content_is_required')]},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    message = ChatMessage.objects.create(
-        order=order,
-        chat_type='driver_customer',
-        sender_type='driver',
-        sender_driver=driver,
-        message_type='text',
-        content=content,
-    )
-
-    payload = _chat_message_payload(message, request=request)
-    broadcast_chat_message(order.id, 'driver_customer', payload, request=request)
-
-    return success_response(
-        data=_build_driver_order_chat_message_payload(message, request, driver),
-        message=t(request, 'driver_message_sent_successfully'),
-        status_code=status.HTTP_201_CREATED,
     )
 
 
@@ -7050,43 +6751,6 @@ def cart_clear_view(request, shop_id):
         return success_response(message=t(request, 'cart_cleared_successfully'))
     except Cart.DoesNotExist:
         return error_response(message=t(request, 'cart_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-
-# ==================== Driver Location APIs ====================
-
-@api_view(['PUT'])
-@permission_classes([IsDriver])
-def driver_location_update_view(request):
-    """
-    تحديث موقع السائق
-    PUT /api/driver/location/
-    Body: { "latitude": 24.7136, "longitude": 46.6753 }
-    """
-    # نفترض أن السائق مسجل دخول
-    driver = request.user
-    if not isinstance(driver, Driver):
-        try:
-            driver = Driver.objects.get(id=request.user.id)
-        except:
-            return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
-    serializer = DriverLocationUpdateSerializer(data=request.data)
-    if not serializer.is_valid():
-        return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
-    
-    driver.current_latitude = serializer.validated_data['latitude']
-    driver.current_longitude = serializer.validated_data['longitude']
-    driver.location_updated_at = timezone.now()
-    driver.save()
-    
-    return success_response(
-        data={
-            'latitude': str(driver.current_latitude),
-            'longitude': str(driver.current_longitude),
-            'updated_at': driver.location_updated_at
-        },
-        message=t(request, 'location_updated_successfully')
-    )
 
 
 @api_view(['GET'])

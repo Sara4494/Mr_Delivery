@@ -2054,13 +2054,6 @@ class UpdateCartItemSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
 
 
-# Driver Location Serializer
-class DriverLocationUpdateSerializer(serializers.Serializer):
-    """Serializer لتحديث موقع السائق"""
-    latitude = serializers.DecimalField(max_digits=10, decimal_places=7, required=True)
-    longitude = serializers.DecimalField(max_digits=10, decimal_places=7, required=True)
-
-
 class AppStatusMaintenanceSerializer(serializers.Serializer):
     """Public maintenance-mode payload for the splash screen."""
 

@@ -83,18 +83,13 @@ urlpatterns = [
     path('driver/register/verify-otp/', views.driver_register_verify_otp_view, name='driver_register_verify_otp'),
     path('driver/login/', views.driver_login_view, name='driver_login'),
     path('driver/home/', views.driver_dashboard_view, name='driver_home'),
-    path('driver/dashboard/', views.driver_dashboard_view, name='driver_dashboard'),
     path('driver/invitations/', views.driver_invitations_view, name='driver_invitations'),
     path('driver/invitations/<int:invitation_id>/respond/', views.driver_invitation_action_view, name='driver_invitation_action'),
-    path('driver/orders/available/', views.driver_available_orders_view, name='driver_available_orders'),
     path('driver/orders/<int:order_id>/accept/', views.driver_order_accept_view, name='driver_order_accept'),
     path('driver/orders/<int:order_id>/reject/', views.driver_order_reject_view, name='driver_order_reject'),
-    path('driver/orders/', views.driver_orders_view, name='driver_orders'),
-    path('driver/orders/transfer-reasons/', views.driver_order_transfer_reasons_view, name='driver_order_transfer_reasons'),
     path('driver/orders/<int:order_id>/', views.driver_order_detail_view, name='driver_order_detail'),
     path('driver/orders/<int:order_id>/transfer/', views.driver_order_transfer_view, name='driver_order_transfer'),
     path('driver/orders/<int:order_id>/chat/open/', views.driver_order_chat_open_view, name='driver_order_chat_open'),
-    path('driver/orders/<int:order_id>/chat/', views.driver_order_chat_view, name='driver_order_chat'),
     path('driver/status/', views.driver_status_view, name='driver_status'),
     path('user/profile/', views.driver_profile_view, name='driver_profile'),
     path('user/profile/phone/send-otp/', views.driver_profile_phone_send_otp_view, name='driver_profile_phone_send_otp'),
@@ -103,7 +98,6 @@ urlpatterns = [
     path('driver/password/send-otp/', views.driver_password_send_otp_view, name='driver_password_send_otp'),
     path('driver/password/reset/', views.driver_password_reset_view, name='driver_password_reset'),
     path('driver/logout/', views.driver_logout_view, name='driver_logout'),
-    path('driver/invitation/respond/', views.driver_invitation_respond_view, name='driver_invitation_respond'),
     
     # ==================== Customer Auth ====================
     path('customer/register/', views.customer_register_view, name='customer_register'),
@@ -139,9 +133,6 @@ urlpatterns = [
     path('notifications/', views.notification_list_view, name='notification_list'),
     path('notifications/<int:notification_id>/read/', views.notification_mark_read_view, name='notification_mark_read'),
     path('notifications/read-all/', views.notification_mark_all_read_view, name='notification_mark_all_read'),
-    
-    # ==================== Driver Location ====================
-    path('driver/location/', views.driver_location_update_view, name='driver_location_update'),
     
     # ==================== Chat ====================
     re_path(r'^chat/order/(?P<conversation_id>support_[\w-]+)/send-media/$', views.support_chat_media_upload_view, name='chat_order_support_media_upload'),
