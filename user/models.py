@@ -194,6 +194,12 @@ class AdminDesktopUser(models.Model):
 
 class ShopOwner(models.Model):
     """نموذج صاحب المحل."""
+    ADMIN_STATUS_CHOICES = (
+        ("active", "نشط"),
+        ("pending_review", "قيد المراجعة"),
+        ("suspended", "موقوف"),
+    )
+
 
     owner_name = models.CharField(max_length=100, verbose_name="اسم صاحب المحل")
     shop_name = models.CharField(max_length=100, verbose_name="اسم المحل")
@@ -211,6 +217,12 @@ class ShopOwner(models.Model):
     profile_image = models.ImageField(upload_to="shop_profiles/", blank=True, null=True, verbose_name="صورة البروفيل")
     description = models.TextField(blank=True, null=True, verbose_name="وصف المحل")
     work_schedule = models.JSONField(default=default_work_schedule, blank=True, verbose_name="مواعيد العمل الأسبوعية")
+    admin_status = models.CharField(max_length=20, choices=ADMIN_STATUS_CHOICES, default="active", verbose_name="الحالة الإدارية")
+    commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0, verbose_name="نسبة العمولة")
+    suspension_reason = models.TextField(blank=True, null=True, verbose_name="سبب التعليق")
+    suspension_started_at = models.DateTimeField(blank=True, null=True, verbose_name="تاريخ بدء التعليق")
+    suspension_ends_at = models.DateTimeField(blank=True, null=True, verbose_name="تاريخ انتهاء التعليق")
+    admin_notes = models.TextField(blank=True, null=True, verbose_name="ملاحظات الإدارة")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
     is_active = models.BooleanField(default=True, verbose_name="نشط")

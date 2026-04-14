@@ -1,6 +1,8 @@
+from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 from math import ceil
 
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -15,6 +17,7 @@ from .models import (
     ADMIN_DESKTOP_READONLY_ADMIN_ROLES,
     ADMIN_DESKTOP_ROLE_CHOICES,
     AdminDesktopUser,
+    ShopCategory,
     ShopOwner,
     get_admin_desktop_role_permissions,
 )
@@ -581,6 +584,587 @@ def admin_desktop_user_detail_view(request, user_id):
     target_user.delete()
     return success_response(
         message="تم حذف مستخدم الديسكتوب بنجاح",
+        request=request,
+    )
+
+
+
+def _has_admin_desktop_permission(user, permission_code):
+    if not user or not getattr(user, "is_active", False):
+        return False
+    if getattr(user, "role", None) == ADMIN_DESKTOP_FULL_ADMIN_ROLE:
+        return True
+    return permission_code in (user.get_resolved_permissions() or [])
+
+
+def _build_media_url(request, file_field):
+    if not file_field:
+        return None
+    try:
+        return request.build_absolute_uri(file_field.url)
+    except Exception:
+        return getattr(file_field, "url", None)
+
+
+def _parse_admin_store_date_range(value):
+    key = str(value or "all").strip().lower()
+    today = timezone.localdate()
+    if key == "today":
+        return key, today, today
+    if key in {"last_7_days", "7_days", "7d"}:
+        return "last_7_days", today - timedelta(days=6), today
+    if key in {"last_30_days", "30_days", "30d"}:
+        return "last_30_days", today - timedelta(days=29), today
+    return "all", None, None
+
+
+def _parse_commission_rate(value):
+    if value in (None, ""):
+        return None, None
+    try:
+        commission_rate = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None, "نسبة العمولة غير صحيحة"
+    if commission_rate < 0 or commission_rate > 100:
+        return None, "نسبة العمولة يجب أن تكون بين 0 و 100"
+    return commission_rate, None
+
+
+def _admin_store_status_meta(shop):
+    status_key = getattr(shop, "admin_status", "active") or "active"
+    status_label = dict(ShopOwner.ADMIN_STATUS_CHOICES).get(status_key, status_key)
+    return {
+        "key": status_key,
+        "label": status_label,
+        "is_active": bool(getattr(shop, "is_active", False)),
+    }
+
+
+def _serialize_admin_store_list_item(request, shop):
+    from shop.models import Employee, Order
+
+    month_start = timezone.localdate().replace(day=1)
+    orders_qs = Order.objects.filter(shop_owner=shop)
+    monthly_revenue = (
+        orders_qs.filter(status="delivered", created_at__date__gte=month_start)
+        .aggregate(total=Sum("total_amount"))
+        .get("total")
+        or 0
+    )
+    status_meta = _admin_store_status_meta(shop)
+    return {
+        "id": shop.id,
+        "shop_name": shop.shop_name,
+        "owner_name": shop.owner_name,
+        "shop_number": shop.shop_number,
+        "phone_number": shop.phone_number,
+        "profile_image_url": _build_media_url(request, shop.profile_image),
+        "shop_category_id": shop.shop_category_id,
+        "shop_category_name": shop.shop_category.name if shop.shop_category else None,
+        "commission_rate": float(shop.commission_rate or 0),
+        "joined_at": shop.created_at,
+        "monthly_revenue": float(monthly_revenue),
+        "orders_count": orders_qs.count(),
+        "employees_count": Employee.objects.filter(shop_owner=shop).count(),
+        "status": status_meta,
+    }
+
+
+def _serialize_admin_store_detail(request, shop):
+    from shop.models import ChatMessage, Employee, Order
+
+    month_start = timezone.localdate().replace(day=1)
+    orders_qs = Order.objects.filter(shop_owner=shop)
+    delivered_orders_qs = orders_qs.filter(status="delivered")
+    monthly_revenue = (
+        delivered_orders_qs.filter(created_at__date__gte=month_start)
+        .aggregate(total=Sum("total_amount"))
+        .get("total")
+        or 0
+    )
+
+    recent_activities = []
+    if shop.updated_at:
+        recent_activities.append({
+            "type": "store_updated",
+            "title": "تم تحديث بيانات المتجر",
+            "description": "آخر تحديث على معلومات المتجر والإعدادات الأساسية.",
+            "created_at": shop.updated_at,
+        })
+
+    for order in orders_qs.order_by("-updated_at")[:3]:
+        recent_activities.append({
+            "type": "order_activity",
+            "title": f"تحديث على الطلب #{order.order_number}",
+            "description": f"حالة الطلب الحالية: {order.get_status_display()}",
+            "created_at": order.updated_at,
+        })
+
+    for employee in Employee.objects.filter(shop_owner=shop).order_by("-updated_at")[:2]:
+        recent_activities.append({
+            "type": "employee_activity",
+            "title": f"تحديث بيانات الموظف {employee.name}",
+            "description": f"الدور: {employee.get_role_display()}",
+            "created_at": employee.updated_at,
+        })
+
+    last_message = (
+        ChatMessage.objects.filter(order__shop_owner=shop)
+        .select_related("order")
+        .order_by("-created_at")
+        .first()
+    )
+    if last_message:
+        recent_activities.append({
+            "type": "chat_activity",
+            "title": "آخر نشاط مراسلة",
+            "description": f"على الطلب #{last_message.order.order_number}",
+            "created_at": last_message.created_at,
+        })
+
+    recent_activities.sort(key=lambda item: item["created_at"] or timezone.now(), reverse=True)
+    status_meta = _admin_store_status_meta(shop)
+    return {
+        "store": {
+            "id": shop.id,
+            "shop_name": shop.shop_name,
+            "owner_name": shop.owner_name,
+            "shop_number": shop.shop_number,
+            "phone_number": shop.phone_number,
+            "description": shop.description,
+            "profile_image_url": _build_media_url(request, shop.profile_image),
+            "shop_category_id": shop.shop_category_id,
+            "shop_category_name": shop.shop_category.name if shop.shop_category else None,
+            "commission_rate": float(shop.commission_rate or 0),
+            "joined_at": shop.created_at,
+            "updated_at": shop.updated_at,
+            "status": status_meta,
+            "suspension": {
+                "reason": shop.suspension_reason,
+                "started_at": shop.suspension_started_at,
+                "ends_at": shop.suspension_ends_at,
+            },
+            "admin_notes": shop.admin_notes,
+        },
+        "stats": {
+            "total_orders": orders_qs.count(),
+            "monthly_revenue": float(monthly_revenue),
+            "employees_count": Employee.objects.filter(shop_owner=shop).count(),
+            "delivered_orders_count": delivered_orders_qs.count(),
+        },
+        "recent_activities": recent_activities[:6],
+    }
+
+
+def _validate_admin_store_payload(request, *, partial=False, instance=None):
+    status_values = {code for code, _ in ShopOwner.ADMIN_STATUS_CHOICES}
+
+    shop_name = request.data.get("shop_name")
+    owner_name = request.data.get("owner_name")
+    shop_number = request.data.get("shop_number")
+    phone_number = request.data.get("phone_number")
+    password = request.data.get("password")
+    shop_category_id = request.data.get("shop_category_id")
+    commission_rate = request.data.get("commission_rate")
+    admin_status = request.data.get("admin_status")
+    description = request.data.get("description")
+    admin_notes = request.data.get("admin_notes")
+    profile_image = request.FILES.get("profile_image")
+    remove_profile_image = _parse_bool(request.data.get("remove_profile_image"), default=False)
+
+    payload = {}
+    errors = {}
+
+    if not partial or shop_name is not None:
+        if not shop_name:
+            errors["shop_name"] = ["اسم المتجر مطلوب"]
+        else:
+            payload["shop_name"] = str(shop_name).strip()
+
+    if owner_name is not None:
+        payload["owner_name"] = str(owner_name).strip()
+    elif not partial and instance is None:
+        payload["owner_name"] = str(shop_name or "").strip()
+
+    if not partial or shop_number is not None:
+        if not shop_number:
+            errors["shop_number"] = ["رقم المتجر مطلوب"]
+        else:
+            normalized_shop_number = str(shop_number).strip()
+            existing = ShopOwner.objects.filter(shop_number=normalized_shop_number)
+            if instance:
+                existing = existing.exclude(id=instance.id)
+            if existing.exists():
+                errors["shop_number"] = ["رقم المتجر مستخدم بالفعل"]
+            else:
+                payload["shop_number"] = normalized_shop_number
+
+    if not partial or phone_number is not None:
+        if not phone_number:
+            errors["phone_number"] = ["رقم الهاتف مطلوب"]
+        else:
+            normalized_phone = normalize_phone(phone_number)
+            existing = ShopOwner.objects.filter(phone_number=normalized_phone)
+            if instance:
+                existing = existing.exclude(id=instance.id)
+            if existing.exists():
+                errors["phone_number"] = ["رقم الهاتف مستخدم بالفعل"]
+            else:
+                payload["phone_number"] = normalized_phone
+
+    if not partial or instance is None or password is not None:
+        if instance is None and not password:
+            errors["password"] = ["كلمة المرور مطلوبة"]
+        elif password:
+            if len(str(password)) < 6:
+                errors["password"] = ["كلمة المرور يجب أن تكون 6 أحرف على الأقل"]
+            else:
+                payload["password"] = str(password)
+
+    if shop_category_id is not None:
+        if str(shop_category_id).strip() in {"", "null", "None", "0"}:
+            payload["shop_category"] = None
+        else:
+            try:
+                payload["shop_category"] = ShopCategory.objects.get(id=shop_category_id, is_active=True)
+            except (ValueError, ShopCategory.DoesNotExist):
+                errors["shop_category_id"] = ["تصنيف المتجر غير موجود"]
+
+    parsed_commission_rate, commission_error = _parse_commission_rate(commission_rate)
+    if commission_error:
+        errors["commission_rate"] = [commission_error]
+    elif parsed_commission_rate is not None:
+        payload["commission_rate"] = parsed_commission_rate
+    elif not partial and instance is None:
+        payload["commission_rate"] = Decimal("0")
+
+    if admin_status is not None:
+        admin_status_value = str(admin_status).strip()
+        if admin_status_value not in status_values:
+            errors["admin_status"] = ["الحالة الإدارية غير صحيحة"]
+        elif admin_status_value == "suspended":
+            errors["admin_status"] = ["تعليق المتجر يتم من خلال endpoint التعليق المخصص"]
+        else:
+            payload["admin_status"] = admin_status_value
+            payload["is_active"] = admin_status_value == "active"
+    elif not partial and instance is None:
+        payload["admin_status"] = "active"
+        payload["is_active"] = True
+
+    if description is not None:
+        payload["description"] = str(description).strip() or None
+
+    if admin_notes is not None:
+        payload["admin_notes"] = str(admin_notes).strip() or None
+
+    if profile_image is not None:
+        payload["profile_image"] = profile_image
+    if remove_profile_image:
+        payload["profile_image"] = None
+
+    return payload, errors
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_store_categories_view(request):
+    if not _has_admin_desktop_permission(request.user, "store_management"):
+        return error_response(
+            message="ليست لديك صلاحية لإدارة المتاجر",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    categories = ShopCategory.objects.filter(is_active=True).order_by("name")
+    return success_response(
+        data={
+            "categories": [
+                {
+                    "id": category.id,
+                    "name": category.name,
+                }
+                for category in categories
+            ]
+        },
+        message="تم جلب تصنيفات المتاجر بنجاح",
+        request=request,
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_stores_view(request):
+    if not _has_admin_desktop_permission(request.user, "store_management"):
+        return error_response(
+            message="ليست لديك صلاحية لإدارة المتاجر",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    if request.method == "GET":
+        search = str(request.query_params.get("search", "")).strip()
+        admin_status = str(request.query_params.get("status", "")).strip().lower()
+        joined_range, date_from, date_to = _parse_admin_store_date_range(request.query_params.get("joined_range"))
+        page = max(int(request.query_params.get("page", 1) or 1), 1)
+        page_size = max(min(int(request.query_params.get("page_size", 10) or 10), 100), 1)
+
+        queryset = ShopOwner.objects.select_related("shop_category").all().order_by("-created_at")
+        if search:
+            queryset = queryset.filter(
+                Q(shop_name__icontains=search)
+                | Q(owner_name__icontains=search)
+                | Q(shop_number__icontains=search)
+                | Q(phone_number__icontains=search)
+            )
+        if admin_status and admin_status != "all":
+            queryset = queryset.filter(admin_status=admin_status)
+        if date_from and date_to:
+            queryset = queryset.filter(created_at__date__gte=date_from, created_at__date__lte=date_to)
+
+        total_count = queryset.count()
+        total_pages = ceil(total_count / page_size) if total_count else 1
+        start = (page - 1) * page_size
+        stores = list(queryset[start:start + page_size])
+
+        all_shops = ShopOwner.objects.all()
+        summary = {
+            "total": all_shops.count(),
+            "active": all_shops.filter(admin_status="active").count(),
+            "pending_review": all_shops.filter(admin_status="pending_review").count(),
+            "suspended": all_shops.filter(admin_status="suspended").count(),
+        }
+
+        return success_response(
+            data={
+                "summary": summary,
+                "filters": {
+                    "search": search,
+                    "status": admin_status or "all",
+                    "joined_range": joined_range,
+                },
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_count": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_previous": page > 1,
+                },
+                "stores": [_serialize_admin_store_list_item(request, shop) for shop in stores],
+            },
+            message="تم جلب المتاجر بنجاح",
+            request=request,
+        )
+
+    payload, errors = _validate_admin_store_payload(request, partial=False, instance=None)
+    if errors:
+        return error_response(
+            message="بيانات المتجر غير صحيحة",
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    shop = ShopOwner(
+        owner_name=payload.get("owner_name") or payload["shop_name"],
+        shop_name=payload["shop_name"],
+        shop_number=payload["shop_number"],
+        phone_number=payload["phone_number"],
+        password=payload["password"],
+        shop_category=payload.get("shop_category"),
+        description=payload.get("description"),
+        admin_status=payload.get("admin_status", "active"),
+        commission_rate=payload.get("commission_rate", Decimal("0")),
+        admin_notes=payload.get("admin_notes"),
+        is_active=payload.get("is_active", True),
+    )
+    if "profile_image" in payload:
+        shop.profile_image = payload["profile_image"]
+    shop.save()
+
+    return success_response(
+        data=_serialize_admin_store_detail(request, shop),
+        message="تم إضافة المتجر بنجاح",
+        status_code=status.HTTP_201_CREATED,
+        request=request,
+    )
+
+
+@api_view(["GET", "PUT", "PATCH"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_store_detail_view(request, shop_id):
+    if not _has_admin_desktop_permission(request.user, "store_management"):
+        return error_response(
+            message="ليست لديك صلاحية لإدارة المتاجر",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    try:
+        shop = ShopOwner.objects.select_related("shop_category").get(id=shop_id)
+    except ShopOwner.DoesNotExist:
+        return error_response(
+            message="المتجر غير موجود",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    if request.method == "GET":
+        return success_response(
+            data=_serialize_admin_store_detail(request, shop),
+            message="تم جلب تفاصيل المتجر بنجاح",
+            request=request,
+        )
+
+    payload, errors = _validate_admin_store_payload(
+        request,
+        partial=request.method == "PATCH",
+        instance=shop,
+    )
+    if errors:
+        return error_response(
+            message="بيانات المتجر غير صحيحة",
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    update_fields = []
+    for field in (
+        "owner_name",
+        "shop_name",
+        "shop_number",
+        "phone_number",
+        "shop_category",
+        "description",
+        "admin_status",
+        "commission_rate",
+        "admin_notes",
+        "is_active",
+        "profile_image",
+    ):
+        if field in payload:
+            setattr(shop, field, payload[field])
+            update_fields.append(field)
+
+    if "password" in payload:
+        shop.password = payload["password"]
+        update_fields.append("password")
+
+    if update_fields:
+        shop.save(update_fields=update_fields)
+
+    return success_response(
+        data=_serialize_admin_store_detail(request, shop),
+        message="تم تحديث بيانات المتجر بنجاح",
+        request=request,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_store_suspend_view(request, shop_id):
+    if not _has_admin_desktop_permission(request.user, "store_management"):
+        return error_response(
+            message="ليست لديك صلاحية لإدارة المتاجر",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    try:
+        shop = ShopOwner.objects.get(id=shop_id)
+    except ShopOwner.DoesNotExist:
+        return error_response(
+            message="المتجر غير موجود",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    reason = str(request.data.get("reason") or "").strip()
+    duration_days = request.data.get("duration_days")
+    notify_shop = _parse_bool(request.data.get("notify_shop"), default=True)
+    admin_notes = str(request.data.get("admin_notes") or "").strip() or None
+
+    if not reason:
+        return error_response(
+            message="سبب التعليق مطلوب",
+            errors={"reason": ["سبب التعليق مطلوب"]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    suspension_ends_at = None
+    if duration_days not in (None, "", "null", "None"):
+        try:
+            duration_value = int(duration_days)
+            if duration_value <= 0:
+                raise ValueError
+            suspension_ends_at = timezone.now() + timedelta(days=duration_value)
+        except (TypeError, ValueError):
+            return error_response(
+                message="مدة التعليق غير صحيحة",
+                errors={"duration_days": ["مدة التعليق يجب أن تكون رقمًا صحيحًا أكبر من صفر"]},
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
+            )
+
+    shop.admin_status = "suspended"
+    shop.is_active = False
+    shop.suspension_reason = reason
+    shop.suspension_started_at = timezone.now()
+    shop.suspension_ends_at = suspension_ends_at
+    update_fields = ["admin_status", "is_active", "suspension_reason", "suspension_started_at", "suspension_ends_at"]
+    if admin_notes is not None:
+        shop.admin_notes = admin_notes
+        update_fields.append("admin_notes")
+    shop.save(update_fields=update_fields)
+
+    return success_response(
+        data={
+            "store": _serialize_admin_store_list_item(request, shop),
+            "notification": {
+                "notify_shop": bool(notify_shop),
+            },
+        },
+        message="تم تعليق المتجر بنجاح",
+        request=request,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_store_activate_view(request, shop_id):
+    if not _has_admin_desktop_permission(request.user, "store_management"):
+        return error_response(
+            message="ليست لديك صلاحية لإدارة المتاجر",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    try:
+        shop = ShopOwner.objects.get(id=shop_id)
+    except ShopOwner.DoesNotExist:
+        return error_response(
+            message="المتجر غير موجود",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    admin_notes = request.data.get("admin_notes")
+    shop.admin_status = "active"
+    shop.is_active = True
+    shop.suspension_reason = None
+    shop.suspension_started_at = None
+    shop.suspension_ends_at = None
+    update_fields = ["admin_status", "is_active", "suspension_reason", "suspension_started_at", "suspension_ends_at"]
+    if admin_notes is not None:
+        shop.admin_notes = str(admin_notes).strip() or None
+        update_fields.append("admin_notes")
+    shop.save(update_fields=update_fields)
+
+    return success_response(
+        data={"store": _serialize_admin_store_list_item(request, shop)},
+        message="تم تفعيل المتجر بنجاح",
         request=request,
     )
 

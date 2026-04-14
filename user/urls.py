@@ -13,6 +13,11 @@ urlpatterns = [
     path('admin-desktop/roles-permissions/', views.admin_desktop_roles_permissions_view, name='admin_desktop_roles_permissions'),
     path('admin-desktop/users/', views.admin_desktop_users_view, name='admin_desktop_users'),
     path('admin-desktop/users/<int:user_id>/', views.admin_desktop_user_detail_view, name='admin_desktop_user_detail'),
+    path('admin-desktop/stores/categories/', views.admin_desktop_store_categories_view, name='admin_desktop_store_categories'),
+    path('admin-desktop/stores/', views.admin_desktop_stores_view, name='admin_desktop_stores'),
+    path('admin-desktop/stores/<int:shop_id>/', views.admin_desktop_store_detail_view, name='admin_desktop_store_detail'),
+    path('admin-desktop/stores/<int:shop_id>/suspend/', views.admin_desktop_store_suspend_view, name='admin_desktop_store_suspend'),
+    path('admin-desktop/stores/<int:shop_id>/activate/', views.admin_desktop_store_activate_view, name='admin_desktop_store_activate'),
     
     # ==================== Unified Auth ====================
     # تسجيل دخول موحد لجميع المستخدمين

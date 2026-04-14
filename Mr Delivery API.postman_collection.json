@@ -6126,6 +6126,331 @@
               "response": []
             }
           ]
+        },
+        {
+          "name": "Store Management",
+          "item": [
+            {
+              "name": "Get Store Categories - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    "categories",
+                    ""
+                  ]
+                },
+                "description": "Fetch active shop categories for the admin desktop store create/update forms."
+              }
+            },
+            {
+              "name": "List Stores - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/?search=&status=all&joined_range=all&page=1&page_size=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "search",
+                      "value": ""
+                    },
+                    {
+                      "key": "status",
+                      "value": "all"
+                    },
+                    {
+                      "key": "joined_range",
+                      "value": "all"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "List stores for the admin desktop table with search, status tabs, joined date filters, and pagination."
+              }
+            },
+            {
+              "name": "Create Store - Admin Desktop",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "shop_name",
+                      "value": "???? ????",
+                      "type": "text"
+                    },
+                    {
+                      "key": "owner_name",
+                      "value": "???? ???????",
+                      "type": "text"
+                    },
+                    {
+                      "key": "shop_number",
+                      "value": "ST-1001",
+                      "type": "text"
+                    },
+                    {
+                      "key": "phone_number",
+                      "value": "0501234567",
+                      "type": "text"
+                    },
+                    {
+                      "key": "password",
+                      "value": "123456",
+                      "type": "text"
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "1",
+                      "type": "text"
+                    },
+                    {
+                      "key": "commission_rate",
+                      "value": "12.5",
+                      "type": "text"
+                    },
+                    {
+                      "key": "description",
+                      "value": "??? ????? ??????",
+                      "type": "text"
+                    },
+                    {
+                      "key": "profile_image",
+                      "type": "file",
+                      "src": ""
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    ""
+                  ]
+                },
+                "description": "Create a new store account from the admin desktop create-store modal."
+              }
+            },
+            {
+              "name": "Get Store Details - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/{{admin_shop_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    "{{admin_shop_id}}",
+                    ""
+                  ]
+                },
+                "description": "Fetch one store details modal payload including stats and recent activities."
+              }
+            },
+            {
+              "name": "Update Store - Admin Desktop",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "shop_name",
+                      "value": "???? ?????",
+                      "type": "text"
+                    },
+                    {
+                      "key": "owner_name",
+                      "value": "???? ???????",
+                      "type": "text"
+                    },
+                    {
+                      "key": "phone_number",
+                      "value": "0509876543",
+                      "type": "text"
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "1",
+                      "type": "text"
+                    },
+                    {
+                      "key": "commission_rate",
+                      "value": "15",
+                      "type": "text"
+                    },
+                    {
+                      "key": "admin_status",
+                      "value": "active",
+                      "type": "text"
+                    },
+                    {
+                      "key": "description",
+                      "value": "????? ?????? ??????",
+                      "type": "text"
+                    },
+                    {
+                      "key": "admin_notes",
+                      "value": "?? ??????? ?? ???? ???????",
+                      "type": "text"
+                    },
+                    {
+                      "key": "profile_image",
+                      "type": "file",
+                      "src": ""
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/{{admin_shop_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    "{{admin_shop_id}}",
+                    ""
+                  ]
+                },
+                "description": "Update editable store data from the admin desktop edit modal."
+              }
+            },
+            {
+              "name": "Suspend Store - Admin Desktop",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"?????? ?????? ???????\",\n  \"duration_days\": 7,\n  \"notify_shop\": true,\n  \"admin_notes\": \"?? ????? ?????? ??? ?????? ???????\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/{{admin_shop_id}}/suspend/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    "{{admin_shop_id}}",
+                    "suspend",
+                    ""
+                  ]
+                },
+                "description": "Suspend a store with reason and optional duration from the admin desktop suspend modal."
+              }
+            },
+            {
+              "name": "Activate Store - Admin Desktop",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"admin_notes\": \"??? ????? ????? ?????? ?? ???????\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/{{admin_shop_id}}/activate/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    "{{admin_shop_id}}",
+                    "activate",
+                    ""
+                  ]
+                },
+                "description": "Re-activate a suspended store."
+              }
+            }
+          ]
         }
       ]
     }
