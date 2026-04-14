@@ -10,7 +10,6 @@ from .models import (
     Invoice, Employee, Product, Category, Offer, OrderRating, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
 )
-from .driver_realtime import driver_can_receive_new_orders
 from .presence import format_utc_iso8601
 from user.models import ShopOwner, ShopCategory
 from user.utils import t, build_absolute_file_url
@@ -980,15 +979,13 @@ class OrderCreateSerializer(serializers.Serializer):
             return value
         shop_owner = self.context['shop_owner']
         try:
-            relation = ShopDriver.objects.select_related('driver').get(
+            ShopDriver.objects.select_related('driver').get(
                 shop_owner=shop_owner,
                 driver_id=value,
                 status='active',
             )
         except ShopDriver.DoesNotExist:
             raise serializers.ValidationError('السائق غير موجود')
-        if not driver_can_receive_new_orders(relation.driver):
-            raise serializers.ValidationError('لا يمكن تعيين هذا السائق الآن لأنه غير متاح لاستقبال طلبات جديدة.')
         return value
     
     def create(self, validated_data):

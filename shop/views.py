@@ -103,7 +103,6 @@ from .driver_realtime import (
     build_driver_order_payload,
     clear_all_driver_rejections,
     clear_driver_rejection,
-    driver_can_receive_new_orders,
     emit_assigned_order_upsert,
     emit_available_order_remove,
     emit_order_accepted,
@@ -1708,10 +1707,11 @@ def staff_block_view(request, staff_type, staff_id):
         staff_member.is_active = not blocked
         staff_member.save()
     else:
+        active_orders_count = staff_member.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
         if blocked:
             staff_member.status = 'offline'
         elif staff_member.status == 'offline':
-            staff_member.status = 'available'
+            staff_member.status = 'busy' if active_orders_count > 0 else 'available'
         staff_member.save()
         try:
             notify_driver_status_updated(staff_member)
@@ -1949,13 +1949,13 @@ def driver_status_view(request):
 
     if requested_status is not None:
         target_status = str(requested_status).strip().lower()
-        if target_status not in {'available', 'offline'}:
+        if target_status not in {'available', 'busy', 'offline'}:
             return error_response(
                 message=t(request, 'invalid_driver_status'),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
     else:
-        target_status = 'available' if requested_online else 'offline'
+        target_status = 'available' if requested_online else 'busy'
 
     active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
     in_delivery_count = driver.orders.filter(status__in=['preparing', 'on_way']).count()
@@ -1969,6 +1969,8 @@ def driver_status_view(request):
     new_status = target_status
     if target_status == 'available' and in_delivery_count > 0:
         new_status = 'busy'
+    elif target_status == 'busy' and active_orders_count == 0:
+        new_status = 'offline'
 
     driver.status = new_status
     driver.save(update_fields=['status', 'updated_at'])
@@ -3435,11 +3437,6 @@ def order_detail_view(request, order_id):
                         driver_id=driver_id,
                         status='active',
                     )
-                    if not driver_can_receive_new_orders(relation.driver):
-                        return error_response(
-                            message='لا يمكن تعيين هذا السائق الآن لأنه غير متاح لاستقبال طلبات جديدة.',
-                            status_code=status.HTTP_400_BAD_REQUEST
-                        )
                     order.driver = relation.driver
                 except ShopDriver.DoesNotExist:
                     return error_response(
