@@ -103,6 +103,7 @@ from .driver_realtime import (
     build_driver_order_payload,
     clear_all_driver_rejections,
     clear_driver_rejection,
+    driver_can_receive_new_orders,
     emit_assigned_order_upsert,
     emit_available_order_remove,
     emit_order_accepted,
@@ -3434,6 +3435,11 @@ def order_detail_view(request, order_id):
                         driver_id=driver_id,
                         status='active',
                     )
+                    if not driver_can_receive_new_orders(relation.driver):
+                        return error_response(
+                            message='لا يمكن تعيين هذا السائق الآن لأنه غير متاح لاستقبال طلبات جديدة.',
+                            status_code=status.HTTP_400_BAD_REQUEST
+                        )
                     order.driver = relation.driver
                 except ShopDriver.DoesNotExist:
                     return error_response(

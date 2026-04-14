@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from user.utils import build_absolute_file_url, resolve_base_url
 
-from .models import DriverOrderRejection, Order, ShopDriver
+from .models import Driver, DriverOrderRejection, Order, ShopDriver
 from .presence import format_utc_iso8601
 
 
@@ -252,7 +252,37 @@ def get_shop_active_driver_ids(shop_owner_id):
     )
 
 
+def driver_can_receive_new_orders(driver):
+    if not driver or getattr(driver, 'status', None) != 'available':
+        return False
+
+    orders_manager = getattr(driver, 'orders', None)
+    if orders_manager is None or not hasattr(orders_manager, 'filter'):
+        return not bool(getattr(driver, 'active_orders_count', 0))
+
+    return not orders_manager.filter(status__in=DRIVER_ASSIGNED_ORDER_STATUSES).exists()
+
+
+def get_shop_receiving_driver_ids(shop_owner_id):
+    return list(
+        Driver.objects
+        .filter(
+            id__in=ShopDriver.objects.filter(
+                shop_owner_id=shop_owner_id,
+                status='active',
+            ).values_list('driver_id', flat=True),
+            status='available',
+        )
+        .exclude(orders__status__in=DRIVER_ASSIGNED_ORDER_STATUSES)
+        .values_list('id', flat=True)
+        .distinct()
+    )
+
+
 def get_available_orders_queryset(driver):
+    if not driver_can_receive_new_orders(driver):
+        return Order.objects.none()
+
     return (
         Order.objects
         .filter(
@@ -385,7 +415,7 @@ def emit_order_cancelled(driver_id, order_id):
 def upsert_available_order_for_all(order, *, request=None, scope=None, base_url=None, exclude_driver_ids=None):
     exclude_driver_ids = set(exclude_driver_ids or [])
     order_payload = build_driver_order_payload(order, request=request, scope=scope, base_url=base_url)
-    for driver_id in get_shop_active_driver_ids(order.shop_owner_id):
+    for driver_id in get_shop_receiving_driver_ids(order.shop_owner_id):
         if driver_id in exclude_driver_ids:
             continue
         emit_available_order_upsert(driver_id, order_payload)
@@ -414,7 +444,7 @@ def clear_all_driver_rejections(order):
 
 
 def is_driver_eligible_for_available_order(driver, order):
-    return ShopDriver.objects.filter(
+    return driver_can_receive_new_orders(driver) and ShopDriver.objects.filter(
         shop_owner_id=order.shop_owner_id,
         driver=driver,
         status='active',
