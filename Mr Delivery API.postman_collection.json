@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "74943a6f-4f02-4dbf-8d04-3ae998c7fda0",
+    "_postman_id": "d24445d9-14fc-4192-84c4-b5443845110c",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-74943a6f-4f02-4dbf-8d04-3ae998c7fda0?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-d24445d9-14fc-4192-84c4-b5443845110c?source=collection_link"
   },
   "item": [
     {
@@ -6154,7 +6154,43 @@
                   ]
                 },
                 "description": "Fetch active shop categories for the admin desktop store create/update forms."
-              }
+              },
+              "response": []
+            },
+            {
+              "name": "Create Store Category - Admin Desktop",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"مطعم\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/categories/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    "categories",
+                    ""
+                  ]
+                },
+                "description": "Create a new store category such as Restaurant or Pharmacy."
+              },
+              "response": []
             },
             {
               "name": "List Stores - Admin Desktop",
@@ -6201,7 +6237,8 @@
                   ]
                 },
                 "description": "List stores for the admin desktop table with search, status tabs, joined date filters, and pagination."
-              }
+              },
+              "response": []
             },
             {
               "name": "Create Store - Admin Desktop",
@@ -6254,7 +6291,7 @@
                     {
                       "key": "profile_image",
                       "type": "file",
-                      "src": ""
+                      "value": ""
                     }
                   ]
                 },
@@ -6271,7 +6308,8 @@
                   ]
                 },
                 "description": "Create a new store account from the admin desktop create-store modal. shop_number is generated internally by the backend."
-              }
+              },
+              "response": []
             },
             {
               "name": "Get Store Details - Admin Desktop",
@@ -6297,7 +6335,8 @@
                   ]
                 },
                 "description": "Fetch one store details modal payload including stats and recent activities."
-              }
+              },
+              "response": []
             },
             {
               "name": "Update Store - Admin Desktop",
@@ -6350,7 +6389,7 @@
                     {
                       "key": "profile_image",
                       "type": "file",
-                      "src": ""
+                      "value": ""
                     }
                   ]
                 },
@@ -6368,7 +6407,35 @@
                   ]
                 },
                 "description": "Update editable store data from the edit modal. shop_number is not part of the external store-management payloads. Store suspension/activation should use the dedicated suspend/activate endpoints."
-              }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Store - Admin Desktop",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/stores/{{admin_shop_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "stores",
+                    "{{admin_shop_id}}",
+                    ""
+                  ]
+                },
+                "description": "Delete a store from the admin desktop."
+              },
+              "response": []
             },
             {
               "name": "Suspend Store - Admin Desktop",
@@ -6403,7 +6470,8 @@
                   ]
                 },
                 "description": "Suspend a store with reason and optional duration from the admin desktop suspend modal."
-              }
+              },
+              "response": []
             },
             {
               "name": "Activate Store - Admin Desktop",
@@ -6438,7 +6506,196 @@
                   ]
                 },
                 "description": "Re-activate a suspended store."
-              }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Approvals",
+          "item": [
+            {
+              "name": "List Image Publish Requests - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/image-publish-requests/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "approvals",
+                    "image-publish-requests",
+                    ""
+                  ]
+                },
+                "description": "List all image publish approval requests for the admin desktop approvals center."
+              },
+              "response": []
+            },
+            {
+              "name": "List Shop Edit Requests - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/shop-edit-requests/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "approvals",
+                    "shop-edit-requests",
+                    ""
+                  ]
+                },
+                "description": "List all shop data edit approval requests."
+              },
+              "response": []
+            },
+            {
+              "name": "List Offer Requests - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/offer-requests/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "approvals",
+                    "offer-requests",
+                    ""
+                  ]
+                },
+                "description": "List all offer approval requests."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Approval Request Details - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "approvals",
+                    "requests",
+                    "{{approval_request_id}}",
+                    ""
+                  ]
+                },
+                "description": "Get one approval request details for the modal."
+              },
+              "response": []
+            },
+            {
+              "name": "Approve Approval Request - Admin Desktop",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/approve/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "approvals",
+                    "requests",
+                    "{{approval_request_id}}",
+                    "approve",
+                    ""
+                  ]
+                },
+                "description": "Approve one approval request."
+              },
+              "response": []
+            },
+            {
+              "name": "Reject Approval Request - Admin Desktop",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"رفض من الإدارة\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/reject/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "approvals",
+                    "requests",
+                    "{{approval_request_id}}",
+                    "reject",
+                    ""
+                  ]
+                },
+                "description": "Reject one approval request with an optional reason."
+              },
+              "response": []
             }
           ]
         }
@@ -6498,6 +6755,16 @@
     },
     {
       "key": "admin_desktop_user_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "admin_shop_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "approval_request_id",
       "value": "1",
       "type": "string"
     },

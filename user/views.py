@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from math import ceil
 
+from django.db import transaction
 from django.db.models import Count, Q, Sum
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -17,12 +18,14 @@ from .models import (
     ADMIN_DESKTOP_PERMISSION_CHOICES,
     ADMIN_DESKTOP_READONLY_ADMIN_ROLES,
     ADMIN_DESKTOP_ROLE_CHOICES,
+    AdminApprovalRequest,
     AdminDesktopUser,
     ShopCategory,
     ShopOwner,
     get_admin_desktop_role_permissions,
 )
 from .permissions import IsAdminDesktopUser
+from .approval_requests import serialize_admin_approval_request, review_approval_request
 from .utils import success_response, error_response, t, localize_message
 from .otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 
@@ -859,13 +862,45 @@ def _validate_admin_store_payload(request, *, partial=False, instance=None):
     return payload, errors
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated, IsAdminDesktopUser])
 def admin_desktop_store_categories_view(request):
     if not _has_admin_desktop_permission(request.user, "store_management"):
         return error_response(
             message="ليست لديك صلاحية لإدارة المتاجر",
             status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    if request.method == "POST":
+        name = str(request.data.get("name", "")).strip()
+        if not name:
+            return error_response(
+                message="invalid_submitted_data",
+                errors={"name": [t(request, "shop_category_name_required")]},
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
+            )
+
+        if ShopCategory.objects.filter(name__iexact=name).exists():
+            return error_response(
+                message="invalid_submitted_data",
+                errors={"name": [t(request, "shop_category_already_exists")]},
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
+            )
+
+        category = ShopCategory.objects.create(name=name, is_active=True)
+        return success_response(
+            data={
+                "id": category.id,
+                "name": category.name,
+                "is_active": category.is_active,
+                "created_at": category.created_at,
+                "updated_at": category.updated_at,
+            },
+            message="shop_category_created_successfully",
+            status_code=status.HTTP_201_CREATED,
             request=request,
         )
 
@@ -880,7 +915,152 @@ def admin_desktop_store_categories_view(request):
                 for category in categories
             ]
         },
-        message="تم جلب تصنيفات المتاجر بنجاح",
+        message="shop_categories_retrieved_successfully",
+        request=request,
+    )
+
+
+def _require_admin_desktop_approvals_permission(request):
+    if _has_admin_desktop_permission(request.user, "approvals"):
+        return None
+    return error_response(
+        message="ليست لديك صلاحية لإدارة الموافقات",
+        status_code=status.HTTP_403_FORBIDDEN,
+        request=request,
+    )
+
+
+def _admin_desktop_approval_list_response(request, request_type):
+    permission_error = _require_admin_desktop_approvals_permission(request)
+    if permission_error:
+        return permission_error
+
+    approval_requests = (
+        AdminApprovalRequest.objects.filter(request_type=request_type)
+        .select_related("shop_owner", "reviewed_by", "gallery_image", "offer")
+        .order_by("-created_at")
+    )
+    return success_response(
+        data={
+            "requests": [
+                serialize_admin_approval_request(approval_request, request=request)
+                for approval_request in approval_requests
+            ]
+        },
+        message="approval_requests_retrieved_successfully",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_image_publish_requests_view(request):
+    return _admin_desktop_approval_list_response(request, "image_publish")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_shop_edit_requests_view(request):
+    return _admin_desktop_approval_list_response(request, "shop_edit")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_offer_requests_view(request):
+    return _admin_desktop_approval_list_response(request, "offer")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_approval_request_detail_view(request, approval_request_id):
+    permission_error = _require_admin_desktop_approvals_permission(request)
+    if permission_error:
+        return permission_error
+
+    approval_request = (
+        AdminApprovalRequest.objects.filter(id=approval_request_id)
+        .select_related("shop_owner", "reviewed_by", "gallery_image", "offer")
+        .first()
+    )
+    if not approval_request:
+        return error_response(
+            message="approval_request_not_found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    return success_response(
+        data=serialize_admin_approval_request(approval_request, request=request),
+        message="approval_request_retrieved_successfully",
+        request=request,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_approval_request_approve_view(request, approval_request_id):
+    permission_error = _require_admin_desktop_approvals_permission(request)
+    if permission_error:
+        return permission_error
+
+    approval_request = (
+        AdminApprovalRequest.objects.filter(id=approval_request_id)
+        .select_related("shop_owner", "gallery_image", "offer")
+        .first()
+    )
+    if not approval_request:
+        return error_response(
+            message="approval_request_not_found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    with transaction.atomic():
+        if not review_approval_request(approval_request, request.user, "approve"):
+            return error_response(
+                message="approval_request_already_reviewed",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
+            )
+
+    return success_response(
+        data=serialize_admin_approval_request(approval_request, request=request),
+        message="approval_request_approved_successfully",
+        request=request,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_approval_request_reject_view(request, approval_request_id):
+    permission_error = _require_admin_desktop_approvals_permission(request)
+    if permission_error:
+        return permission_error
+
+    approval_request = (
+        AdminApprovalRequest.objects.filter(id=approval_request_id)
+        .select_related("shop_owner", "gallery_image", "offer")
+        .first()
+    )
+    if not approval_request:
+        return error_response(
+            message="approval_request_not_found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    rejection_reason = str(request.data.get("reason") or "").strip()
+    with transaction.atomic():
+        if not review_approval_request(approval_request, request.user, "reject", rejection_reason=rejection_reason):
+            return error_response(
+                message="approval_request_already_reviewed",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                request=request,
+            )
+
+    return success_response(
+        data=serialize_admin_approval_request(approval_request, request=request),
+        message="approval_request_rejected_successfully",
         request=request,
     )
 
@@ -983,7 +1163,7 @@ def admin_desktop_stores_view(request):
     )
 
 
-@api_view(["GET", "PUT", "PATCH"])
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated, IsAdminDesktopUser])
 def admin_desktop_store_detail_view(request, shop_id):
     if not _has_admin_desktop_permission(request.user, "store_management"):
@@ -1006,6 +1186,13 @@ def admin_desktop_store_detail_view(request, shop_id):
         return success_response(
             data=_serialize_admin_store_detail(request, shop),
             message="تم جلب تفاصيل المتجر بنجاح",
+            request=request,
+        )
+
+    if request.method == "DELETE":
+        shop.delete()
+        return success_response(
+            message="store_deleted_successfully",
             request=request,
         )
 

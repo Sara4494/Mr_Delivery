@@ -6808,4 +6808,3 @@ def order_tracking_view(request, order_id):
         },
         message=t(request, 'tracking_data_retrieved_successfully')
     )
-

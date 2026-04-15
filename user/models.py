@@ -192,6 +192,69 @@ class AdminDesktopUser(models.Model):
         return f"{self.name} - {self.get_role_display()} ({self.phone_number})"
 
 
+class AdminApprovalRequest(models.Model):
+    REQUEST_TYPE_CHOICES = (
+        ("image_publish", "طلب نشر صورة"),
+        ("shop_edit", "طلب تعديل بيانات"),
+        ("offer", "طلب عروض"),
+    )
+    STATUS_CHOICES = (
+        ("pending", "قيد المراجعة"),
+        ("approved", "مقبول"),
+        ("rejected", "مرفوض"),
+    )
+
+    shop_owner = models.ForeignKey(
+        "user.ShopOwner",
+        on_delete=models.CASCADE,
+        related_name="approval_requests",
+        verbose_name="المحل",
+    )
+    request_type = models.CharField(max_length=30, choices=REQUEST_TYPE_CHOICES, verbose_name="نوع الطلب")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="الحالة")
+    payload = models.JSONField(default=dict, blank=True, verbose_name="بيانات الطلب")
+    gallery_image = models.ForeignKey(
+        "gallery.GalleryImage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approval_requests",
+        verbose_name="صورة المعرض",
+    )
+    offer = models.ForeignKey(
+        "shop.Offer",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approval_requests",
+        verbose_name="العرض",
+    )
+    reviewed_by = models.ForeignKey(
+        "user.AdminDesktopUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_approval_requests",
+        verbose_name="تمت المراجعة بواسطة",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True, verbose_name="تاريخ المراجعة")
+    rejection_reason = models.TextField(blank=True, null=True, verbose_name="سبب الرفض")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "طلب موافقة"
+        verbose_name_plural = "طلبات الموافقات"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["request_type", "status"]),
+            models.Index(fields=["shop_owner", "request_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_request_type_display()} - {self.shop_owner.shop_name} - {self.get_status_display()}"
+
+
 class ShopOwner(models.Model):
     """نموذج صاحب المحل."""
     ADMIN_STATUS_CHOICES = (
