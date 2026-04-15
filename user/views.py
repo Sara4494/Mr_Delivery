@@ -2,7 +2,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from math import ceil
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -493,7 +493,15 @@ def admin_desktop_users_view(request):
     user.password = payload["password"]
     if "profile_image" in payload:
         user.profile_image = payload["profile_image"]
-    user.save()
+    try:
+        user.save()
+    except IntegrityError:
+        return error_response(
+            message="بيانات المستخدم غير صحيحة",
+            errors={"phone_number": [t(request, "phone_number_is_already_registered")]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
 
     return success_response(
         data={"user": _serialize_admin_desktop_user(request, user)},
@@ -570,7 +578,15 @@ def admin_desktop_user_detail_view(request, user_id):
             update_fields.append("password")
 
         if update_fields:
-            target_user.save(update_fields=update_fields)
+            try:
+                target_user.save(update_fields=update_fields)
+            except IntegrityError:
+                return error_response(
+                    message="بيانات المستخدم غير صحيحة",
+                    errors={"phone_number": [t(request, "phone_number_is_already_registered")]},
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    request=request,
+                )
 
         return success_response(
             data={"user": _serialize_admin_desktop_user(request, target_user)},
