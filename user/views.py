@@ -930,16 +930,16 @@ def _require_admin_desktop_approvals_permission(request):
     )
 
 
-def _admin_desktop_approval_list_response(request, request_type):
+def _admin_desktop_approval_list_response(request, request_type=None):
     permission_error = _require_admin_desktop_approvals_permission(request)
     if permission_error:
         return permission_error
 
-    approval_requests = (
-        AdminApprovalRequest.objects.filter(request_type=request_type)
-        .select_related("shop_owner", "reviewed_by", "gallery_image", "offer")
-        .order_by("-created_at")
-    )
+    approval_requests = AdminApprovalRequest.objects.select_related(
+        "shop_owner", "reviewed_by", "gallery_image", "offer"
+    ).order_by("-created_at")
+    if request_type:
+        approval_requests = approval_requests.filter(request_type=request_type)
     return success_response(
         data={
             "requests": [
@@ -950,6 +950,12 @@ def _admin_desktop_approval_list_response(request, request_type):
         message="approval_requests_retrieved_successfully",
         request=request,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_approval_requests_view(request):
+    return _admin_desktop_approval_list_response(request)
 
 
 @api_view(["GET"])

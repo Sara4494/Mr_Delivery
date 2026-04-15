@@ -13,6 +13,7 @@ urlpatterns = [
     path('admin-desktop/roles-permissions/', views.admin_desktop_roles_permissions_view, name='admin_desktop_roles_permissions'),
     path('admin-desktop/users/', views.admin_desktop_users_view, name='admin_desktop_users'),
     path('admin-desktop/users/<int:user_id>/', views.admin_desktop_user_detail_view, name='admin_desktop_user_detail'),
+    path('admin-desktop/approvals/requests/', views.admin_desktop_approval_requests_view, name='admin_desktop_approval_requests'),
     path('admin-desktop/approvals/image-publish-requests/', views.admin_desktop_image_publish_requests_view, name='admin_desktop_image_publish_requests'),
     path('admin-desktop/approvals/shop-edit-requests/', views.admin_desktop_shop_edit_requests_view, name='admin_desktop_shop_edit_requests'),
     path('admin-desktop/approvals/offer-requests/', views.admin_desktop_offer_requests_view, name='admin_desktop_offer_requests'),

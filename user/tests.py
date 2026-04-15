@@ -156,11 +156,14 @@ class AdminDesktopApprovalsEndpointTests(TestCase):
         self.client.force_authenticate(user=self.admin_user)
 
     def test_store_supervisor_can_list_approval_requests(self):
-        response = self.client.get("/api/admin-desktop/approvals/shop-edit-requests/")
+        response = self.client.get("/api/admin-desktop/approvals/requests/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["data"]["requests"]), 1)
         self.assertEqual(response.data["data"]["requests"][0]["id"], self.approval_request.id)
+        self.assertEqual(response.data["data"]["requests"][0]["request_type"], "shop_edit")
+        self.assertEqual(response.data["data"]["requests"][0]["change_scope"], "shop_profile")
+        self.assertIn("shop_name", response.data["data"]["requests"][0]["changed_fields"])
 
     def test_store_supervisor_can_approve_approval_request(self):
         response = self.client.post(

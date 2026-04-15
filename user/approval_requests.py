@@ -19,6 +19,7 @@ def create_image_publish_request(image, request=None):
     payload = {
         "description": str(image.description or "").strip(),
         "image_url": build_absolute_file_url(getattr(image, "image", None), request=request),
+        "changed_fields": ["image", "description"],
     }
     return AdminApprovalRequest.objects.create(
         shop_owner=image.shop_owner,
@@ -40,6 +41,11 @@ def create_or_update_shop_edit_request(shop_owner, changes, request=None):
         "phone_number": str(changes.get("phone_number") or shop_owner.phone_number or "").strip(),
         "description": str(changes.get("description") or shop_owner.description or "").strip(),
         "profile_image_url": build_absolute_file_url(pending_profile_image or getattr(shop_owner, "profile_image", None), request=request),
+        "changed_fields": sorted([
+            field
+            for field in ("owner_name", "shop_name", "phone_number", "description", "profile_image")
+            if field in changes
+        ]),
     }
     approval_request, _ = AdminApprovalRequest.objects.update_or_create(
         shop_owner=shop_owner,
@@ -66,6 +72,14 @@ def create_or_update_offer_request(offer, request=None):
         "end_date": offer.end_date.isoformat() if offer.end_date else None,
         "image_url": build_absolute_file_url(getattr(offer, "image", None), request=request),
         "is_active": bool(offer.is_active),
+        "changed_fields": [
+            "title",
+            "description",
+            "discount_percentage",
+            "start_date",
+            "end_date",
+            "image",
+        ],
     }
     approval_request, _ = AdminApprovalRequest.objects.update_or_create(
         offer=offer,
@@ -97,6 +111,12 @@ def serialize_admin_approval_request(approval_request, request=None):
         "id": approval_request.id,
         "request_type": approval_request.request_type,
         "request_type_display": approval_request.get_request_type_display(),
+        "change_scope": {
+            "image_publish": "gallery_image",
+            "shop_edit": "shop_profile",
+            "offer": "offer",
+        }.get(approval_request.request_type, approval_request.request_type),
+        "changed_fields": payload.get("changed_fields") or [],
         "status": approval_request.status,
         "status_display": approval_request.get_status_display(),
         "created_at": approval_request.created_at,

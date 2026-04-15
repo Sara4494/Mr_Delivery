@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "d24445d9-14fc-4192-84c4-b5443845110c",
+    "_postman_id": "988e9d23-89a5-42a7-b625-a0b6c6b67b26",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-d24445d9-14fc-4192-84c4-b5443845110c?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-988e9d23-89a5-42a7-b625-a0b6c6b67b26?source=collection_link"
   },
   "item": [
     {
@@ -6525,9 +6525,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/image-publish-requests/",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/image-publish-requests/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6552,9 +6552,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/shop-edit-requests/",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/shop-edit-requests/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6579,9 +6579,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/offer-requests/",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/offer-requests/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6606,9 +6606,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
