@@ -21,6 +21,7 @@ from .models import (
     Notification, Cart, CartItem, ShopDriver
 )
 from gallery.models import WorkSchedule, GalleryImage, ImageLike
+from user.approval_requests import create_or_update_offer_request
 from .serializers import (
     ShopCategorySerializer,
     ShopStatusSerializer,
@@ -2870,10 +2871,14 @@ def offer_list_view(request):
     serializer = OfferCreateUpdateSerializer(data=request.data, context={'request': request})
     if serializer.is_valid():
         offer = serializer.save(shop_owner=shop_owner)
+        if offer.is_active:
+            offer.is_active = False
+            offer.save(update_fields=['is_active', 'updated_at'])
+        create_or_update_offer_request(offer, request=request)
         response_serializer = OfferManagementSerializer(offer, context={'request': request})
         return success_response(
             data=response_serializer.data,
-            message=t(request, 'offer_added_successfully'),
+            message=t(request, 'offer_request_submitted_successfully'),
             status_code=status.HTTP_201_CREATED
         )
 

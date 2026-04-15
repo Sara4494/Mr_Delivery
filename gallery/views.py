@@ -15,6 +15,7 @@ from .serializers import (
     ImageLikeSerializer
 )
 from user.models import ShopOwner
+from user.approval_requests import create_image_publish_request, create_or_update_shop_edit_request
 from shop.models import Employee
 from user.utils import success_response, error_response, build_message_fields, t
 
@@ -182,11 +183,17 @@ def shop_profile_view(request):
 
         serializer = ShopProfileUpdateSerializer(shop_owner, data=data, partial=True)
         if serializer.is_valid():
-            serializer.save()
-            profile_serializer = ShopProfileSerializer(shop_owner, context={'request': request})
             return success_response(
-                data=profile_serializer.data,
-                message=t(request, 'profile_updated_successfully'),
+                data={
+                    'request': {
+                        'id': create_or_update_shop_edit_request(
+                            shop_owner,
+                            serializer.validated_data,
+                            request=request,
+                        ).id
+                    }
+                },
+                message=t(request, 'shop_profile_edit_request_submitted_successfully'),
                 status_code=status.HTTP_200_OK
             )
         return error_response(
@@ -319,10 +326,14 @@ def gallery_list_view(request):
         )
         if serializer.is_valid():
             image = serializer.save()
+            if image.status != 'draft':
+                image.status = 'draft'
+                image.save(update_fields=['status', 'updated_at'])
+            create_image_publish_request(image, request=request)
             response_serializer = GalleryImageSerializer(image, context={'request': request})
             return success_response(
                 data=response_serializer.data,
-                message=t(request, 'image_uploaded_successfully'),
+                message=t(request, 'image_publish_request_submitted_successfully'),
                 status_code=status.HTTP_201_CREATED
             )
         return error_response(
