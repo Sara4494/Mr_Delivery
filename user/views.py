@@ -955,7 +955,15 @@ def _admin_desktop_approval_list_response(request, request_type=None):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, IsAdminDesktopUser])
 def admin_desktop_approval_requests_view(request):
-    return _admin_desktop_approval_list_response(request)
+    request_type = str(request.query_params.get("request_type") or "").strip().lower() or None
+    if request_type and request_type not in {"image_publish", "shop_edit", "offer"}:
+        return error_response(
+            message="invalid_submitted_data",
+            errors={"request_type": ["القيمة غير مدعومة"]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+    return _admin_desktop_approval_list_response(request, request_type=request_type)
 
 
 @api_view(["GET"])

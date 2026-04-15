@@ -6525,19 +6525,25 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_Url}}/api/admin-desktop/approvals/image-publish-requests/",
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/?request_type=image_publish",
                   "host": [
-                    "{{base_Url}}"
+                    "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "admin-desktop",
                     "approvals",
-                    "image-publish-requests",
+                    "requests",
                     ""
+                  ],
+                  "query": [
+                    {
+                      "key": "request_type",
+                      "value": "image_publish"
+                    }
                   ]
                 },
-                "description": "List all image publish approval requests for the admin desktop approvals center."
+                "description": "Unified approvals endpoint filtered for image publish requests."
               },
               "response": []
             },
@@ -6552,19 +6558,25 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_Url}}/api/admin-desktop/approvals/shop-edit-requests/",
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/?request_type=shop_edit",
                   "host": [
-                    "{{base_Url}}"
+                    "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "admin-desktop",
                     "approvals",
-                    "shop-edit-requests",
+                    "requests",
                     ""
+                  ],
+                  "query": [
+                    {
+                      "key": "request_type",
+                      "value": "shop_edit"
+                    }
                   ]
                 },
-                "description": "List all shop data edit approval requests."
+                "description": "Unified approvals endpoint filtered for shop edit requests."
               },
               "response": []
             },
@@ -6579,19 +6591,25 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_Url}}/api/admin-desktop/approvals/offer-requests/",
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/?request_type=offer",
                   "host": [
-                    "{{base_Url}}"
+                    "{{base_url}}"
                   ],
                   "path": [
                     "api",
                     "admin-desktop",
                     "approvals",
-                    "offer-requests",
+                    "requests",
                     ""
+                  ],
+                  "query": [
+                    {
+                      "key": "request_type",
+                      "value": "offer"
+                    }
                   ]
                 },
-                "description": "List all offer approval requests."
+                "description": "Unified approvals endpoint filtered for offer requests."
               },
               "response": []
             },
@@ -6606,9 +6624,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_Url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/",
+                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/",
                   "host": [
-                    "{{base_Url}}"
+                    "{{base_url}}"
                   ],
                   "path": [
                     "api",
