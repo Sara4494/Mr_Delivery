@@ -25,7 +25,11 @@ from .models import (
     get_admin_desktop_role_permissions,
 )
 from .permissions import IsAdminDesktopUser
-from .approval_requests import serialize_admin_approval_request, review_approval_request
+from .approval_requests import (
+    serialize_admin_approval_request,
+    serialize_admin_approval_request_detail,
+    review_approval_request,
+)
 from .utils import success_response, error_response, t, localize_message
 from .otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
 
@@ -1020,7 +1024,7 @@ def admin_desktop_approval_request_detail_view(request, approval_request_id):
         )
 
     return success_response(
-        data=serialize_admin_approval_request(approval_request, request=request),
+        data=serialize_admin_approval_request_detail(approval_request, request=request),
         message="approval_request_retrieved_successfully",
         request=request,
     )
@@ -1054,7 +1058,7 @@ def admin_desktop_approval_request_approve_view(request, approval_request_id):
             )
 
     return success_response(
-        data=serialize_admin_approval_request(approval_request, request=request),
+        data=serialize_admin_approval_request_detail(approval_request, request=request),
         message="approval_request_approved_successfully",
         request=request,
     )
@@ -1089,7 +1093,7 @@ def admin_desktop_approval_request_reject_view(request, approval_request_id):
             )
 
     return success_response(
-        data=serialize_admin_approval_request(approval_request, request=request),
+        data=serialize_admin_approval_request_detail(approval_request, request=request),
         message="approval_request_rejected_successfully",
         request=request,
     )

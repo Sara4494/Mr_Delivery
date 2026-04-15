@@ -9,10 +9,35 @@ def _shop_payload(shop_owner, request=None):
     return {
         "id": shop_owner.id,
         "shop_name": shop_owner.shop_name,
-        "owner_name": shop_owner.owner_name,
-        "shop_number": shop_owner.shop_number,
         "profile_image_url": build_absolute_file_url(getattr(shop_owner, "profile_image", None), request=request),
     }
+
+
+def _approval_details_text(approval_request, payload):
+    if approval_request.request_type == "offer":
+        return str(payload.get("description") or "").strip()
+    if approval_request.request_type == "shop_edit":
+        return str(payload.get("description") or "").strip()
+    return str(payload.get("description") or "").strip()
+
+
+def _approval_image_url(approval_request, request=None):
+    payload = approval_request.payload or {}
+    if approval_request.request_type == "image_publish":
+        if payload.get("image_url"):
+            return payload.get("image_url")
+        if approval_request.gallery_image_id:
+            return build_absolute_file_url(getattr(approval_request.gallery_image, "image", None), request=request)
+        return None
+
+    if approval_request.request_type == "offer":
+        if payload.get("image_url"):
+            return payload.get("image_url")
+        if approval_request.offer_id:
+            return build_absolute_file_url(getattr(approval_request.offer, "image", None), request=request)
+        return None
+
+    return payload.get("profile_image_url")
 
 
 def create_image_publish_request(image, request=None):
@@ -98,43 +123,41 @@ def create_or_update_offer_request(offer, request=None):
 
 
 def serialize_admin_approval_request(approval_request, request=None):
-    shop_owner = approval_request.shop_owner
     payload = approval_request.payload or {}
-    image_url = payload.get("image_url")
-    if not image_url and approval_request.gallery_image_id:
-        image_url = build_absolute_file_url(getattr(approval_request.gallery_image, "image", None), request=request)
-    offer_image_url = payload.get("image_url")
-    if not offer_image_url and approval_request.offer_id:
-        offer_image_url = build_absolute_file_url(getattr(approval_request.offer, "image", None), request=request)
+    return {
+        "id": approval_request.id,
+        "shop_name": approval_request.shop_owner.shop_name,
+        "shop_image_url": build_absolute_file_url(getattr(approval_request.shop_owner, "profile_image", None), request=request),
+        "request_type": approval_request.request_type,
+        "request_type_display": approval_request.get_request_type_display(),
+        "details": _approval_details_text(approval_request, payload),
+        "request_date": approval_request.created_at.date().isoformat() if approval_request.created_at else None,
+        "status": approval_request.status,
+        "status_display": approval_request.get_status_display(),
+    }
+
+
+def serialize_admin_approval_request_detail(approval_request, request=None):
+    payload = approval_request.payload or {}
+    image_url = _approval_image_url(approval_request, request=request)
 
     return {
         "id": approval_request.id,
+        "shop_name": approval_request.shop_owner.shop_name,
+        "shop_image_url": build_absolute_file_url(getattr(approval_request.shop_owner, "profile_image", None), request=request),
         "request_type": approval_request.request_type,
         "request_type_display": approval_request.get_request_type_display(),
-        "change_scope": {
-            "image_publish": "gallery_image",
-            "shop_edit": "shop_profile",
-            "offer": "offer",
-        }.get(approval_request.request_type, approval_request.request_type),
-        "changed_fields": payload.get("changed_fields") or [],
+        "request_date": approval_request.created_at.date().isoformat() if approval_request.created_at else None,
         "status": approval_request.status,
         "status_display": approval_request.get_status_display(),
-        "created_at": approval_request.created_at,
-        "updated_at": approval_request.updated_at,
-        "reviewed_at": approval_request.reviewed_at,
+        "details": _approval_details_text(approval_request, payload),
+        "image_url": image_url,
+        "discount_percentage": payload.get("discount_percentage"),
         "rejection_reason": approval_request.rejection_reason,
-        "shop": _shop_payload(shop_owner, request=request),
-        "details": {
-            "description": payload.get("description"),
-            "owner_name": payload.get("owner_name"),
-            "shop_name": payload.get("shop_name"),
-            "phone_number": payload.get("phone_number"),
+        "meta": {
             "title": payload.get("title"),
-            "discount_percentage": payload.get("discount_percentage"),
             "start_date": payload.get("start_date"),
             "end_date": payload.get("end_date"),
-            "image_url": image_url if approval_request.request_type == "image_publish" else offer_image_url,
-            "profile_image_url": payload.get("profile_image_url"),
         },
     }
 
