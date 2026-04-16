@@ -2509,12 +2509,13 @@ def driver_order_chat_open_view(request, order_id):
     )
 
 
-@api_view(['GET'])
+@api_view(['GET', 'POST'])
 @permission_classes([IsDriver])
 def driver_order_chat_view(request, order_id):
     """
     Driver chat bootstrap for the driver-customer chat.
     GET /api/driver/orders/{id}/chat/
+    POST /api/driver/orders/{id}/chat/
     """
     driver = _get_driver_from_request(request)
     if not driver:
@@ -2527,9 +2528,78 @@ def driver_order_chat_view(request, order_id):
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
+    can_open = bool(order.driver_chat_opened_at)
     conversation_id = f'order_{order.id}_driver_customer'
     ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
-    can_open = bool(order.driver_chat_opened_at)
+
+    if request.method == 'POST':
+        if not can_open:
+            return Response(
+                {
+                    'status': status.HTTP_403_FORBIDDEN,
+                    'message': 'هذه المحادثة غير متاحة الآن',
+                    'data': {
+                    'conversation_id': conversation_id,
+                    'order_id': order.id,
+                    'chat_type': 'driver_customer',
+                    'can_open': False,
+                    'ws_path': ws_path,
+                    },
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        content = str(request.data.get('content') or request.data.get('text') or '').strip()
+        if not content:
+            return error_response(
+                message='نص الرسالة مطلوب',
+                errors={'content': 'This field is required.'},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        message = ChatMessage.objects.create(
+            order=order,
+            chat_type='driver_customer',
+            message_type='text',
+            content=content,
+            sender_type='driver',
+            sender_driver=driver,
+        )
+
+        payload = _chat_message_payload(message, request=request)
+        broadcast_chat_message(order.id, 'driver_customer', payload, request=request)
+
+        normalized_message = {
+            'id': payload.get('id'),
+            'type': payload.get('message_type'),
+            'message_type': payload.get('message_type'),
+            'sender': payload.get('sender_type'),
+            'sender_type': payload.get('sender_type'),
+            'sender_name': payload.get('sender_name'),
+            'text': payload.get('content'),
+            'message': payload.get('content'),
+            'content': payload.get('content'),
+            'image_url': payload.get('image_file_url'),
+            'audio_url': payload.get('audio_file_url'),
+            'voice_duration_seconds': None,
+            'sent_at': payload.get('created_at'),
+            'created_at': payload.get('created_at'),
+            'delivery_status': 'sent',
+            'is_read': payload.get('is_read'),
+        }
+
+        return success_response(
+            data={
+                'conversation_id': conversation_id,
+                'order_id': order.id,
+                'chat_type': 'driver_customer',
+                'can_open': True,
+                'ws_path': ws_path,
+                'message': normalized_message,
+            },
+            message='تم إرسال الرسالة بنجاح',
+            status_code=status.HTTP_201_CREATED,
+        )
 
     messages_qs = (
         ChatMessage.objects
