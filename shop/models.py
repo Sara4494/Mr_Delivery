@@ -345,6 +345,7 @@ class Order(models.Model):
     estimated_delivery_time = models.DateTimeField(blank=True, null=True, verbose_name="الوقت المتوقع للتوصيل")
     driver_assigned_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت تعيين السائق")
     driver_accepted_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت قبول السائق")
+    driver_chat_opened_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت فتح شات السائق مع العميل")
     delivered_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت التسليم الفعلي")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")

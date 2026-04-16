@@ -698,7 +698,8 @@ def transfer_order_between_drivers(order: Order, *, source_driver: Driver, targe
     order.driver = target_driver
     order.driver_assigned_at = timezone.now()
     order.driver_accepted_at = None
-    order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'updated_at'])
+    order.driver_chat_opened_at = None
+    order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'driver_chat_opened_at', 'updated_at'])
     source_driver.current_orders_count = source_driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
     source_driver.save(update_fields=['current_orders_count', 'updated_at'])
     target_driver.current_orders_count = target_driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()

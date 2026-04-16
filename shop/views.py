@@ -2398,7 +2398,8 @@ def driver_order_transfer_view(request, order_id):
     order.driver = None
     order.driver_assigned_at = None
     order.driver_accepted_at = None
-    order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'status', 'updated_at'])
+    order.driver_chat_opened_at = None
+    order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'driver_chat_opened_at', 'status', 'updated_at'])
     clear_all_driver_rejections(order)
 
     transfer_reason = selected_reason['label']
@@ -2485,6 +2486,10 @@ def driver_order_chat_open_view(request, order_id):
             message=t(request, 'driver_order_not_found'),
             status_code=status.HTTP_404_NOT_FOUND,
         )
+
+    if order.driver_chat_opened_at is None:
+        order.driver_chat_opened_at = timezone.now()
+        order.save(update_fields=['driver_chat_opened_at', 'updated_at'])
 
     conversation_id = f'order_{order.id}_driver_customer'
     has_messages = ChatMessage.objects.filter(order=order, chat_type='driver_customer').exists()
@@ -3169,6 +3174,7 @@ def order_detail_view(request, order_id):
                     if not old_driver or old_driver.id != new_driver.id:
                         order.driver_assigned_at = timezone.now()
                         order.driver_accepted_at = None
+                        order.driver_chat_opened_at = None
                     order.driver = new_driver
                 except ShopDriver.DoesNotExist:
                     return error_response(
@@ -3179,6 +3185,7 @@ def order_detail_view(request, order_id):
                 order.driver = None
                 order.driver_assigned_at = None
                 order.driver_accepted_at = None
+                order.driver_chat_opened_at = None
         
         # تحديث باقي الحقول
         for field in ['status', 'items', 'total_amount', 'delivery_fee', 'address', 'notes']:
@@ -4334,7 +4341,9 @@ def _can_user_access_chat(order, user, user_type, chat_type):
     if user_type == 'customer':
         if order.customer_id != user.id:
             return False
-        return chat_type in {'shop_customer', 'driver_customer'}
+        if chat_type == 'driver_customer':
+            return order.driver_chat_opened_at is not None
+        return chat_type == 'shop_customer'
     return False
 
 

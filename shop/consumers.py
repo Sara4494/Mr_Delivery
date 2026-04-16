@@ -849,6 +849,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 return has_access
             elif user_type == 'customer':
                 has_access = order.customer_id == user.id
+                if has_access and self.chat_type == 'driver_customer':
+                    has_access = order.driver_chat_opened_at is not None
                 print(f"[check_order_access] customer: order.customer_id={order.customer_id}, user.id={user.id}, access={has_access}")
                 return has_access
             
