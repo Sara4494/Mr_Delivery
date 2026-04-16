@@ -37,6 +37,7 @@ from .driver_chat_service import (
     transfer_order_between_drivers,
     update_call_status,
 )
+from .driver_realtime import sync_driver_order_state
 from .presence import format_utc_iso8601
 
 
@@ -377,13 +378,25 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
 
     @database_sync_to_async
     def _transfer_order(self, order, source_driver, target_driver):
-        return transfer_order_between_drivers(
+        previous_status = order.status
+        previous_driver_id = order.driver_id
+        previous_driver_accepted_at = order.driver_accepted_at
+        result = transfer_order_between_drivers(
             order,
             source_driver=source_driver,
             target_driver=target_driver,
             scope=getattr(self, 'scope', None),
             base_url=getattr(self, 'base_url', None),
         )
+        sync_driver_order_state(
+            order,
+            previous_status=previous_status,
+            previous_driver_id=previous_driver_id,
+            previous_driver_accepted_at=previous_driver_accepted_at,
+            scope=getattr(self, 'scope', None),
+            base_url=getattr(self, 'base_url', None),
+        )
+        return result
 
     async def handle_driver_chat_call_start(self, data, request_id=None):
         conversation = await self._require_conversation(data.get('conversation_id'), request_id=request_id)

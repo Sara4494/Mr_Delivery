@@ -9,11 +9,14 @@ from shop.driver_chat_service import _map_order_status_to_driver_chat_status
 from shop.driver_realtime import (
     build_driver_order_payload,
     driver_can_receive_new_orders,
+    get_driver_order_unavailable_reason,
     is_assigned_order,
     is_assigned_order_for_driver,
     is_available_order,
     is_available_order_for_driver,
     normalize_driver_status,
+    sync_unavailable_order_for_driver,
+    sync_driver_order_state,
     upsert_available_order_for_all,
 )
 
@@ -114,6 +117,89 @@ class DriverStatusSyncTests(SimpleTestCase):
         get_shop_receiving_driver_ids_mock.assert_not_called()
         emit_available_order_upsert_mock.assert_called_once()
         self.assertEqual(emit_available_order_upsert_mock.call_args.args[0], 7)
+
+    @patch('shop.driver_realtime.upsert_available_order_for_all')
+    @patch('shop.driver_realtime.remove_available_order_for_all')
+    @patch('shop.driver_realtime.get_shop_active_driver_ids', return_value=[7, 9, 11])
+    @patch('shop.driver_realtime.emit_available_order_remove')
+    @patch('shop.driver_realtime.emit_assigned_order_remove')
+    def test_transfer_before_accept_removes_from_old_available_and_upserts_for_new_available(
+        self,
+        emit_assigned_order_remove_mock,
+        emit_available_order_remove_mock,
+        get_shop_active_driver_ids_mock,
+        remove_available_order_for_all_mock,
+        upsert_available_order_for_all_mock,
+    ):
+        order = SimpleNamespace(id=123, status='confirmed', driver_id=9, driver_accepted_at=None, shop_owner_id=55)
+
+        sync_driver_order_state(
+            order,
+            previous_status='confirmed',
+            previous_driver_id=7,
+            previous_driver_accepted_at=None,
+        )
+
+        emit_assigned_order_remove_mock.assert_not_called()
+        emit_available_order_remove_mock.assert_called_once_with(7, 123, 'removed_from_driver')
+        get_shop_active_driver_ids_mock.assert_called_once_with(55)
+        remove_available_order_for_all_mock.assert_called_once_with(order, 'reserved_for_other_driver', driver_ids=[11])
+        upsert_available_order_for_all_mock.assert_called_once()
+
+    @patch('shop.driver_realtime.upsert_available_order_for_all')
+    @patch('shop.driver_realtime.remove_available_order_for_all')
+    @patch('shop.driver_realtime.get_shop_active_driver_ids', return_value=[7, 9, 11])
+    @patch('shop.driver_realtime.emit_available_order_remove')
+    @patch('shop.driver_realtime.emit_assigned_order_remove')
+    def test_transfer_after_accept_removes_from_old_assigned_and_upserts_for_new_available(
+        self,
+        emit_assigned_order_remove_mock,
+        emit_available_order_remove_mock,
+        get_shop_active_driver_ids_mock,
+        remove_available_order_for_all_mock,
+        upsert_available_order_for_all_mock,
+    ):
+        order = SimpleNamespace(id=123, status='confirmed', driver_id=9, driver_accepted_at=None, shop_owner_id=55)
+
+        sync_driver_order_state(
+            order,
+            previous_status='confirmed',
+            previous_driver_id=7,
+            previous_driver_accepted_at=datetime(2026, 4, 14, 19, 5, tzinfo=timezone.utc),
+        )
+
+        emit_available_order_remove_mock.assert_not_called()
+        emit_assigned_order_remove_mock.assert_called_once_with(7, 123, 'removed_from_driver')
+        get_shop_active_driver_ids_mock.assert_called_once_with(55)
+        remove_available_order_for_all_mock.assert_called_once_with(order, 'reserved_for_other_driver', driver_ids=[7, 11])
+        upsert_available_order_for_all_mock.assert_called_once()
+
+    def test_unavailable_reason_is_cancelled_for_cancelled_order(self):
+        driver = SimpleNamespace(id=7)
+        order = SimpleNamespace(status='cancelled', driver_id=7, driver_accepted_at=None)
+        self.assertEqual(get_driver_order_unavailable_reason(driver, order), 'cancelled')
+
+    def test_unavailable_reason_is_accepted_by_other_driver_when_other_driver_already_accepted(self):
+        driver = SimpleNamespace(id=7)
+        order = SimpleNamespace(status='confirmed', driver_id=9, driver_accepted_at=datetime(2026, 4, 14, 19, 5, tzinfo=timezone.utc))
+        self.assertEqual(get_driver_order_unavailable_reason(driver, order), 'accepted_by_other_driver')
+
+    def test_unavailable_reason_is_transferred_to_other_driver_when_target_not_accepted_yet(self):
+        driver = SimpleNamespace(id=7)
+        order = SimpleNamespace(status='confirmed', driver_id=9, driver_accepted_at=None)
+        self.assertEqual(get_driver_order_unavailable_reason(driver, order), 'transferred_to_other_driver')
+
+    @patch('shop.driver_realtime.emit_available_order_remove')
+    @patch('shop.driver_realtime.emit_assigned_order_remove')
+    def test_sync_unavailable_order_for_driver_removes_from_both_lists(self, emit_assigned_order_remove_mock, emit_available_order_remove_mock):
+        driver = SimpleNamespace(id=7)
+        order = SimpleNamespace(status='confirmed', driver_id=9, driver_accepted_at=None)
+
+        reason = sync_unavailable_order_for_driver(driver, 123, order=order)
+
+        self.assertEqual(reason, 'transferred_to_other_driver')
+        emit_available_order_remove_mock.assert_called_once_with(7, 123, 'transferred_to_other_driver')
+        emit_assigned_order_remove_mock.assert_called_once_with(7, 123, 'transferred_to_other_driver')
 
     def test_unassigned_new_order_stays_waiting_reply_in_chat(self):
         order = SimpleNamespace(status='new')

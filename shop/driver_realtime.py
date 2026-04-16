@@ -511,11 +511,39 @@ def get_available_order_for_driver(driver, order_id, *, lock=False):
     return queryset.first()
 
 
+def get_driver_order_unavailable_reason(driver, order):
+    if not order:
+        return 'no_longer_available'
+    if order.status == 'cancelled':
+        return 'cancelled'
+
+    assigned_driver_id = get_assigned_driver_id(order)
+    driver_id = getattr(driver, 'id', None)
+    if assigned_driver_id and assigned_driver_id != driver_id:
+        if has_driver_accepted(order):
+            return 'accepted_by_other_driver'
+        return 'transferred_to_other_driver'
+
+    if order.status not in DRIVER_AVAILABLE_ORDER_STATUSES and not is_assigned_order_for_driver(driver, order):
+        return 'no_longer_available'
+
+    return 'no_longer_available'
+
+
+def sync_unavailable_order_for_driver(driver, order_id, *, order=None):
+    reason = get_driver_order_unavailable_reason(driver, order)
+    driver_id = getattr(driver, 'id', None)
+    emit_available_order_remove(driver_id, order_id, reason)
+    emit_assigned_order_remove(driver_id, order_id, reason)
+    return reason
+
+
 def sync_driver_order_state(
     order,
     *,
     previous_status=None,
     previous_driver_id=None,
+    previous_driver_accepted_at=None,
     request=None,
     scope=None,
     base_url=None,
@@ -535,7 +563,10 @@ def sync_driver_order_state(
 
     if previous_driver_id:
         removal_reason = 'cancelled' if order.status == 'cancelled' else 'removed_from_driver'
-        emit_assigned_order_remove(previous_driver_id, order.id, removal_reason)
+        if previous_driver_accepted_at is not None:
+            emit_assigned_order_remove(previous_driver_id, order.id, removal_reason)
+        else:
+            emit_available_order_remove(previous_driver_id, order.id, removal_reason)
         if order.status == 'cancelled':
             emit_order_cancelled(previous_driver_id, order.id)
 
@@ -545,10 +576,11 @@ def sync_driver_order_state(
         assigned_driver_id = get_assigned_driver_id(order)
         if assigned_driver_id and not has_driver_accepted(order):
             other_driver_ids = [driver_id for driver_id in get_shop_active_driver_ids(order.shop_owner_id) if driver_id != assigned_driver_id]
+            if previous_driver_accepted_at is None and previous_driver_id in other_driver_ids:
+                other_driver_ids.remove(previous_driver_id)
             if other_driver_ids:
                 remove_available_order_for_all(order, 'reserved_for_other_driver', driver_ids=other_driver_ids)
         upsert_available_order_for_all(order, request=request, scope=scope, base_url=base_url)
         return
     removal_reason = 'cancelled' if order.status == 'cancelled' else 'unavailable'
     remove_available_order_for_all(order, removal_reason)
-

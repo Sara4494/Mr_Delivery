@@ -111,6 +111,7 @@ from .driver_realtime import (
     get_available_order_for_driver,
     record_driver_rejection,
     sync_driver_order_state,
+    sync_unavailable_order_for_driver,
 )
 
 
@@ -2228,6 +2229,13 @@ def driver_order_accept_view(request, order_id):
     with transaction.atomic():
         order = get_available_order_for_driver(driver, order_id, lock=True)
         if not order:
+            stale_order = (
+                Order.objects
+                .filter(id=order_id, shop_owner__shop_drivers__driver=driver, shop_owner__shop_drivers__status='active')
+                .distinct()
+                .first()
+            )
+            sync_unavailable_order_for_driver(driver, order_id, order=stale_order)
             return error_response(
                 message=t(request, 'driver_order_not_available'),
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2287,6 +2295,13 @@ def driver_order_reject_view(request, order_id):
     with transaction.atomic():
         order = get_available_order_for_driver(driver, order_id, lock=True)
         if not order:
+            stale_order = (
+                Order.objects
+                .filter(id=order_id, shop_owner__shop_drivers__driver=driver, shop_owner__shop_drivers__status='active')
+                .distinct()
+                .first()
+            )
+            sync_unavailable_order_for_driver(driver, order_id, order=stale_order)
             return error_response(
                 message=t(request, 'driver_order_not_available'),
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2381,6 +2396,7 @@ def driver_order_transfer_view(request, order_id):
         )
 
     old_driver = order.driver
+    old_driver_accepted_at = order.driver_accepted_at
     old_status = order.status
     if order.status in {'preparing', 'on_way'}:
         order.status = 'confirmed'
@@ -2443,6 +2459,7 @@ def driver_order_transfer_view(request, order_id):
         order,
         previous_status=old_status,
         previous_driver_id=old_driver.id if old_driver else None,
+        previous_driver_accepted_at=old_driver_accepted_at,
         request=request,
     )
 
@@ -3055,6 +3072,7 @@ def order_detail_view(request, order_id):
     elif request.method == 'PUT':
         # تحديث الطلب
         old_driver = order.driver
+        old_driver_accepted_at = order.driver_accepted_at
         old_status = order.status
         new_status = request.data.get('status', old_status)
 
@@ -3271,6 +3289,7 @@ def order_detail_view(request, order_id):
             order,
             previous_status=old_status,
             previous_driver_id=old_driver.id if old_driver else None,
+            previous_driver_accepted_at=old_driver_accepted_at,
             request=request,
         )
         
@@ -5862,6 +5881,7 @@ def customer_order_confirm_view(request, order_id):
         )
     
     old_status = order.status
+    old_driver_accepted_at = order.driver_accepted_at
     order.status = 'confirmed'
     order.save()
 
@@ -5893,6 +5913,7 @@ def customer_order_confirm_view(request, order_id):
         order,
         previous_status=old_status,
         previous_driver_id=order.driver_id,
+        previous_driver_accepted_at=old_driver_accepted_at,
         request=request,
     )
     
@@ -5936,6 +5957,7 @@ def customer_order_reject_view(request, order_id):
 
     old_status = order.status
     current_driver_id = order.driver_id
+    old_driver_accepted_at = order.driver_accepted_at
     order.status = 'cancelled'
     order.save()
 
@@ -5967,6 +5989,7 @@ def customer_order_reject_view(request, order_id):
         order,
         previous_status=old_status,
         previous_driver_id=current_driver_id,
+        previous_driver_accepted_at=old_driver_accepted_at,
         request=request,
     )
 
