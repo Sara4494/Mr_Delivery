@@ -1414,7 +1414,7 @@ def _require_admin_desktop_reports_permission(request):
     if _has_admin_desktop_permission(request.user, "reports"):
         return None
     return error_response(
-        message="Ù„ÙŠØ³Øª Ù„Ø¯ÙŠÙƒ ØµÙ„Ø§Ø­ÙŠØ© Ù„Ø¹Ø±Ø¶ Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ±",
+        message="ليست لديك صلاحية لعرض التقارير",
         status_code=status.HTTP_403_FORBIDDEN,
         request=request,
     )
@@ -1459,8 +1459,8 @@ def _parse_admin_reports_category(request):
         category_id = int(raw_value)
     except (TypeError, ValueError):
         return None, None, error_response(
-            message="ØªØµÙ†ÙŠÙ Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± ØµØ­ÙŠØ­",
-            errors={"shop_category_id": ["ØªØµÙ†ÙŠÙ Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± ØµØ­ÙŠØ­"]},
+            message="تصنيف المتجر غير صحيح",
+            errors={"shop_category_id": ["تصنيف المتجر غير صحيح"]},
             status_code=status.HTTP_400_BAD_REQUEST,
             request=request,
         )
@@ -1468,8 +1468,8 @@ def _parse_admin_reports_category(request):
     category = ShopCategory.objects.filter(id=category_id, is_active=True).first()
     if not category:
         return None, None, error_response(
-            message="ØªØµÙ†ÙŠÙ Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯",
-            errors={"shop_category_id": ["ØªØµÙ†ÙŠÙ Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯"]},
+            message="تصنيف المتجر غير موجود",
+            errors={"shop_category_id": ["تصنيف المتجر غير موجود"]},
             status_code=status.HTTP_404_NOT_FOUND,
             request=request,
         )
@@ -1893,7 +1893,7 @@ def admin_desktop_reports_filters_view(request):
             "date_ranges": date_ranges,
             "store_categories": store_categories,
         },
-        message="ØªÙ… Ø¬Ù„Ø¨ ÙÙ„Ø§ØªØ± Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ± Ø¨Ù†Ø¬Ø§Ø­",
+        message="تم جلب فلاتر التقارير بنجاح",
         request=request,
     )
 
@@ -1928,7 +1928,7 @@ def admin_desktop_reports_analytics_view(request):
                 dataset["orders_values"],
             ),
         },
-        message="ØªÙ… Ø¬Ù„Ø¨ ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ø£Ø¯Ø§Ø¡ Ø¨Ù†Ø¬Ø§Ø­",
+        message="تم جلب تقرير الأداء بنجاح",
         request=request,
     )
 
@@ -1947,7 +1947,7 @@ def admin_desktop_reports_store_preview_view(request, shop_id):
     shop = dataset["shops_queryset"].filter(id=shop_id).first()
     if not shop:
         return error_response(
-            message="Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯",
+            message="المتجر غير موجود",
             status_code=status.HTTP_404_NOT_FOUND,
             request=request,
         )
@@ -1960,7 +1960,7 @@ def admin_desktop_reports_store_preview_view(request, shop_id):
             shop_orders_queryset,
             dataset["end_date"],
         ),
-        message="ØªÙ… Ø¬Ù„Ø¨ Ù…Ø¹Ø§ÙŠÙ†Ø© Ø£Ø¯Ø§Ø¡ Ø§Ù„Ù…ØªØ¬Ø± Ø¨Ù†Ø¬Ø§Ø­",
+        message="تم جلب معاينة أداء المتجر بنجاح",
         request=request,
     )
 
@@ -2001,7 +2001,7 @@ def _require_admin_desktop_dashboard_permission(request):
     if _has_admin_desktop_permission(request.user, "dashboard"):
         return None
     return error_response(
-        message="Ù„ÙŠØ³Øª Ù„Ø¯ÙŠÙƒ ØµÙ„Ø§Ø­ÙŠØ© Ù„Ø¹Ø±Ø¶ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…",
+        message="ليست لديك صلاحية لعرض لوحة التحكم",
         status_code=status.HTTP_403_FORBIDDEN,
         request=request,
     )
@@ -2405,7 +2405,7 @@ def admin_desktop_dashboard_view(request):
             "recent_activities": _serialize_admin_dashboard_recent_activities(limit=recent_limit),
             "pending_actions": _serialize_admin_dashboard_pending_actions(),
         },
-        message="ØªÙ… Ø¬Ù„Ø¨ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… Ø¨Ù†Ø¬Ø§Ø­",
+        message="تم جلب لوحة التحكم بنجاح",
         request=request,
     )
 
@@ -2422,7 +2422,7 @@ def admin_desktop_dashboard_recent_activities_view(request):
         data={
             "activities": _serialize_admin_dashboard_recent_activities(limit=limit),
         },
-        message="ØªÙ… Ø¬Ù„Ø¨ Ø§Ù„Ù†Ø´Ø§Ø·Ø§Øª Ø§Ù„Ø£Ø®ÙŠØ±Ø© Ø¨Ù†Ø¬Ø§Ø­",
+        message="تم جلب النشاطات الأخيرة بنجاح",
         request=request,
     )
 
@@ -2438,7 +2438,7 @@ def admin_desktop_dashboard_pending_actions_view(request):
         data={
             "pending_actions": _serialize_admin_dashboard_pending_actions(),
         },
-        message="ØªÙ… Ø¬Ù„Ø¨ Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø© Ø¨Ù†Ø¬Ø§Ø­",
+        message="تم جلب الإجراءات المعلقة بنجاح",
         request=request,
     )
 
