@@ -63,6 +63,30 @@ def _handle_driver_chat_voice_upload(request):
     )
 
 
+def _handle_driver_chat_image_upload(request):
+    uploaded_file = request.FILES.get('file')
+    if not uploaded_file:
+        return error_response(
+            message='ملف الصورة مطلوب',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    extension = os.path.splitext(uploaded_file.name or '')[-1] or '.jpg'
+    storage_path = f"driver_chats/images/{uuid.uuid4().hex}{extension}"
+    saved_path = default_storage.save(storage_path, uploaded_file)
+    image_url = request.build_absolute_uri(default_storage.url(saved_path))
+    return success_response(
+        data={
+            'image_url': image_url,
+            'path': saved_path,
+        },
+        message='تم رفع الصورة بنجاح',
+        status_code=status.HTTP_201_CREATED,
+        request=request,
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsShopOwnerOrEmployee])
 def driver_chat_conversations_view(request):
@@ -203,6 +227,18 @@ def driver_chat_voice_upload_view(request):
 @permission_classes([IsDriver])
 def driver_chat_driver_voice_upload_view(request):
     return _handle_driver_chat_voice_upload(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsShopOwnerOrEmployee])
+def driver_chat_image_upload_view(request):
+    return _handle_driver_chat_image_upload(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
+def driver_chat_driver_image_upload_view(request):
+    return _handle_driver_chat_image_upload(request)
 
 
 @api_view(['POST'])

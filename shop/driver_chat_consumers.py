@@ -19,6 +19,7 @@ from .driver_chat_service import (
     driver_request_transfer,
     driver_send_text,
     driver_send_voice,
+    driver_send_image,
     get_call_by_public_id,
     get_conversation_by_public_id,
     get_conversation_messages_page,
@@ -34,6 +35,7 @@ from .driver_chat_service import (
     start_call,
     store_send_text,
     store_send_voice,
+    store_send_image,
     transfer_order_between_drivers,
     update_call_status,
 )
@@ -343,12 +345,34 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
         message = await self._store_send_voice(conversation, audio_url, data.get('voice_duration_seconds'), data.get('client_message_id'))
         await self.send_ack(request_id, data={'message_id': message.public_id, 'conversation_id': conversation.public_id})
 
+    async def handle_driver_chat_send_image(self, data, request_id=None):
+        conversation = await self._require_conversation(data.get('conversation_id'), request_id=request_id)
+        if not conversation:
+            return
+        image_url = str(data.get('image_url') or '').strip()
+        if not image_url:
+            await self.send_error('IMAGE_URL_REQUIRED', 'رابط الصورة مطلوب', request_id=request_id)
+            return
+        message = await self._store_send_image(conversation, image_url, data.get('text'), data.get('client_message_id'))
+        await self.send_ack(request_id, data={'message_id': message.public_id, 'conversation_id': conversation.public_id})
+
     @database_sync_to_async
     def _store_send_voice(self, conversation, audio_url, voice_duration_seconds, client_message_id):
         return store_send_voice(
             conversation=conversation,
             audio_url=audio_url,
             voice_duration_seconds=voice_duration_seconds,
+            client_message_id=client_message_id,
+            scope=getattr(self, 'scope', None),
+            base_url=getattr(self, 'base_url', None),
+        )
+
+    @database_sync_to_async
+    def _store_send_image(self, conversation, image_url, text, client_message_id):
+        return store_send_image(
+            conversation=conversation,
+            image_url=image_url,
+            text=text,
             client_message_id=client_message_id,
             scope=getattr(self, 'scope', None),
             base_url=getattr(self, 'base_url', None),
@@ -521,12 +545,34 @@ class DriverChatsDriverConsumer(BaseDriverChatConsumer):
         message = await self._driver_send_voice(conversation, audio_url, data.get('voice_duration_seconds'), data.get('client_message_id'))
         await self.send_ack(request_id, data={'message_id': message.public_id, 'conversation_id': conversation.public_id})
 
+    async def handle_driver_chat_send_image(self, data, request_id=None):
+        conversation = await self._require_conversation(data.get('conversation_id'), request_id=request_id)
+        if not conversation:
+            return
+        image_url = str(data.get('image_url') or '').strip()
+        if not image_url:
+            await self.send_error('IMAGE_URL_REQUIRED', 'رابط الصورة مطلوب', request_id=request_id)
+            return
+        message = await self._driver_send_image(conversation, image_url, data.get('text'), data.get('client_message_id'))
+        await self.send_ack(request_id, data={'message_id': message.public_id, 'conversation_id': conversation.public_id})
+
     @database_sync_to_async
     def _driver_send_voice(self, conversation, audio_url, voice_duration_seconds, client_message_id):
         return driver_send_voice(
             conversation=conversation,
             audio_url=audio_url,
             voice_duration_seconds=voice_duration_seconds,
+            client_message_id=client_message_id,
+            scope=getattr(self, 'scope', None),
+            base_url=getattr(self, 'base_url', None),
+        )
+
+    @database_sync_to_async
+    def _driver_send_image(self, conversation, image_url, text, client_message_id):
+        return driver_send_image(
+            conversation=conversation,
+            image_url=image_url,
+            text=text,
             client_message_id=client_message_id,
             scope=getattr(self, 'scope', None),
             base_url=getattr(self, 'base_url', None),

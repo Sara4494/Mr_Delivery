@@ -77,6 +77,8 @@ def _parse_order_items(raw_value):
 def _message_preview(message: DriverChatMessage):
     if message.message_type == 'voice':
         return 'رسالة صوتية'
+    if message.message_type == 'image':
+        return 'صورة'
     if message.message_type == 'invoice':
         order_number = getattr(getattr(message.conversation_order, 'order', None), 'order_number', None)
         return f'فاتورة الطلب #{order_number}' if order_number else 'فاتورة جديدة'
@@ -171,6 +173,7 @@ def serialize_driver_chat_message(message: DriverChatMessage, *, request=None, s
         'sent_at': format_utc_iso8601(message.created_at),
         'text': message.text,
         'audio_url': build_absolute_file_url(message.audio_url, request=request, scope=scope, base_url=base_url),
+        'image_url': (message.metadata or {}).get('image_url'),
         'voice_duration_seconds': message.voice_duration_seconds,
         'invoice_order': serialize_driver_chat_order(message.conversation_order) if message.conversation_order_id else None,
         'client_message_id': message.client_message_id,
@@ -763,6 +766,20 @@ def store_send_voice(*, conversation: DriverChatConversation, audio_url, voice_d
     return message
 
 
+def store_send_image(*, conversation: DriverChatConversation, image_url, text=None, client_message_id=None, request=None, scope=None, base_url=None):
+    message = create_message(
+        conversation=conversation,
+        sender_type='store',
+        message_type='image',
+        text=str(text or '').strip() or None,
+        client_message_id=client_message_id,
+        metadata={'image_url': image_url},
+    )
+    broadcast_message_created(message, request=request, scope=scope, base_url=base_url)
+    broadcast_conversation_snapshot(conversation, request=request, scope=scope, base_url=base_url)
+    return message
+
+
 def driver_send_text(*, conversation: DriverChatConversation, text, client_message_id=None, request=None, scope=None, base_url=None):
     message = create_message(
         conversation=conversation,
@@ -785,6 +802,21 @@ def driver_send_voice(*, conversation: DriverChatConversation, audio_url, voice_
         audio_url=audio_url,
         voice_duration_seconds=voice_duration_seconds,
         client_message_id=client_message_id,
+    )
+    broadcast_message_created(message, request=request, scope=scope, base_url=base_url)
+    broadcast_unread_updated(conversation)
+    broadcast_conversation_snapshot(conversation, request=request, scope=scope, base_url=base_url)
+    return message
+
+
+def driver_send_image(*, conversation: DriverChatConversation, image_url, text=None, client_message_id=None, request=None, scope=None, base_url=None):
+    message = create_message(
+        conversation=conversation,
+        sender_type='driver',
+        message_type='image',
+        text=str(text or '').strip() or None,
+        client_message_id=client_message_id,
+        metadata={'image_url': image_url},
     )
     broadcast_message_created(message, request=request, scope=scope, base_url=base_url)
     broadcast_unread_updated(conversation)
