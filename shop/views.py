@@ -542,11 +542,14 @@ STAFF_TYPE_DRIVER = 'driver'
 VALID_STAFF_TYPES = {STAFF_TYPE_EMPLOYEE, STAFF_TYPE_DRIVER}
 DRIVER_APP_ORDER_STATUSES = {'confirmed', 'preparing', 'on_way'}
 DRIVER_TRANSFER_REASONS = [
-    {'key': 'vehicle_issue', 'label': '??? ?? ???????', 'requires_note': False},
-    {'key': 'emergency', 'label': '??? ???? / ????', 'requires_note': False},
-    {'key': 'store_delay', 'label': '????? ???? ?? ??????', 'requires_note': False},
-    {'key': 'other', 'label': '??? ???', 'requires_note': True},
+    {'key': 'vehicle_issue', 'label': 'عطل في المركبة', 'requires_note': False},
+    {'key': 'emergency', 'label': 'حالة طارئة / حادث', 'requires_note': False},
+    {'key': 'store_delay', 'label': 'تأخير من المحل في التجهيز', 'requires_note': False},
+    {'key': 'other', 'label': 'سبب آخر', 'requires_note': True},
 ]
+DRIVER_TRANSFER_REASON_KEY_ALIASES = {
+    'other_reason': 'other',
+}
 PY_WEEKDAY_TO_WORK_DAY = {
     0: 'monday',
     1: 'tuesday',
@@ -2369,6 +2372,7 @@ def driver_order_transfer_view(request, order_id):
         )
 
     reason_key = str(request.data.get('reason_key') or request.data.get('reason') or '').strip()
+    reason_key = DRIVER_TRANSFER_REASON_KEY_ALIASES.get(reason_key, reason_key)
     if not reason_key:
         return error_response(
             message=t(request, 'driver_transfer_reason_is_required'),
