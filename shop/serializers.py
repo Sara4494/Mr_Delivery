@@ -679,6 +679,33 @@ class DriverRegisterSerializer(serializers.ModelSerializer):
 def _build_chat_message_invoice_payload(obj):
     from user.utils import _resolve_message_key
 
+    if obj.message_type == 'invoice_card':
+        metadata = obj.metadata if isinstance(getattr(obj, 'metadata', None), dict) else {}
+        invoice = metadata.get('invoice')
+        if isinstance(invoice, dict) and invoice:
+            return invoice
+
+        order = getattr(obj, 'order', None)
+        if not order:
+            return None
+
+        total_amount = float(order.total_amount or 0)
+        delivery_fee = float(order.delivery_fee or 0)
+        subtotal = round(max(total_amount - delivery_fee, 0), 2)
+        return {
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'payment_method': {
+                'code': order.payment_method,
+                'label': order.get_payment_method_display(),
+            },
+            'collection_amount': total_amount,
+            'subtotal': subtotal,
+            'delivery_fee': delivery_fee,
+            'total': total_amount,
+            'items': _order_items_to_representation(order.items),
+        }
+
     message_key = _resolve_message_key(obj.content)
     if message_key not in {'order_priced_please_confirm', 'invoice_modified_waiting_for_confirmation'}:
         return None

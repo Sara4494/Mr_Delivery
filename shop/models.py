@@ -701,6 +701,7 @@ class ChatMessage(models.Model):
         ('audio', 'صوت'),
         ('image', 'صورة'),
         ('location', 'موقع'),
+        ('invoice_card', 'فاتورة'),
     ]
     
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='messages', verbose_name="الطلب")
@@ -721,6 +722,7 @@ class ChatMessage(models.Model):
     # للرسائل من نوع location
     latitude = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True, verbose_name="خط العرض")
     longitude = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True, verbose_name="خط الطول")
+    metadata = models.JSONField(blank=True, null=True, verbose_name="بيانات إضافية")
     
     is_read = models.BooleanField(default=False, verbose_name="مقروءة")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإرسال")

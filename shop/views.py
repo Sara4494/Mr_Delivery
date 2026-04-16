@@ -1178,10 +1178,20 @@ def _build_driver_order_address_text(order):
 
 
 def _build_driver_order_invoice_payload(order):
+    total_amount = _to_float_or_none(order.total_amount) or 0.0
+    delivery_fee = _to_float_or_none(order.delivery_fee) or 0.0
     return {
+        'order_id': order.id,
+        'order_number': order.order_number,
+        'payment_method': {
+            'code': order.payment_method,
+            'label': order.get_payment_method_display(),
+        },
         'items': _parse_driver_order_items(order.items),
-        'payment_method': order.payment_method,
-        'amount_to_collect': _to_float_or_none(order.total_amount) or 0.0,
+        'collection_amount': total_amount,
+        'subtotal': round(max(total_amount - delivery_fee, 0.0), 2),
+        'delivery_fee': delivery_fee,
+        'total': total_amount,
     }
 
 
@@ -2509,6 +2519,28 @@ def driver_order_chat_open_view(request, order_id):
     )
 
 
+def _normalize_driver_customer_chat_message_payload(item):
+    return {
+        'id': item.get('id'),
+        'type': item.get('message_type'),
+        'message_type': item.get('message_type'),
+        'sender': item.get('sender_type'),
+        'sender_type': item.get('sender_type'),
+        'sender_name': item.get('sender_name'),
+        'text': item.get('content'),
+        'message': item.get('content'),
+        'content': item.get('content'),
+        'image_url': item.get('image_file_url'),
+        'audio_url': item.get('audio_file_url'),
+        'voice_duration_seconds': None,
+        'invoice': item.get('invoice'),
+        'sent_at': item.get('created_at'),
+        'created_at': item.get('created_at'),
+        'delivery_status': 'read' if item.get('is_read') else 'sent',
+        'is_read': item.get('is_read'),
+    }
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsDriver])
 def driver_order_chat_view(request, order_id):
@@ -2629,6 +2661,155 @@ def driver_order_chat_view(request, order_id):
         }
         for item in messages
     ]
+
+    data = {
+        'conversation_id': conversation_id,
+        'order_id': order.id,
+        'chat_type': 'driver_customer',
+        'can_open': can_open,
+        'ws_path': ws_path,
+        'messages': normalized_messages,
+    }
+
+    if not can_open:
+        return success_response(
+            data=data,
+            message='هذه المحادثة غير متاحة الآن',
+            status_code=status.HTTP_200_OK,
+        )
+
+    return success_response(
+        data=data,
+        message=t(request, 'driver_chat_opened_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsDriver])
+def driver_order_chat_view(request, order_id):
+    """
+    Driver chat bootstrap for the driver-customer chat.
+    GET /api/driver/orders/{id}/chat/
+    POST /api/driver/orders/{id}/chat/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
+    if not order:
+        return error_response(
+            message=t(request, 'driver_order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    can_open = bool(order.driver_chat_opened_at)
+    conversation_id = f'order_{order.id}_driver_customer'
+    ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
+
+    if request.method == 'POST':
+        if not can_open:
+            return Response(
+                {
+                    'status': status.HTTP_403_FORBIDDEN,
+                    'message': 'هذه المحادثة غير متاحة الآن',
+                    'data': {
+                        'conversation_id': conversation_id,
+                        'order_id': order.id,
+                        'chat_type': 'driver_customer',
+                        'can_open': False,
+                        'ws_path': ws_path,
+                    },
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        chat_type = str(request.data.get('chat_type') or 'driver_customer').strip()
+        if chat_type != 'driver_customer':
+            return error_response(
+                message='نوع المحادثة غير صحيح',
+                errors={'chat_type': 'chat_type must be driver_customer.'},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        message_type = str(request.data.get('message_type') or 'text').strip().lower()
+        if message_type not in {'text', 'invoice_card'}:
+            return error_response(
+                message='نوع الرسالة غير مدعوم',
+                errors={'message_type': 'message_type must be text or invoice_card.'},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        content = None
+        metadata = None
+        if message_type == 'invoice_card':
+            invoice_payload = request.data.get('invoice')
+            fallback_invoice = _build_driver_order_invoice_payload(order)
+            if not isinstance(invoice_payload, dict):
+                invoice_payload = fallback_invoice
+            else:
+                invoice_payload = {
+                    'order_id': invoice_payload.get('order_id') or fallback_invoice.get('order_id'),
+                    'order_number': invoice_payload.get('order_number') or fallback_invoice.get('order_number'),
+                    'payment_method': invoice_payload.get('payment_method') or fallback_invoice.get('payment_method'),
+                    'collection_amount': invoice_payload.get('collection_amount', fallback_invoice.get('collection_amount')),
+                    'subtotal': invoice_payload.get('subtotal', fallback_invoice.get('subtotal')),
+                    'delivery_fee': invoice_payload.get('delivery_fee', fallback_invoice.get('delivery_fee')),
+                    'total': invoice_payload.get('total', fallback_invoice.get('total')),
+                    'items': invoice_payload.get('items') or fallback_invoice.get('items') or [],
+                }
+            metadata = {
+                'card_type': 'invoice_card',
+                'client_message_id': request.data.get('client_message_id'),
+                'invoice': invoice_payload,
+            }
+        else:
+            content = str(request.data.get('content') or request.data.get('text') or '').strip()
+            if not content:
+                return error_response(
+                    message='نص الرسالة مطلوب',
+                    errors={'content': 'This field is required.'},
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+        message = ChatMessage.objects.create(
+            order=order,
+            chat_type='driver_customer',
+            message_type=message_type,
+            content=content,
+            sender_type='driver',
+            sender_driver=driver,
+            metadata=metadata,
+        )
+
+        payload = _chat_message_payload(message, request=request)
+        broadcast_chat_message(order.id, 'driver_customer', payload, request=request)
+
+        normalized_message = _normalize_driver_customer_chat_message_payload(payload)
+        normalized_message['delivery_status'] = 'sent'
+
+        return success_response(
+            data={
+                'conversation_id': conversation_id,
+                'order_id': order.id,
+                'chat_type': 'driver_customer',
+                'can_open': True,
+                'ws_path': ws_path,
+                'message': normalized_message,
+            },
+            message='تم إرسال الرسالة بنجاح',
+            status_code=status.HTTP_201_CREATED,
+        )
+
+    messages_qs = (
+        ChatMessage.objects
+        .filter(order=order, chat_type='driver_customer')
+        .select_related('sender_customer', 'sender_shop_owner', 'sender_employee', 'sender_driver')
+        .order_by('-created_at')[:50]
+    )
+    messages = [_chat_message_payload(message, request=request) for message in reversed(list(messages_qs))]
+    normalized_messages = [_normalize_driver_customer_chat_message_payload(item) for item in messages]
 
     data = {
         'conversation_id': conversation_id,

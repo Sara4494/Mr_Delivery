@@ -2042,33 +2042,39 @@ def _serialize_admin_dashboard_summary_cards():
             "title": "عمولة الشركة",
             "value": float(commission_today),
             "unit": "ج.م",
+            "value_type": "currency",
         },
         {
             "key": "revenue_today",
             "title": "الإيرادات اليوم",
             "value": float(revenue_today),
             "unit": "ج.م",
+            "value_type": "currency",
         },
         {
             "key": "orders_today",
             "title": "الطلبات اليوم",
             "value": orders_today_count,
             "trend_percent": growth_percent,
+            "value_type": "count",
         },
         {
             "key": "orders_on_way",
             "title": "قيد التوصيل",
             "value": Order.objects.filter(status="on_way").count(),
+            "value_type": "count",
         },
         {
             "key": "active_drivers",
             "title": "السائقين النشطين",
             "value": Driver.objects.filter(status__in=["available", "busy"]).count(),
+            "value_type": "count",
         },
         {
             "key": "stores_count",
             "title": "عدد المحلات",
             "value": ShopOwner.objects.filter(admin_status="active", is_active=True).count(),
+            "value_type": "count",
         },
     ]
 
@@ -2101,7 +2107,14 @@ def _build_admin_dashboard_orders_analysis(range_key):
                 "successful": successful_counts[hour_start],
                 "failed": failed_counts[hour_start],
             })
-        return {"range": "day", "points": points}
+        return {
+            "range": "day",
+            "series": [
+                {"key": "successful", "label": "ناجح"},
+                {"key": "failed", "label": "ملغي"},
+            ],
+            "points": points,
+        }
 
     if range_key == "month":
         start_date = today - timedelta(days=29)
@@ -2137,7 +2150,14 @@ def _build_admin_dashboard_orders_analysis(range_key):
                 "successful": successful_counts[bucket_index],
                 "failed": failed_counts[bucket_index],
             })
-        return {"range": "month", "points": points}
+        return {
+            "range": "month",
+            "series": [
+                {"key": "successful", "label": "ناجح"},
+                {"key": "failed", "label": "ملغي"},
+            ],
+            "points": points,
+        }
 
     start_date = today - timedelta(days=6)
     orders_values = list(
@@ -2162,7 +2182,14 @@ def _build_admin_dashboard_orders_analysis(range_key):
             "successful": successful_counts[point_date],
             "failed": failed_counts[point_date],
         })
-    return {"range": "week", "points": points}
+    return {
+        "range": "week",
+        "series": [
+            {"key": "successful", "label": "ناجح"},
+            {"key": "failed", "label": "ملغي"},
+        ],
+        "points": points,
+    }
 
 
 def _build_admin_dashboard_revenue_analysis(range_key):
@@ -2187,7 +2214,7 @@ def _build_admin_dashboard_revenue_analysis(range_key):
                 "date": today.isoformat(),
                 "value": float(bucket_totals[hour_start]),
             })
-        return {"range": "day", "points": points}
+        return {"range": "day", "unit": "ج.م", "points": points}
 
     if range_key == "month":
         start_date = today - timedelta(days=29)
@@ -2220,7 +2247,7 @@ def _build_admin_dashboard_revenue_analysis(range_key):
                 "date": bucket_start.isoformat(),
                 "value": float(bucket_totals[bucket_index]),
             })
-        return {"range": "month", "points": points}
+        return {"range": "month", "unit": "ج.م", "points": points}
 
     start_date = today - timedelta(days=6)
     orders_values = list(
@@ -2242,7 +2269,7 @@ def _build_admin_dashboard_revenue_analysis(range_key):
             "date": point_date.isoformat(),
             "value": float(daily_totals[point_date]),
         })
-    return {"range": "week", "points": points}
+    return {"range": "week", "unit": "ج.م", "points": points}
 
 
 def _serialize_admin_dashboard_pending_actions():
