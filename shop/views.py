@@ -2733,20 +2733,9 @@ def driver_order_chat_view(request, order_id):
 
     if request.method == 'POST':
         if not can_open:
-            return Response(
-                {
-                    'status': status.HTTP_403_FORBIDDEN,
-                    'message': 'هذه المحادثة غير متاحة الآن',
-                    'data': {
-                        'conversation_id': conversation_id,
-                        'order_id': order.id,
-                        'chat_type': 'driver_customer',
-                        'can_open': False,
-                        'ws_path': ws_path,
-                    },
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            order.driver_chat_opened_at = timezone.now()
+            order.save(update_fields=['driver_chat_opened_at', 'updated_at'])
+            can_open = True
 
         chat_type = str(request.data.get('chat_type') or 'driver_customer').strip()
         if chat_type != 'driver_customer':
