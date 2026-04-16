@@ -399,8 +399,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             user = self.scope.get('user')
             user_type = self.scope.get('user_type')
             
-            print(f"[ChatConsumer.connect] order_id={self.order_id} chat_type={self.chat_type} user_type={user_type}")
-            
             if not user or not user_type:
                 await self.close(code=4401)  # unauthorized
                 return
@@ -836,27 +834,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
             order = Order.objects.get(id=self.order_id)
             
             if user_type == 'shop_owner':
-                has_access = order.shop_owner_id == user.id
-                print(f"[check_order_access] shop_owner: order.shop_owner_id={order.shop_owner_id}, user.id={user.id}, access={has_access}")
-                return has_access
+                return order.shop_owner_id == user.id
             elif user_type == 'employee':
-                has_access = order.shop_owner_id == user.shop_owner_id
-                print(f"[check_order_access] employee: order.shop_owner_id={order.shop_owner_id}, user.shop_owner_id={user.shop_owner_id}, access={has_access}")
-                return has_access
+                return order.shop_owner_id == user.shop_owner_id
             elif user_type == 'driver':
-                has_access = order.driver_id == user.id
-                print(f"[check_order_access] driver: order.driver_id={order.driver_id}, user.id={user.id}, access={has_access}")
-                return has_access
+                return order.driver_id == user.id
             elif user_type == 'customer':
                 has_access = order.customer_id == user.id
                 if has_access and self.chat_type == 'driver_customer':
                     has_access = order.driver_chat_opened_at is not None
-                print(f"[check_order_access] customer: order.customer_id={order.customer_id}, user.id={user.id}, access={has_access}")
                 return has_access
             
             return False
         except Order.DoesNotExist:
-            print(f"[check_order_access] Order {self.order_id} does not exist!")
             return False
     
     @database_sync_to_async
@@ -908,17 +898,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def get_previous_messages(self):
         """Return recent chat history for the current room."""
         try:
-            messages = ChatMessage.objects.filter(
-                order_id=self.order_id,
-                chat_type=self.chat_type
-            ).order_by('created_at')[:50]
+            messages = list(
+                ChatMessage.objects
+                .filter(order_id=self.order_id, chat_type=self.chat_type)
+                .select_related('sender_customer', 'sender_shop_owner', 'sender_employee', 'sender_driver')
+                .order_by('-created_at')[:50]
+            )
+            messages.reverse()
 
+            context = _serializer_context(
+                lang=self.lang,
+                scope=getattr(self, 'scope', None),
+                base_url=getattr(self, 'base_url', None),
+            )
             result = []
             for msg in messages:
-                serialized = ChatMessageSerializer(
-                    msg,
-                    context=_serializer_context(lang=self.lang, scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
-                ).data
+                serialized = ChatMessageSerializer(msg, context=context).data
                 result.append({
                     'id': serialized.get('id'),
                     'order_id': msg.order_id,
