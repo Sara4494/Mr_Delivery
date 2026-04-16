@@ -6148,7 +6148,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/dashboard/?orders_range=week&revenue_range=day&recent_limit=4",
+                  "raw": "{{base_url}}/api/admin-desktop/dashboard/?orders_range=week&revenue_range=week&recent_limit=4",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -6165,7 +6165,7 @@
                     },
                     {
                       "key": "revenue_range",
-                      "value": "day"
+                      "value": "week"
                     },
                     {
                       "key": "recent_limit",

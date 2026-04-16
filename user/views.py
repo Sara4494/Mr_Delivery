@@ -2387,14 +2387,18 @@ def admin_desktop_dashboard_view(request):
     if orders_range not in {"day", "week", "month"}:
         orders_range = "week"
 
-    revenue_range = str(request.query_params.get("revenue_range") or "day").strip().lower()
+    revenue_range = str(request.query_params.get("revenue_range") or "week").strip().lower()
     if revenue_range not in {"day", "week", "month"}:
-        revenue_range = "day"
+        revenue_range = "week"
 
     recent_limit = max(min(int(request.query_params.get("recent_limit", 4) or 4), 20), 1)
 
     return success_response(
         data={
+            "filters": {
+                "orders_range": orders_range,
+                "revenue_range": revenue_range,
+            },
             "summary_cards": _serialize_admin_dashboard_summary_cards(),
             "orders_analysis": _build_admin_dashboard_orders_analysis(orders_range),
             "revenue_analysis": _build_admin_dashboard_revenue_analysis(revenue_range),
