@@ -52,24 +52,15 @@ def _parse_order_items(items_value):
                 quantity = 1
             quantity = max(quantity, 1)
 
-            line_total = _to_float_or_none(
-                item.get('line_total', item.get('total_price', item.get('subtotal', item.get('total'))))
-            )
-            if line_total is None:
-                unit_price = _to_float_or_none(item.get('unit_price', item.get('price')))
-                if unit_price is not None:
-                    line_total = round(unit_price * quantity, 2)
         else:
             name = str(item or '').strip()
             if not name:
                 continue
             quantity = 1
-            line_total = None
 
         results.append({
             'name': name,
             'quantity': quantity,
-            'line_total': line_total,
         })
 
     return results
