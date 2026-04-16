@@ -1,11 +1,11 @@
 {
   "info": {
-    "_postman_id": "988e9d23-89a5-42a7-b625-a0b6c6b67b26",
+    "_postman_id": "0c877dcb-bb06-4acd-bdfb-1fd7a0360c1e",
     "name": "Mr Delivery API",
     "description": "مجموعة APIs لمشروع Mr Delivery، مرتبة حسب العميل وصاحب المحل والموظف والسائق.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "29856820",
-    "_collection_link": "https://go.postman.co/collection/29856820-988e9d23-89a5-42a7-b625-a0b6c6b67b26?source=collection_link"
+    "_collection_link": "https://go.postman.co/collection/29856820-0c877dcb-bb06-4acd-bdfb-1fd7a0360c1e?source=collection_link"
   },
   "item": [
     {
@@ -1834,7 +1834,6 @@
                 {
                   "listen": "test",
                   "script": {
-                    "type": "text/javascript",
                     "exec": [
                       "if (pm.response.code === 200) {",
                       "    var jsonData = pm.response.json();",
@@ -1846,7 +1845,10 @@
                       "        if (jsonData.data.refresh) pm.environment.set(\"refresh_token\", jsonData.data.refresh);",
                       "    }",
                       "}"
-                    ]
+                    ],
+                    "type": "text/javascript",
+                    "packages": {},
+                    "requests": {}
                   }
                 }
               ],
@@ -1863,9 +1865,9 @@
                   "raw": "{\n    \"shop_number\": \"01024305307\",\n    \"password\": \"Hh@123456\"\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/shop/login/",
+                  "raw": "{{base_Url}}/api/shop/login/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -2154,7 +2156,8 @@
                       "key": "owner_name",
                       "value": "سارة أحمد المالكي",
                       "type": "text",
-                      "description": "اسم صاحب المحل"
+                      "description": "اسم صاحب المحل",
+                      "disabled": true
                     },
                     {
                       "key": "shop_name",
@@ -2166,20 +2169,22 @@
                       "key": "phone_number",
                       "value": "01012345678",
                       "type": "text",
-                      "description": "رقم الهاتف (للاستعادة كلمة المرور)"
+                      "description": "رقم الهاتف (للاستعادة كلمة المرور)",
+                      "disabled": true
                     },
                     {
                       "key": "profile_image",
                       "type": "file",
                       "description": "صورة البروفيل (اختياري)",
-                      "value": null
+                      "value": null,
+                      "disabled": true
                     }
                   ]
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/shop/profile/",
+                  "raw": "{{base_Url}}/api/shop/profile/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -2440,7 +2445,7 @@
                     {
                       "key": "image",
                       "type": "file",
-                      "value": null
+                      "src": "/C:/Users/Speed For Computer/Downloads/تنزيل.jpg"
                     },
                     {
                       "key": "description",
@@ -2456,9 +2461,9 @@
                   ]
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/shop/gallery/",
+                  "raw": "{{base_Url}}/api/shop/gallery/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -3819,9 +3824,9 @@
                   "raw": "{\n    \"title\": \"خصم 30% على الوجبات\",\n    \"description\": \"عرض اليوم على الوجبات المختارة\",\n    \"discount_percentage\": \"30.00\",\n    \"start_date\": \"2026-03-13\",\n    \"end_date\": \"2026-03-20\",\n    \"is_active\": true\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/shop/offers/",
+                  "raw": "{{base_Url}}/api/shop/offers/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -5749,7 +5754,6 @@
                 {
                   "listen": "test",
                   "script": {
-                    "type": "text/javascript",
                     "exec": [
                       "if (pm.response.code === 200) {",
                       "    var jsonData = pm.response.json();",
@@ -5759,7 +5763,10 @@
                       "        if (jsonData.data.user && jsonData.data.user.id) pm.environment.set(\"admin_desktop_user_id\", jsonData.data.user.id);",
                       "    }",
                       "}"
-                    ]
+                    ],
+                    "type": "text/javascript",
+                    "packages": {},
+                    "requests": {}
                   }
                 }
               ],
@@ -5776,9 +5783,9 @@
                   "raw": "{\n  \"phone_number\": \"01012345678\",\n  \"password\": \"password123\"\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/auth/login/",
+                  "raw": "{{base_Url}}/api/admin-desktop/auth/login/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6122,6 +6129,111 @@
                   ]
                 },
                 "description": "حذف مستخدم الديسكتوب. لا يمكن حذف الحساب المستخدم حاليا."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Dashboard",
+          "item": [
+            {
+              "name": "Get Dashboard Snapshot - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/dashboard/?orders_range=week&revenue_range=day&recent_limit=4",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "dashboard",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "orders_range",
+                      "value": "week"
+                    },
+                    {
+                      "key": "revenue_range",
+                      "value": "day"
+                    },
+                    {
+                      "key": "recent_limit",
+                      "value": "4"
+                    }
+                  ]
+                },
+                "description": "يرجع Snapshot كامل لشاشة لوحة التحكم: الكروت العلوية، الرسوم، الأنشطة الأخيرة، والإجراءات المعلقة."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Recent Activities - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/dashboard/recent-activities/?limit=20",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "dashboard",
+                    "recent-activities",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                },
+                "description": "يرجع قائمة الأنشطة الأخيرة فقط من أجل زر عرض جميع النشاطات."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Pending Actions - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/dashboard/pending-actions/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "dashboard",
+                    "pending-actions",
+                    ""
+                  ]
+                },
+                "description": "يرجع بلوكات الإجراءات المعلقة فقط."
               },
               "response": []
             }
@@ -6512,6 +6624,159 @@
           ]
         },
         {
+          "name": "Reports",
+          "item": [
+            {
+              "name": "Get Report Filters - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/reports/filters/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "reports",
+                    "filters",
+                    ""
+                  ]
+                },
+                "description": "يرجع فقط فلاتر شاشة التقارير: الفترات الزمنية وتصنيفات المتاجر. لا توجد مدن في هذا المسار."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Analytics Report - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/reports/analytics/?date_range=current_month&shop_category_id=all&orders_range=week&revenue_range=month",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "reports",
+                    "analytics",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "date_range",
+                      "value": "current_month"
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "all"
+                    },
+                    {
+                      "key": "orders_range",
+                      "value": "week"
+                    },
+                    {
+                      "key": "revenue_range",
+                      "value": "month"
+                    }
+                  ]
+                },
+                "description": "يرجع فقط بيانات شاشة التقارير: الكروت العلوية، تحليل الطلبات، تحليل الإيرادات، وأفضل المحلات."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Store Performance Preview - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/reports/stores/{{admin_shop_id}}/preview/?date_range=current_month&shop_category_id=all",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "reports",
+                    "stores",
+                    "{{admin_shop_id}}",
+                    "preview",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "date_range",
+                      "value": "current_month"
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "all"
+                    }
+                  ]
+                },
+                "description": "يرجع بيانات نافذة معاينة أداء المتجر فقط: الاسم، التصنيف، الصورة، التقييم، الإجماليات، الأكثر مبيعًا، وأداء الطلبات الأسبوعي."
+              },
+              "response": []
+            },
+            {
+              "name": "Export Reports CSV - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/reports/export/?date_range=current_month&shop_category_id=all",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "reports",
+                    "export",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "date_range",
+                      "value": "current_month"
+                    },
+                    {
+                      "key": "shop_category_id",
+                      "value": "all"
+                    }
+                  ]
+                },
+                "description": "تصدير تقرير التقارير الحالي كملف CSV حسب نفس الفلاتر المستخدمة في الشاشة."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
           "name": "Approvals",
           "item": [
             {
@@ -6525,9 +6790,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/?request_type=image_publish",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/requests/?request_type=image_publish",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6558,9 +6823,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/?request_type=shop_edit",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/requests/?request_type=shop_edit",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6591,9 +6856,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/?request_type=offer",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/requests/?request_type=offer",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6624,9 +6889,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6660,9 +6925,9 @@
                   "raw": "{}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/approve/",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/approve/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",
@@ -6697,9 +6962,9 @@
                   "raw": "{\n  \"reason\": \"رفض من الإدارة\"\n}"
                 },
                 "url": {
-                  "raw": "{{base_url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/reject/",
+                  "raw": "{{base_Url}}/api/admin-desktop/approvals/requests/{{approval_request_id}}/reject/",
                   "host": [
-                    "{{base_url}}"
+                    "{{base_Url}}"
                   ],
                   "path": [
                     "api",

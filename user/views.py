@@ -1,9 +1,13 @@
+import json
+from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from io import StringIO
 from math import ceil
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Avg, Count, Q, Sum
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -32,6 +36,32 @@ from .approval_requests import (
 )
 from .utils import success_response, error_response, t, localize_message
 from .otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
+
+
+ARABIC_MONTH_NAMES = {
+    1: "يناير",
+    2: "فبراير",
+    3: "مارس",
+    4: "أبريل",
+    5: "مايو",
+    6: "يونيو",
+    7: "يوليو",
+    8: "أغسطس",
+    9: "سبتمبر",
+    10: "أكتوبر",
+    11: "نوفمبر",
+    12: "ديسمبر",
+}
+
+ARABIC_WEEKDAY_NAMES = {
+    0: "الاثنين",
+    1: "الثلاثاء",
+    2: "الأربعاء",
+    3: "الخميس",
+    4: "الجمعة",
+    5: "السبت",
+    6: "الأحد",
+}
 
 
 class ShopOwnerTokenObtainPairView(TokenObtainPairView):
@@ -1376,6 +1406,1008 @@ def admin_desktop_store_activate_view(request, shop_id):
     return success_response(
         data={"store": _serialize_admin_store_list_item(request, shop)},
         message="تم تفعيل المتجر بنجاح",
+        request=request,
+    )
+
+
+def _require_admin_desktop_reports_permission(request):
+    if _has_admin_desktop_permission(request.user, "reports"):
+        return None
+    return error_response(
+        message="Ù„ÙŠØ³Øª Ù„Ø¯ÙŠÙƒ ØµÙ„Ø§Ø­ÙŠØ© Ù„Ø¹Ø±Ø¶ Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ±",
+        status_code=status.HTTP_403_FORBIDDEN,
+        request=request,
+    )
+
+
+def _format_admin_report_date_range_label(start_date, end_date):
+    start_label = f"{start_date.day:02d} {ARABIC_MONTH_NAMES.get(start_date.month, start_date.month)}"
+    end_label = f"{end_date.day:02d} {ARABIC_MONTH_NAMES.get(end_date.month, end_date.month)}"
+    return f"{start_label} - {end_label}"
+
+
+def _parse_admin_reports_date_range(value):
+    raw_value = str(value or "current_month").strip().lower()
+    today = timezone.localdate()
+    if raw_value in {"last_7_days", "7_days", "7d"}:
+        start_date = today - timedelta(days=6)
+        end_date = today
+        return "last_7_days", start_date, end_date, "آخر 7 أيام"
+    if raw_value in {"last_30_days", "30_days", "30d"}:
+        start_date = today - timedelta(days=29)
+        end_date = today
+        return "last_30_days", start_date, end_date, "آخر 30 يوم"
+    if raw_value in {"last_90_days", "90_days", "90d"}:
+        start_date = today - timedelta(days=89)
+        end_date = today
+        return "last_90_days", start_date, end_date, "آخر 90 يوم"
+
+    month_start = today.replace(day=1)
+    if today.month == 12:
+        next_month_start = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_month_start = today.replace(month=today.month + 1, day=1)
+    month_end = next_month_start - timedelta(days=1)
+    return "current_month", month_start, month_end, _format_admin_report_date_range_label(month_start, month_end)
+
+
+def _parse_admin_reports_category(request):
+    raw_value = str(request.query_params.get("shop_category_id") or request.query_params.get("category_id") or "all").strip()
+    if raw_value.lower() in {"", "all", "null", "none"}:
+        return "all", None, None
+    try:
+        category_id = int(raw_value)
+    except (TypeError, ValueError):
+        return None, None, error_response(
+            message="ØªØµÙ†ÙŠÙ Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± ØµØ­ÙŠØ­",
+            errors={"shop_category_id": ["ØªØµÙ†ÙŠÙ Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± ØµØ­ÙŠØ­"]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    category = ShopCategory.objects.filter(id=category_id, is_active=True).first()
+    if not category:
+        return None, None, error_response(
+            message="ØªØµÙ†ÙŠÙ Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯",
+            errors={"shop_category_id": ["ØªØµÙ†ÙŠÙ Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯"]},
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+    return str(category.id), category, None
+
+
+def _get_admin_reports_shops_queryset(category=None):
+    queryset = ShopOwner.objects.select_related("shop_category").all()
+    if category is not None:
+        queryset = queryset.filter(shop_category=category)
+    return queryset
+
+
+def _get_admin_reports_orders_queryset(shops_queryset, start_date, end_date):
+    from shop.models import Order
+
+    return (
+        Order.objects
+        .filter(
+            shop_owner__in=shops_queryset,
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+        )
+        .select_related("shop_owner", "shop_owner__shop_category")
+    )
+
+
+def _safe_decimal(value):
+    if value in (None, ""):
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
+def _serialize_admin_reports_summary(shops_queryset, orders_values):
+    delivered_orders = [item for item in orders_values if item["status"] == "delivered"]
+    total_revenue = sum((_safe_decimal(item["total_amount"]) for item in delivered_orders), Decimal("0"))
+    total_commission = sum(
+        (_safe_decimal(item["total_amount"]) * _safe_decimal(item["shop_owner__commission_rate"]) / Decimal("100"))
+        for item in delivered_orders
+    )
+    return {
+        "active_stores_count": shops_queryset.filter(admin_status="active", is_active=True).count(),
+        "company_commission": float(total_commission),
+        "total_revenue": float(total_revenue),
+        "total_orders": len(orders_values),
+    }
+
+
+def _build_admin_orders_analysis(orders_values, range_key):
+    now = timezone.localtime()
+    today = now.date()
+
+    if range_key == "day":
+        successful_counts = defaultdict(int)
+        total_counts = defaultdict(int)
+        for item in orders_values:
+            created_at = timezone.localtime(item["created_at"])
+            if created_at.date() != today:
+                continue
+            bucket_key = min((created_at.hour // 3) * 3, 21)
+            total_counts[bucket_key] += 1
+            if item["status"] == "delivered":
+                successful_counts[bucket_key] += 1
+        points = []
+        for hour_start in range(0, 24, 3):
+            points.append({
+                "label": f"{hour_start:02d}:00",
+                "date": today.isoformat(),
+                "display_date": today.strftime("%d/%m"),
+                "total": total_counts[hour_start],
+                "successful": successful_counts[hour_start],
+            })
+        return {"range": "day", "points": points}
+
+    if range_key == "month":
+        start_date = today - timedelta(days=29)
+        bucket_meta = []
+        current_start = start_date
+        week_index = 1
+        while current_start <= today:
+            current_end = min(current_start + timedelta(days=6), today)
+            bucket_meta.append((week_index, current_start, current_end))
+            current_start = current_end + timedelta(days=1)
+            week_index += 1
+        total_counts = defaultdict(int)
+        successful_counts = defaultdict(int)
+        for item in orders_values:
+            created_date = timezone.localtime(item["created_at"]).date()
+            if created_date < start_date or created_date > today:
+                continue
+            for bucket_index, bucket_start, bucket_end in bucket_meta:
+                if bucket_start <= created_date <= bucket_end:
+                    total_counts[bucket_index] += 1
+                    if item["status"] == "delivered":
+                        successful_counts[bucket_index] += 1
+                    break
+        points = []
+        for bucket_index, bucket_start, bucket_end in bucket_meta:
+            points.append({
+                "label": f"الأسبوع {bucket_index}",
+                "date": bucket_start.isoformat(),
+                "display_date": f"{bucket_start.day}/{bucket_start.month}",
+                "total": total_counts[bucket_index],
+                "successful": successful_counts[bucket_index],
+            })
+        return {"range": "month", "points": points}
+
+    start_date = today - timedelta(days=6)
+    total_counts = defaultdict(int)
+    successful_counts = defaultdict(int)
+    for item in orders_values:
+        created_date = timezone.localtime(item["created_at"]).date()
+        if created_date < start_date or created_date > today:
+            continue
+        total_counts[created_date] += 1
+        if item["status"] == "delivered":
+            successful_counts[created_date] += 1
+    points = []
+    for offset in range(7):
+        point_date = start_date + timedelta(days=offset)
+        points.append({
+            "label": ARABIC_WEEKDAY_NAMES.get(point_date.weekday(), point_date.isoformat()),
+            "date": point_date.isoformat(),
+            "display_date": f"{point_date.day}/{point_date.month}",
+            "total": total_counts[point_date],
+            "successful": successful_counts[point_date],
+        })
+    return {"range": "week", "points": points}
+
+
+def _build_admin_revenue_analysis(orders_values, range_key):
+    delivered_values = [item for item in orders_values if item["status"] == "delivered"]
+    now = timezone.localtime()
+    today = now.date()
+
+    if range_key == "day":
+        bucket_totals = defaultdict(Decimal)
+        for item in delivered_values:
+            created_at = timezone.localtime(item["created_at"])
+            if created_at.date() != today:
+                continue
+            bucket_key = min((created_at.hour // 3) * 3, 21)
+            bucket_totals[bucket_key] += _safe_decimal(item["total_amount"])
+        points = []
+        for hour_start in range(0, 24, 3):
+            points.append({
+                "label": f"{hour_start:02d}:00",
+                "date": today.isoformat(),
+                "value": float(bucket_totals[hour_start]),
+            })
+        return {"range": "day", "points": points}
+
+    if range_key == "month":
+        start_date = today - timedelta(days=29)
+        bucket_meta = []
+        current_start = start_date
+        week_index = 1
+        while current_start <= today:
+            current_end = min(current_start + timedelta(days=6), today)
+            bucket_meta.append((week_index, current_start, current_end))
+            current_start = current_end + timedelta(days=1)
+            week_index += 1
+        bucket_totals = defaultdict(Decimal)
+        for item in delivered_values:
+            created_date = timezone.localtime(item["created_at"]).date()
+            if created_date < start_date or created_date > today:
+                continue
+            for bucket_index, bucket_start, bucket_end in bucket_meta:
+                if bucket_start <= created_date <= bucket_end:
+                    bucket_totals[bucket_index] += _safe_decimal(item["total_amount"])
+                    break
+        points = []
+        for bucket_index, bucket_start, bucket_end in bucket_meta:
+            points.append({
+                "label": f"الأسبوع {bucket_index}",
+                "date": bucket_start.isoformat(),
+                "value": float(bucket_totals[bucket_index]),
+            })
+        return {"range": "month", "points": points}
+
+    start_date = today - timedelta(days=6)
+    daily_totals = defaultdict(Decimal)
+    for item in delivered_values:
+        created_date = timezone.localtime(item["created_at"]).date()
+        if created_date < start_date or created_date > today:
+            continue
+        daily_totals[created_date] += _safe_decimal(item["total_amount"])
+    points = []
+    for offset in range(7):
+        point_date = start_date + timedelta(days=offset)
+        points.append({
+            "label": ARABIC_WEEKDAY_NAMES.get(point_date.weekday(), point_date.isoformat()),
+            "date": point_date.isoformat(),
+            "value": float(daily_totals[point_date]),
+        })
+    return {"range": "week", "points": points}
+
+
+def _get_shop_rating_value(shop):
+    from shop.models import OrderRating, ShopReview
+
+    review_avg = (
+        ShopReview.objects.filter(shop_owner=shop)
+        .aggregate(value=Avg("shop_rating"))
+        .get("value")
+    )
+    if review_avg is None:
+        review_avg = (
+            OrderRating.objects.filter(order__shop_owner=shop)
+            .aggregate(value=Avg("shop_rating"))
+            .get("value")
+        )
+    return round(float(review_avg or 0), 1)
+
+
+def _serialize_admin_top_stores(request, shops_queryset, orders_values):
+    shop_map = {shop.id: shop for shop in shops_queryset}
+    stats = defaultdict(lambda: {
+        "orders_count": 0,
+        "revenue": Decimal("0"),
+        "commission": Decimal("0"),
+    })
+
+    for item in orders_values:
+        shop_id = item["shop_owner_id"]
+        stats[shop_id]["orders_count"] += 1
+        if item["status"] == "delivered":
+            amount = _safe_decimal(item["total_amount"])
+            stats[shop_id]["revenue"] += amount
+            stats[shop_id]["commission"] += amount * _safe_decimal(item["shop_owner__commission_rate"]) / Decimal("100")
+
+    ranked_shop_ids = sorted(
+        stats.keys(),
+        key=lambda shop_id: (
+            stats[shop_id]["orders_count"],
+            stats[shop_id]["revenue"],
+        ),
+        reverse=True,
+    )
+
+    results = []
+    for shop_id in ranked_shop_ids[:10]:
+        shop = shop_map.get(shop_id)
+        if not shop:
+            continue
+        results.append({
+            "id": shop.id,
+            "name": shop.shop_name,
+            "category_name": shop.shop_category.name if shop.shop_category else None,
+            "image_url": _build_media_url(request, shop.profile_image),
+            "orders_count": stats[shop_id]["orders_count"],
+            "revenue": float(stats[shop_id]["revenue"]),
+            "commission": float(stats[shop_id]["commission"]),
+            "rating": _get_shop_rating_value(shop),
+        })
+    return results
+
+
+def _parse_order_items_for_reports(items_value):
+    parsed_items = []
+    if not items_value:
+        return parsed_items
+
+    raw_items = items_value
+    if isinstance(raw_items, str):
+        try:
+            raw_items = json.loads(raw_items)
+        except Exception:
+            raw_items = [line.strip(" -") for line in str(items_value).splitlines() if line.strip()]
+
+    if isinstance(raw_items, dict):
+        raw_items = raw_items.get("items") or raw_items.get("results") or []
+
+    if not isinstance(raw_items, list):
+        return parsed_items
+
+    for item in raw_items:
+        if isinstance(item, dict):
+            name = str(item.get("name") or item.get("title") or item.get("product_name") or "").strip()
+            subtitle = str(item.get("description") or item.get("subtitle") or item.get("category") or "").strip() or None
+            quantity = item.get("quantity") or item.get("qty") or 1
+            try:
+                quantity = int(quantity)
+            except (TypeError, ValueError):
+                quantity = 1
+            if name:
+                parsed_items.append({
+                    "name": name,
+                    "subtitle": subtitle,
+                    "quantity": max(quantity, 1),
+                })
+        else:
+            name = str(item).strip()
+            if name:
+                parsed_items.append({
+                    "name": name,
+                    "subtitle": None,
+                    "quantity": 1,
+                })
+    return parsed_items
+
+
+def _serialize_admin_store_preview(request, shop, orders_queryset, end_date):
+    orders_values = list(
+        orders_queryset.values(
+            "status",
+            "created_at",
+            "total_amount",
+            "items",
+        )
+    )
+    delivered_values = [item for item in orders_values if item["status"] == "delivered"]
+    total_revenue = sum((_safe_decimal(item["total_amount"]) for item in delivered_values), Decimal("0"))
+    total_commission = total_revenue * _safe_decimal(shop.commission_rate) / Decimal("100")
+
+    item_counter = Counter()
+    item_subtitles = {}
+    for order_value in orders_values:
+        for item in _parse_order_items_for_reports(order_value["items"]):
+            item_counter[item["name"]] += item["quantity"]
+            if item["name"] not in item_subtitles:
+                item_subtitles[item["name"]] = item["subtitle"]
+
+    best_selling_items = []
+    for name, _count in item_counter.most_common(3):
+        best_selling_items.append({
+            "name": name,
+            "subtitle": item_subtitles.get(name),
+        })
+
+    today = min(end_date, timezone.localdate())
+    week_start = today - timedelta(days=6)
+    weekly_counts = defaultdict(int)
+    for order_value in orders_values:
+        created_date = timezone.localtime(order_value["created_at"]).date()
+        if week_start <= created_date <= today:
+            weekly_counts[created_date] += 1
+    weekly_orders = []
+    for offset in range(7):
+        point_date = week_start + timedelta(days=offset)
+        weekly_orders.append({
+            "label": ARABIC_WEEKDAY_NAMES.get(point_date.weekday(), point_date.isoformat()),
+            "value": weekly_counts[point_date],
+        })
+
+    return {
+        "id": shop.id,
+        "name": shop.shop_name,
+        "category_name": shop.shop_category.name if shop.shop_category else None,
+        "image_url": _build_media_url(request, shop.profile_image),
+        "rating": _get_shop_rating_value(shop),
+        "total_orders": len(orders_values),
+        "total_revenue": float(total_revenue),
+        "total_commission": float(total_commission),
+        "best_selling_items": best_selling_items,
+        "weekly_orders": weekly_orders,
+    }
+
+
+def _build_admin_reports_dataset(request):
+    category_key, category, category_error = _parse_admin_reports_category(request)
+    if category_error:
+        return None, category_error
+
+    date_range_key, start_date, end_date, date_range_label = _parse_admin_reports_date_range(
+        request.query_params.get("date_range")
+    )
+    shops_queryset = _get_admin_reports_shops_queryset(category=category)
+    orders_queryset = _get_admin_reports_orders_queryset(shops_queryset, start_date, end_date)
+    orders_values = list(
+        orders_queryset.values(
+            "id",
+            "shop_owner_id",
+            "shop_owner__commission_rate",
+            "status",
+            "total_amount",
+            "created_at",
+        )
+    )
+    return {
+        "category_key": category_key,
+        "category": category,
+        "date_range_key": date_range_key,
+        "date_range_label": date_range_label,
+        "start_date": start_date,
+        "end_date": end_date,
+        "shops_queryset": shops_queryset,
+        "orders_queryset": orders_queryset,
+        "orders_values": orders_values,
+    }, None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_reports_filters_view(request):
+    permission_error = _require_admin_desktop_reports_permission(request)
+    if permission_error:
+        return permission_error
+
+    current_month_key, _current_month_start, _current_month_end, current_month_label = _parse_admin_reports_date_range("current_month")
+    date_ranges = [
+        {"key": current_month_key, "label": current_month_label},
+        {"key": "last_7_days", "label": "آخر 7 أيام"},
+        {"key": "last_30_days", "label": "آخر 30 يوم"},
+        {"key": "last_90_days", "label": "آخر 90 يوم"},
+    ]
+
+    store_categories = [{"id": "all", "name": "كل المتاجر"}]
+    store_categories.extend(
+        {"id": category.id, "name": category.name}
+        for category in ShopCategory.objects.filter(is_active=True).order_by("name")
+    )
+
+    return success_response(
+        data={
+            "date_ranges": date_ranges,
+            "store_categories": store_categories,
+        },
+        message="ØªÙ… Ø¬Ù„Ø¨ ÙÙ„Ø§ØªØ± Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ± Ø¨Ù†Ø¬Ø§Ø­",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_reports_analytics_view(request):
+    permission_error = _require_admin_desktop_reports_permission(request)
+    if permission_error:
+        return permission_error
+
+    dataset, dataset_error = _build_admin_reports_dataset(request)
+    if dataset_error:
+        return dataset_error
+
+    orders_range = str(request.query_params.get("orders_range") or "week").strip().lower()
+    if orders_range not in {"day", "week", "month"}:
+        orders_range = "week"
+
+    revenue_range = str(request.query_params.get("revenue_range") or "month").strip().lower()
+    if revenue_range not in {"day", "week", "month"}:
+        revenue_range = "month"
+
+    return success_response(
+        data={
+            "summary": _serialize_admin_reports_summary(dataset["shops_queryset"], dataset["orders_values"]),
+            "orders_analysis": _build_admin_orders_analysis(dataset["orders_values"], orders_range),
+            "revenue_analysis": _build_admin_revenue_analysis(dataset["orders_values"], revenue_range),
+            "top_stores": _serialize_admin_top_stores(
+                request,
+                dataset["shops_queryset"],
+                dataset["orders_values"],
+            ),
+        },
+        message="ØªÙ… Ø¬Ù„Ø¨ ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ø£Ø¯Ø§Ø¡ Ø¨Ù†Ø¬Ø§Ø­",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_reports_store_preview_view(request, shop_id):
+    permission_error = _require_admin_desktop_reports_permission(request)
+    if permission_error:
+        return permission_error
+
+    dataset, dataset_error = _build_admin_reports_dataset(request)
+    if dataset_error:
+        return dataset_error
+
+    shop = dataset["shops_queryset"].filter(id=shop_id).first()
+    if not shop:
+        return error_response(
+            message="Ø§Ù„Ù…ØªØ¬Ø± ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    shop_orders_queryset = dataset["orders_queryset"].filter(shop_owner=shop)
+    return success_response(
+        data=_serialize_admin_store_preview(
+            request,
+            shop,
+            shop_orders_queryset,
+            dataset["end_date"],
+        ),
+        message="ØªÙ… Ø¬Ù„Ø¨ Ù…Ø¹Ø§ÙŠÙ†Ø© Ø£Ø¯Ø§Ø¡ Ø§Ù„Ù…ØªØ¬Ø± Ø¨Ù†Ø¬Ø§Ø­",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_reports_export_view(request):
+    permission_error = _require_admin_desktop_reports_permission(request)
+    if permission_error:
+        return permission_error
+
+    dataset, dataset_error = _build_admin_reports_dataset(request)
+    if dataset_error:
+        return dataset_error
+
+    summary = _serialize_admin_reports_summary(dataset["shops_queryset"], dataset["orders_values"])
+    top_stores = _serialize_admin_top_stores(request, dataset["shops_queryset"], dataset["orders_values"])
+
+    buffer = StringIO()
+    buffer.write("metric,value\\r\\n")
+    buffer.write(f"active_stores_count,{summary['active_stores_count']}\\r\\n")
+    buffer.write(f"company_commission,{summary['company_commission']}\\r\\n")
+    buffer.write(f"total_revenue,{summary['total_revenue']}\\r\\n")
+    buffer.write(f"total_orders,{summary['total_orders']}\\r\\n")
+    buffer.write("\\r\\n")
+    buffer.write("store_name,orders_count,revenue,commission,rating\\r\\n")
+    for store in top_stores:
+        buffer.write(
+            f"{store['name']},{store['orders_count']},{store['revenue']},{store['commission']},{store['rating']}\\r\\n"
+        )
+
+    response = HttpResponse(buffer.getvalue(), content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="admin_desktop_reports.csv"'
+    return response
+
+
+def _require_admin_desktop_dashboard_permission(request):
+    if _has_admin_desktop_permission(request.user, "dashboard"):
+        return None
+    return error_response(
+        message="Ù„ÙŠØ³Øª Ù„Ø¯ÙŠÙƒ ØµÙ„Ø§Ø­ÙŠØ© Ù„Ø¹Ø±Ø¶ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…",
+        status_code=status.HTTP_403_FORBIDDEN,
+        request=request,
+    )
+
+
+def _get_today_bounds():
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+    return today, yesterday
+
+
+def _serialize_admin_dashboard_summary_cards():
+    from shop.models import Order
+    from shop.models import Driver
+
+    today, yesterday = _get_today_bounds()
+    today_orders = list(
+        Order.objects.filter(created_at__date=today).values("status", "total_amount", "shop_owner__commission_rate")
+    )
+    yesterday_orders_count = Order.objects.filter(created_at__date=yesterday).count()
+    delivered_today = [item for item in today_orders if item["status"] == "delivered"]
+    revenue_today = sum((_safe_decimal(item["total_amount"]) for item in delivered_today), Decimal("0"))
+    commission_today = sum(
+        (_safe_decimal(item["total_amount"]) * _safe_decimal(item["shop_owner__commission_rate"]) / Decimal("100"))
+        for item in delivered_today
+    )
+    orders_today_count = len(today_orders)
+    growth_percent = None
+    if yesterday_orders_count == 0:
+        if orders_today_count > 0:
+            growth_percent = 100
+    else:
+        growth_percent = round(((orders_today_count - yesterday_orders_count) / yesterday_orders_count) * 100)
+
+    return [
+        {
+            "key": "company_commission_today",
+            "title": "عمولة الشركة",
+            "value": float(commission_today),
+            "unit": "ج.م",
+        },
+        {
+            "key": "revenue_today",
+            "title": "الإيرادات اليوم",
+            "value": float(revenue_today),
+            "unit": "ج.م",
+        },
+        {
+            "key": "orders_today",
+            "title": "الطلبات اليوم",
+            "value": orders_today_count,
+            "trend_percent": growth_percent,
+        },
+        {
+            "key": "orders_on_way",
+            "title": "قيد التوصيل",
+            "value": Order.objects.filter(status="on_way").count(),
+        },
+        {
+            "key": "active_drivers",
+            "title": "السائقين النشطين",
+            "value": Driver.objects.filter(status__in=["available", "busy"]).count(),
+        },
+        {
+            "key": "stores_count",
+            "title": "عدد المحلات",
+            "value": ShopOwner.objects.filter(admin_status="active", is_active=True).count(),
+        },
+    ]
+
+
+def _build_admin_dashboard_orders_analysis(range_key):
+    from shop.models import Order
+
+    now = timezone.localtime()
+    today = now.date()
+
+    if range_key == "day":
+        orders_values = list(
+            Order.objects.filter(created_at__date=today).values("status", "created_at")
+        )
+        successful_counts = defaultdict(int)
+        failed_counts = defaultdict(int)
+        for item in orders_values:
+            created_at = timezone.localtime(item["created_at"])
+            bucket_key = min((created_at.hour // 3) * 3, 21)
+            if item["status"] == "delivered":
+                successful_counts[bucket_key] += 1
+            elif item["status"] == "cancelled":
+                failed_counts[bucket_key] += 1
+        points = []
+        for hour_start in range(0, 24, 3):
+            points.append({
+                "label": f"{hour_start:02d}:00",
+                "date": today.isoformat(),
+                "display_date": today.strftime("%d/%m"),
+                "successful": successful_counts[hour_start],
+                "failed": failed_counts[hour_start],
+            })
+        return {"range": "day", "points": points}
+
+    if range_key == "month":
+        start_date = today - timedelta(days=29)
+        orders_values = list(
+            Order.objects.filter(created_at__date__gte=start_date, created_at__date__lte=today)
+            .values("status", "created_at")
+        )
+        bucket_meta = []
+        current_start = start_date
+        week_index = 1
+        while current_start <= today:
+            current_end = min(current_start + timedelta(days=6), today)
+            bucket_meta.append((week_index, current_start, current_end))
+            current_start = current_end + timedelta(days=1)
+            week_index += 1
+        successful_counts = defaultdict(int)
+        failed_counts = defaultdict(int)
+        for item in orders_values:
+            created_date = timezone.localtime(item["created_at"]).date()
+            for bucket_index, bucket_start, bucket_end in bucket_meta:
+                if bucket_start <= created_date <= bucket_end:
+                    if item["status"] == "delivered":
+                        successful_counts[bucket_index] += 1
+                    elif item["status"] == "cancelled":
+                        failed_counts[bucket_index] += 1
+                    break
+        points = []
+        for bucket_index, bucket_start, bucket_end in bucket_meta:
+            points.append({
+                "label": f"الأسبوع {bucket_index}",
+                "date": bucket_start.isoformat(),
+                "display_date": f"{bucket_start.day}/{bucket_start.month}",
+                "successful": successful_counts[bucket_index],
+                "failed": failed_counts[bucket_index],
+            })
+        return {"range": "month", "points": points}
+
+    start_date = today - timedelta(days=6)
+    orders_values = list(
+        Order.objects.filter(created_at__date__gte=start_date, created_at__date__lte=today)
+        .values("status", "created_at")
+    )
+    successful_counts = defaultdict(int)
+    failed_counts = defaultdict(int)
+    for item in orders_values:
+        created_date = timezone.localtime(item["created_at"]).date()
+        if item["status"] == "delivered":
+            successful_counts[created_date] += 1
+        elif item["status"] == "cancelled":
+            failed_counts[created_date] += 1
+    points = []
+    for offset in range(7):
+        point_date = start_date + timedelta(days=offset)
+        points.append({
+            "label": ARABIC_WEEKDAY_NAMES.get(point_date.weekday(), point_date.isoformat()),
+            "date": point_date.isoformat(),
+            "display_date": f"{point_date.day}/{point_date.month}",
+            "successful": successful_counts[point_date],
+            "failed": failed_counts[point_date],
+        })
+    return {"range": "week", "points": points}
+
+
+def _build_admin_dashboard_revenue_analysis(range_key):
+    from shop.models import Order
+
+    now = timezone.localtime()
+    today = now.date()
+
+    if range_key == "day":
+        orders_values = list(
+            Order.objects.filter(created_at__date=today, status="delivered").values("created_at", "total_amount")
+        )
+        bucket_totals = defaultdict(Decimal)
+        for item in orders_values:
+            created_at = timezone.localtime(item["created_at"])
+            bucket_key = min((created_at.hour // 3) * 3, 21)
+            bucket_totals[bucket_key] += _safe_decimal(item["total_amount"])
+        points = []
+        for hour_start in range(0, 24, 3):
+            points.append({
+                "label": f"{hour_start:02d}:00",
+                "date": today.isoformat(),
+                "value": float(bucket_totals[hour_start]),
+            })
+        return {"range": "day", "points": points}
+
+    if range_key == "month":
+        start_date = today - timedelta(days=29)
+        orders_values = list(
+            Order.objects.filter(
+                created_at__date__gte=start_date,
+                created_at__date__lte=today,
+                status="delivered",
+            ).values("created_at", "total_amount")
+        )
+        bucket_meta = []
+        current_start = start_date
+        week_index = 1
+        while current_start <= today:
+            current_end = min(current_start + timedelta(days=6), today)
+            bucket_meta.append((week_index, current_start, current_end))
+            current_start = current_end + timedelta(days=1)
+            week_index += 1
+        bucket_totals = defaultdict(Decimal)
+        for item in orders_values:
+            created_date = timezone.localtime(item["created_at"]).date()
+            for bucket_index, bucket_start, bucket_end in bucket_meta:
+                if bucket_start <= created_date <= bucket_end:
+                    bucket_totals[bucket_index] += _safe_decimal(item["total_amount"])
+                    break
+        points = []
+        for bucket_index, bucket_start, bucket_end in bucket_meta:
+            points.append({
+                "label": f"الأسبوع {bucket_index}",
+                "date": bucket_start.isoformat(),
+                "value": float(bucket_totals[bucket_index]),
+            })
+        return {"range": "month", "points": points}
+
+    start_date = today - timedelta(days=6)
+    orders_values = list(
+        Order.objects.filter(
+            created_at__date__gte=start_date,
+            created_at__date__lte=today,
+            status="delivered",
+        ).values("created_at", "total_amount")
+    )
+    daily_totals = defaultdict(Decimal)
+    for item in orders_values:
+        created_date = timezone.localtime(item["created_at"]).date()
+        daily_totals[created_date] += _safe_decimal(item["total_amount"])
+    points = []
+    for offset in range(7):
+        point_date = start_date + timedelta(days=offset)
+        points.append({
+            "label": ARABIC_WEEKDAY_NAMES.get(point_date.weekday(), point_date.isoformat()),
+            "date": point_date.isoformat(),
+            "value": float(daily_totals[point_date]),
+        })
+    return {"range": "week", "points": points}
+
+
+def _serialize_admin_dashboard_pending_actions():
+    from shop.models import Invoice
+
+    pending_approvals = AdminApprovalRequest.objects.filter(status="pending")
+    unsent_invoices_count = Invoice.objects.filter(is_sent=False).count()
+    return [
+        {
+            "key": "payment_requests",
+            "title": "طلبات الدفع",
+            "count": unsent_invoices_count,
+            "subtitle": f"{unsent_invoices_count} طلب بانتظار التحويل",
+            "action_label": "مراجعة",
+            "icon_key": "payment",
+            "color_key": "amber",
+        },
+        {
+            "key": "shop_edit_requests",
+            "title": "تعديل بيانات المحلات",
+            "count": pending_approvals.filter(request_type="shop_edit").count(),
+            "subtitle": f"{pending_approvals.filter(request_type='shop_edit').count()} طلبات تحتاج مراجعة",
+            "action_label": "مراجعة",
+            "icon_key": "shop_edit",
+            "color_key": "blue",
+        },
+        {
+            "key": "image_publish_requests",
+            "title": "طلبات نشر الصور",
+            "count": pending_approvals.filter(request_type="image_publish").count(),
+            "subtitle": f"{pending_approvals.filter(request_type='image_publish').count()} صورة بانتظار التدقيق",
+            "action_label": "مراجعة",
+            "icon_key": "image_publish",
+            "color_key": "pink",
+        },
+        {
+            "key": "offer_requests",
+            "title": "طلبات العروض",
+            "count": pending_approvals.filter(request_type="offer").count(),
+            "subtitle": f"{pending_approvals.filter(request_type='offer').count()} كوبون خصم جديد",
+            "action_label": "مراجعة",
+            "icon_key": "offer",
+            "color_key": "purple",
+        },
+    ]
+
+
+def _serialize_admin_dashboard_recent_activities(limit=10):
+    from shop.models import Driver, Notification
+
+    activities = []
+
+    reviewed_requests = (
+        AdminApprovalRequest.objects
+        .select_related("shop_owner", "reviewed_by")
+        .filter(reviewed_at__isnull=False)
+        .order_by("-reviewed_at")[:limit]
+    )
+    request_type_meta = {
+        "image_publish": ("image_publish", "pink"),
+        "shop_edit": ("shop_edit", "blue"),
+        "offer": ("offer", "purple"),
+    }
+    for approval_request in reviewed_requests:
+        status_verb = "قبول" if approval_request.status == "approved" else "رفض"
+        icon_key, color_key = request_type_meta.get(approval_request.request_type, ("approval", "gray"))
+        subtitle = f"بواسطة {approval_request.reviewed_by.name}" if approval_request.reviewed_by else None
+        activities.append({
+            "id": f"approval_{approval_request.id}",
+            "title": f"{status_verb} {approval_request.shop_owner.shop_name}",
+            "subtitle": subtitle,
+            "created_at": approval_request.reviewed_at,
+            "icon_key": icon_key,
+            "color_key": color_key,
+        })
+
+    recent_drivers = Driver.objects.order_by("-created_at")[:limit]
+    for driver in recent_drivers:
+        activities.append({
+            "id": f"driver_{driver.id}",
+            "title": f"انضمام سائق جديد: {driver.name}",
+            "subtitle": None,
+            "created_at": driver.created_at,
+            "icon_key": "driver",
+            "color_key": "slate",
+        })
+
+    recent_notifications = (
+        Notification.objects
+        .filter(notification_type="system")
+        .order_by("-created_at")[:limit]
+    )
+    for notification in recent_notifications:
+        activities.append({
+            "id": f"notification_{notification.id}",
+            "title": notification.title,
+            "subtitle": notification.message,
+            "created_at": notification.created_at,
+            "icon_key": "system",
+            "color_key": "yellow",
+        })
+
+    activities.sort(key=lambda item: item["created_at"] or timezone.now(), reverse=True)
+    return activities[:limit]
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_dashboard_view(request):
+    permission_error = _require_admin_desktop_dashboard_permission(request)
+    if permission_error:
+        return permission_error
+
+    orders_range = str(request.query_params.get("orders_range") or "week").strip().lower()
+    if orders_range not in {"day", "week", "month"}:
+        orders_range = "week"
+
+    revenue_range = str(request.query_params.get("revenue_range") or "day").strip().lower()
+    if revenue_range not in {"day", "week", "month"}:
+        revenue_range = "day"
+
+    recent_limit = max(min(int(request.query_params.get("recent_limit", 4) or 4), 20), 1)
+
+    return success_response(
+        data={
+            "summary_cards": _serialize_admin_dashboard_summary_cards(),
+            "orders_analysis": _build_admin_dashboard_orders_analysis(orders_range),
+            "revenue_analysis": _build_admin_dashboard_revenue_analysis(revenue_range),
+            "recent_activities": _serialize_admin_dashboard_recent_activities(limit=recent_limit),
+            "pending_actions": _serialize_admin_dashboard_pending_actions(),
+        },
+        message="ØªÙ… Ø¬Ù„Ø¨ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… Ø¨Ù†Ø¬Ø§Ø­",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_dashboard_recent_activities_view(request):
+    permission_error = _require_admin_desktop_dashboard_permission(request)
+    if permission_error:
+        return permission_error
+
+    limit = max(min(int(request.query_params.get("limit", 20) or 20), 50), 1)
+    return success_response(
+        data={
+            "activities": _serialize_admin_dashboard_recent_activities(limit=limit),
+        },
+        message="ØªÙ… Ø¬Ù„Ø¨ Ø§Ù„Ù†Ø´Ø§Ø·Ø§Øª Ø§Ù„Ø£Ø®ÙŠØ±Ø© Ø¨Ù†Ø¬Ø§Ø­",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_dashboard_pending_actions_view(request):
+    permission_error = _require_admin_desktop_dashboard_permission(request)
+    if permission_error:
+        return permission_error
+
+    return success_response(
+        data={
+            "pending_actions": _serialize_admin_dashboard_pending_actions(),
+        },
+        message="ØªÙ… Ø¬Ù„Ø¨ Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø© Ø¨Ù†Ø¬Ø§Ø­",
         request=request,
     )
 

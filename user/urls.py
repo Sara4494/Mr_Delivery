@@ -25,6 +25,13 @@ urlpatterns = [
     path('admin-desktop/stores/<int:shop_id>/', views.admin_desktop_store_detail_view, name='admin_desktop_store_detail'),
     path('admin-desktop/stores/<int:shop_id>/suspend/', views.admin_desktop_store_suspend_view, name='admin_desktop_store_suspend'),
     path('admin-desktop/stores/<int:shop_id>/activate/', views.admin_desktop_store_activate_view, name='admin_desktop_store_activate'),
+    path('admin-desktop/dashboard/', views.admin_desktop_dashboard_view, name='admin_desktop_dashboard'),
+    path('admin-desktop/dashboard/recent-activities/', views.admin_desktop_dashboard_recent_activities_view, name='admin_desktop_dashboard_recent_activities'),
+    path('admin-desktop/dashboard/pending-actions/', views.admin_desktop_dashboard_pending_actions_view, name='admin_desktop_dashboard_pending_actions'),
+    path('admin-desktop/reports/filters/', views.admin_desktop_reports_filters_view, name='admin_desktop_reports_filters'),
+    path('admin-desktop/reports/analytics/', views.admin_desktop_reports_analytics_view, name='admin_desktop_reports_analytics'),
+    path('admin-desktop/reports/stores/<int:shop_id>/preview/', views.admin_desktop_reports_store_preview_view, name='admin_desktop_reports_store_preview'),
+    path('admin-desktop/reports/export/', views.admin_desktop_reports_export_view, name='admin_desktop_reports_export'),
     
     # ==================== Unified Auth ====================
     # تسجيل دخول موحد لجميع المستخدمين
