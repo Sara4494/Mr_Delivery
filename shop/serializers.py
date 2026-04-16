@@ -683,7 +683,20 @@ def _build_chat_message_invoice_payload(obj):
         metadata = obj.metadata if isinstance(getattr(obj, 'metadata', None), dict) else {}
         invoice = metadata.get('invoice')
         if isinstance(invoice, dict) and invoice:
-            return invoice
+            order = getattr(obj, 'order', None)
+            return {
+                'order_id': invoice.get('order_id') or getattr(order, 'id', None),
+                'order_number': invoice.get('order_number') or getattr(order, 'order_number', None),
+                'customer_name': invoice.get('customer_name') or getattr(getattr(order, 'customer', None), 'name', None),
+                'driver_name': invoice.get('driver_name') or getattr(getattr(order, 'driver', None), 'name', None),
+                'currency': invoice.get('currency') or 'جنيه',
+                'payment_method': invoice.get('payment_method'),
+                'collection_amount': invoice.get('collection_amount'),
+                'subtotal': invoice.get('subtotal'),
+                'delivery_fee': invoice.get('delivery_fee'),
+                'total': invoice.get('total'),
+                'items': invoice.get('items') or [],
+            }
 
         order = getattr(obj, 'order', None)
         if not order:
@@ -692,9 +705,44 @@ def _build_chat_message_invoice_payload(obj):
         total_amount = float(order.total_amount or 0)
         delivery_fee = float(order.delivery_fee or 0)
         subtotal = round(max(total_amount - delivery_fee, 0), 2)
+        raw_items = _order_items_to_representation(order.items)
+        items = []
+        for index, item in enumerate(raw_items, start=1):
+            if isinstance(item, dict):
+                name = str(item.get('name') or item.get('title') or item.get('product_name') or item.get('item_name') or f'بند {index}').strip()
+                quantity = item.get('quantity', item.get('qty', item.get('count', 1)))
+                try:
+                    quantity = int(float(quantity))
+                except (TypeError, ValueError):
+                    quantity = 1
+                amount = item.get('amount', item.get('total', item.get('line_total')))
+                if amount in (None, ''):
+                    amount = item.get('price', item.get('unit_price'))
+                    try:
+                        amount = float(amount) * quantity if amount not in (None, '') else None
+                    except (TypeError, ValueError):
+                        amount = None
+                else:
+                    try:
+                        amount = float(amount)
+                    except (TypeError, ValueError):
+                        amount = None
+            else:
+                name = str(item).strip()
+                quantity = 1
+                amount = None
+            if name:
+                items.append({
+                    'name': name,
+                    'quantity': quantity,
+                    'amount': amount,
+                })
         return {
             'order_id': order.id,
             'order_number': order.order_number,
+            'customer_name': getattr(order.customer, 'name', None),
+            'driver_name': getattr(order.driver, 'name', None),
+            'currency': 'جنيه',
             'payment_method': {
                 'code': order.payment_method,
                 'label': order.get_payment_method_display(),
@@ -703,7 +751,7 @@ def _build_chat_message_invoice_payload(obj):
             'subtotal': subtotal,
             'delivery_fee': delivery_fee,
             'total': total_amount,
-            'items': _order_items_to_representation(order.items),
+            'items': items,
         }
 
     message_key = _resolve_message_key(obj.content)

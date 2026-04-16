@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 import json
+import re
 from django.apps import apps as django_apps
 from django.conf import settings
 from django.shortcuts import render
@@ -1144,16 +1145,35 @@ def _parse_driver_order_items(items_value):
                 quantity = int(float(quantity))
             except (TypeError, ValueError):
                 quantity = 1
+            amount = item.get('amount', item.get('total', item.get('line_total')))
+            unit_price = item.get('price', item.get('unit_price'))
+            try:
+                amount = float(amount) if amount not in (None, '') else None
+            except (TypeError, ValueError):
+                amount = None
+            if amount is None and unit_price not in (None, ''):
+                try:
+                    amount = float(unit_price) * quantity
+                except (TypeError, ValueError):
+                    amount = None
 
         else:
             name = str(item or '').strip()
             if not name:
                 continue
             quantity = 1
+            amount = None
+            price_match = re.search(r'price\s*:\s*([0-9]+(?:\.[0-9]+)?)', name, flags=re.IGNORECASE)
+            if price_match:
+                try:
+                    amount = float(price_match.group(1))
+                except (TypeError, ValueError):
+                    amount = None
 
         results.append({
             'name': name,
             'quantity': quantity,
+            'amount': amount,
         })
 
     return results
@@ -1183,6 +1203,9 @@ def _build_driver_order_invoice_payload(order):
     return {
         'order_id': order.id,
         'order_number': order.order_number,
+        'customer_name': getattr(order.customer, 'name', None),
+        'driver_name': getattr(order.driver, 'name', None),
+        'currency': 'جنيه',
         'payment_method': {
             'code': order.payment_method,
             'label': order.get_payment_method_display(),
@@ -2752,6 +2775,9 @@ def driver_order_chat_view(request, order_id):
                 invoice_payload = {
                     'order_id': invoice_payload.get('order_id') or fallback_invoice.get('order_id'),
                     'order_number': invoice_payload.get('order_number') or fallback_invoice.get('order_number'),
+                    'customer_name': invoice_payload.get('customer_name') or fallback_invoice.get('customer_name'),
+                    'driver_name': invoice_payload.get('driver_name') or fallback_invoice.get('driver_name'),
+                    'currency': invoice_payload.get('currency') or fallback_invoice.get('currency'),
                     'payment_method': invoice_payload.get('payment_method') or fallback_invoice.get('payment_method'),
                     'collection_amount': invoice_payload.get('collection_amount', fallback_invoice.get('collection_amount')),
                     'subtotal': invoice_payload.get('subtotal', fallback_invoice.get('subtotal')),
