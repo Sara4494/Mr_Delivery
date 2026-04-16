@@ -82,6 +82,9 @@ def _message_preview(message: DriverChatMessage):
         return f'فاتورة الطلب #{order_number}' if order_number else 'فاتورة جديدة'
     if message.message_type == 'call':
         return 'مكالمة'
+    if (message.metadata or {}).get('card_type') == 'transfer_request':
+        order_number = getattr(getattr(message.conversation_order, 'order', None), 'order_number', None)
+        return f'طلب تحويل الأوردر #{order_number}' if order_number else 'طلب تحويل الأوردر'
     text = str(message.text or '').strip()
     if text:
         return text[:120]
@@ -172,6 +175,7 @@ def serialize_driver_chat_message(message: DriverChatMessage, *, request=None, s
         'invoice_order': serialize_driver_chat_order(message.conversation_order) if message.conversation_order_id else None,
         'client_message_id': message.client_message_id,
         'delivery_status': 'read' if message.is_read else message.delivery_status,
+        'metadata': message.metadata or None,
     }
     if message.call_id:
         payload['call_id'] = message.call.public_id
@@ -834,6 +838,26 @@ def driver_request_transfer(*, conversation: DriverChatConversation, conversatio
     conversation_order.status = 'transfer_requested'
     conversation_order.transfer_reason = reason
     conversation_order.save(update_fields=['status', 'transfer_reason', 'updated_at'])
+    transfer_request_message = create_message(
+        conversation=conversation,
+        sender_type='driver',
+        message_type='system',
+        text=None,
+        conversation_order=conversation_order,
+        metadata={
+            'card_type': 'transfer_request',
+            'render_mode': 'order_card_only',
+            'title': 'طلب تحويل الأوردر',
+            'subtitle': 'مرسل من الدليفري للمتجر',
+            'reason': reason,
+        },
+    )
+    broadcast_order_updated(conversation_order)
+    broadcast_message_created(transfer_request_message, request=request, scope=scope, base_url=base_url)
+    broadcast_unread_updated(conversation)
+    broadcast_conversation_snapshot(conversation, request=request, scope=scope, base_url=base_url)
+    _log_sensitive('request_transfer', order_id=conversation_order.order_id, conversation_id=conversation.public_id, driver_id=conversation.driver_id, reason=reason)
+    return conversation_order
     message = create_message(
         conversation=conversation,
         sender_type='driver',
@@ -1089,4 +1113,3 @@ def relay_webrtc_event(*, conversation: DriverChatConversation, event_type, data
         driver=conversation.driver,
         persist=False,
     )
-

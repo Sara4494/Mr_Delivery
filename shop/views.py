@@ -2466,6 +2466,9 @@ def driver_order_transfer_view(request, order_id):
         previous_driver_accepted_at=old_driver_accepted_at,
         request=request,
     )
+    if old_driver:
+        record_driver_rejection(order, old_driver, selected_reason['key'])
+        sync_unavailable_order_for_driver(old_driver, order.id, order=order)
 
     return success_response(
         data={},
