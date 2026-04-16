@@ -2509,6 +2509,80 @@ def driver_order_chat_open_view(request, order_id):
     )
 
 
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_order_chat_view(request, order_id):
+    """
+    Driver chat bootstrap for the driver-customer chat.
+    GET /api/driver/orders/{id}/chat/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
+    if not order:
+        return error_response(
+            message=t(request, 'driver_order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    conversation_id = f'order_{order.id}_driver_customer'
+    ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
+    can_open = bool(order.driver_chat_opened_at)
+
+    messages_qs = (
+        ChatMessage.objects
+        .filter(order=order, chat_type='driver_customer')
+        .select_related('sender_customer', 'sender_shop_owner', 'sender_employee', 'sender_driver')
+        .order_by('-created_at')[:50]
+    )
+    messages = [_chat_message_payload(message, request=request) for message in reversed(list(messages_qs))]
+    normalized_messages = [
+        {
+            'id': item.get('id'),
+            'type': item.get('message_type'),
+            'message_type': item.get('message_type'),
+            'sender': item.get('sender_type'),
+            'sender_type': item.get('sender_type'),
+            'sender_name': item.get('sender_name'),
+            'text': item.get('content'),
+            'message': item.get('content'),
+            'content': item.get('content'),
+            'image_url': item.get('image_file_url'),
+            'audio_url': item.get('audio_file_url'),
+            'voice_duration_seconds': None,
+            'sent_at': item.get('created_at'),
+            'created_at': item.get('created_at'),
+            'delivery_status': 'read' if item.get('is_read') else 'sent',
+            'is_read': item.get('is_read'),
+        }
+        for item in messages
+    ]
+
+    data = {
+        'conversation_id': conversation_id,
+        'order_id': order.id,
+        'chat_type': 'driver_customer',
+        'can_open': can_open,
+        'ws_path': ws_path,
+        'messages': normalized_messages,
+    }
+
+    if not can_open:
+        return success_response(
+            data=data,
+            message='هذه المحادثة غير متاحة الآن',
+            status_code=status.HTTP_200_OK,
+        )
+
+    return success_response(
+        data=data,
+        message=t(request, 'driver_chat_opened_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
 # Shop Status APIs
 @api_view(['GET', 'PUT'])
 @permission_classes([IsShopOwnerOrEmployee])
