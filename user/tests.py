@@ -4,6 +4,7 @@ from rest_framework.test import APIClient
 from user.models import (
     ADMIN_DESKTOP_FULL_ADMIN_ROLE,
     AdminApprovalRequest,
+    AdminDesktopActivityLog,
     AdminDesktopUser,
     ShopCategory,
     ShopOwner,
@@ -22,6 +23,7 @@ class AdminDesktopPermissionsTests(SimpleTestCase):
     def test_dashboard_manager_permissions_exclude_app_updates_and_include_admin_management(self):
         permissions = get_admin_desktop_role_permissions("dashboard_manager")
         self.assertIn("admin_management", permissions)
+        self.assertIn("activity_logs", permissions)
         self.assertNotIn("app_updates", permissions)
 
     def test_store_supervisor_permissions_are_limited(self):
@@ -39,16 +41,16 @@ class AdminDesktopPermissionsTests(SimpleTestCase):
     def test_technical_support_permissions_are_limited(self):
         self.assertEqual(
             get_admin_desktop_role_permissions("technical_support"),
-            ["support_center", "abuse_reports"],
+            ["support_actions", "support_center", "abuse_reports"],
         )
 
     def test_normalize_permissions_caps_to_role_permissions(self):
         self.assertEqual(
             _normalize_admin_desktop_permissions(
                 "technical_support",
-                ["support_center", "app_updates", "dashboard", "abuse_reports"],
+                ["support_actions", "support_center", "app_updates", "dashboard", "abuse_reports"],
             ),
-            ["support_center", "abuse_reports"],
+            ["support_actions", "support_center", "abuse_reports"],
         )
 
     def test_role_catalog_exposes_admin_user_capabilities(self):
@@ -269,7 +271,7 @@ class AbuseReportsFlowTests(TestCase):
         report = AbuseReport.objects.first()
         self.assertEqual(report.reporter_customer, self.customer)
         self.assertEqual(report.target_driver, self.driver)
-        self.assertEqual(response.data["data"]["report"]["public_id"], report.public_id)
+        self.assertEqual(response.data["data"], {})
 
     def test_three_warnings_suspend_target_account(self):
         report = AbuseReport.objects.create(
@@ -304,3 +306,121 @@ class AbuseReportsFlowTests(TestCase):
         self.assertEqual(report.status, "closed")
         self.assertEqual(report.resolution_action, "warning")
         self.assertTrue(response.data["data"]["auto_suspended"])
+
+
+class SupportActionsEndpointsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = AdminDesktopUser.objects.create(
+            name="Support Actions Admin",
+            phone_number="+201000000030",
+            email="support-actions@example.com",
+            password="secret123",
+            role="technical_support",
+        )
+        self.customer = Customer.objects.create(
+            name="عميل الدعم",
+            phone_number="+201000000031",
+            password="secret123",
+            is_verified=True,
+        )
+        self.driver = Driver.objects.create(
+            name="دليفري الدعم",
+            phone_number="+201000000032",
+            password="secret123",
+            is_verified=True,
+            status="available",
+        )
+        self.shop_owner = ShopOwner.objects.create(
+            owner_name="صاحب المتجر",
+            shop_name="متجر الدعم",
+            shop_number="S7001",
+            phone_number="+201000000033",
+            password="secret123",
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_support_actions_list_returns_tab_metadata(self):
+        response = self.client.get("/api/admin-desktop/support-actions/accounts/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["tab"]["key"], "support-actions")
+        self.assertEqual(response.data["data"]["tab"]["label"], "إدارة الحسابات")
+        self.assertGreaterEqual(len(response.data["data"]["accounts"]), 3)
+
+    def test_support_admin_can_suspend_and_activate_driver(self):
+        suspend_response = self.client.post(
+            f"/api/admin-desktop/support-actions/accounts/driver/{self.driver.id}/action/",
+            {
+                "action": "suspend",
+                "admin_notes": "مراجعة من الدعم الفني",
+            },
+            format="json",
+        )
+
+        self.assertEqual(suspend_response.status_code, 200)
+        moderation = AccountModerationStatus.objects.get(driver=self.driver)
+        self.assertTrue(moderation.is_suspended)
+        self.assertEqual(suspend_response.data["data"]["action"], "suspend")
+        self.assertEqual(suspend_response.data["data"]["account"]["status"], "suspended")
+
+        activate_response = self.client.post(
+            f"/api/admin-desktop/support-actions/accounts/driver/{self.driver.id}/action/",
+            {
+                "action": "activate",
+                "admin_notes": "تمت المراجعة",
+            },
+            format="json",
+        )
+
+        self.assertEqual(activate_response.status_code, 200)
+        moderation.refresh_from_db()
+        self.assertFalse(moderation.is_suspended)
+        self.assertEqual(activate_response.data["data"]["action"], "activate")
+        self.assertEqual(activate_response.data["data"]["account"]["status"], "active")
+
+
+class AdminDesktopActivityLogsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.dashboard_manager = AdminDesktopUser.objects.create(
+            name="Dashboard Manager",
+            phone_number="+201000000040",
+            email="dashboard-manager@example.com",
+            password="secret123",
+            role="dashboard_manager",
+        )
+        self.support_user = AdminDesktopUser.objects.create(
+            name="Support User",
+            phone_number="+201000000041",
+            email="support-user@example.com",
+            password="secret123",
+            role="technical_support",
+        )
+        AdminDesktopActivityLog.objects.create(
+            actor=self.dashboard_manager,
+            actor_name=self.dashboard_manager.name,
+            actor_role=self.dashboard_manager.role,
+            section_key="support_actions",
+            section_label="إدارة الحسابات",
+            action_key="suspend",
+            action_label="تعليق",
+            action_category="suspension_actions",
+            target_name="حساب تجريبي",
+            details="تم تعليق حساب تجريبي",
+        )
+
+    def test_dashboard_manager_can_list_activity_logs(self):
+        self.client.force_authenticate(user=self.dashboard_manager)
+        response = self.client.get("/api/admin-desktop/activity-logs/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["tab"]["key"], "activity-logs")
+        self.assertEqual(response.data["data"]["tab"]["label"], "سجل النشاطات")
+        self.assertEqual(len(response.data["data"]["logs"]), 1)
+
+    def test_technical_support_cannot_access_activity_logs(self):
+        self.client.force_authenticate(user=self.support_user)
+        response = self.client.get("/api/admin-desktop/activity-logs/")
+
+        self.assertEqual(response.status_code, 403)

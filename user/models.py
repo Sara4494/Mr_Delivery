@@ -31,7 +31,9 @@ ADMIN_DESKTOP_PERMISSION_CHOICES = (
     ("approvals", "الموافقات"),
     ("invoices_payments", "الفواتير والمدفوعات"),
     ("reports", "التقارير"),
+    ("activity_logs", "سجل النشاطات"),
     ("abuse_reports", "بلاغات الإساءة"),
+    ("support_actions", "إدارة الحسابات"),
     ("support_center", "مركز الدعم"),
     ("app_updates", "تحديثات التطبيق"),
     ("notifications", "التنبيهات"),
@@ -67,6 +69,7 @@ def get_admin_desktop_role_permissions(role: str) -> list[str]:
         ]
     if role == "technical_support":
         return [
+            "support_actions",
             "support_center",
             "abuse_reports",
         ]
@@ -190,6 +193,53 @@ class AdminDesktopUser(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.get_role_display()} ({self.phone_number})"
+
+
+class AdminDesktopActivityLog(models.Model):
+    ACTION_CATEGORY_CHOICES = (
+        ("all", "الكل"),
+        ("data_operations", "عمليات البيانات"),
+        ("review_actions", "عمليات المراجعة"),
+        ("suspension_actions", "إجراءات التعليق"),
+    )
+
+    actor = models.ForeignKey(
+        "user.AdminDesktopUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activity_logs",
+        verbose_name="المنفذ",
+    )
+    actor_name = models.CharField(max_length=120, verbose_name="اسم المنفذ")
+    actor_role = models.CharField(max_length=50, choices=ADMIN_DESKTOP_ROLE_CHOICES, verbose_name="الدور")
+    section_key = models.CharField(max_length=60, verbose_name="القسم")
+    section_label = models.CharField(max_length=120, verbose_name="القسم المعروض")
+    action_key = models.CharField(max_length=60, verbose_name="نوع الإجراء")
+    action_label = models.CharField(max_length=120, verbose_name="نوع الإجراء المعروض")
+    action_category = models.CharField(
+        max_length=30,
+        choices=ACTION_CATEGORY_CHOICES,
+        default="data_operations",
+        verbose_name="تصنيف نوع الإجراء",
+    )
+    target_name = models.CharField(max_length=150, blank=True, null=True, verbose_name="اسم الهدف")
+    details = models.TextField(blank=True, null=True, verbose_name="التفاصيل")
+    metadata = models.JSONField(default=dict, blank=True, verbose_name="بيانات إضافية")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="وقت التنفيذ")
+
+    class Meta:
+        verbose_name = "سجل نشاط إداري"
+        verbose_name_plural = "سجل النشاطات الإدارية"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["actor_role", "-created_at"]),
+            models.Index(fields=["action_category", "-created_at"]),
+            models.Index(fields=["section_key", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.actor_name} - {self.action_label}"
 
 
 class AdminApprovalRequest(models.Model):

@@ -6340,6 +6340,59 @@
           ]
         },
         {
+          "name": "Activity Logs",
+          "item": [
+            {
+              "name": "List Activity Logs - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/activity-logs/?search=&role=all&action_category=all&page=1&page_size=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "activity-logs",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "search",
+                      "value": ""
+                    },
+                    {
+                      "key": "role",
+                      "value": "all"
+                    },
+                    {
+                      "key": "action_category",
+                      "value": "all"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "??? ???????? ???????? ???????? ????? ?????? ?? ????? ??? ????? ???? ???????."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
           "name": "Store Management",
           "item": [
             {
@@ -7043,6 +7096,174 @@
                   ]
                 },
                 "description": "إغلاق البلاغ بدون اتخاذ أي إجراء على الحساب."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Support Actions",
+          "item": [
+            {
+              "name": "List Support Actions Accounts - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/support-actions/accounts/?search=&account_type=all&status=all&page=1&page_size=10",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "support-actions",
+                    "accounts",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "search",
+                      "value": ""
+                    },
+                    {
+                      "key": "account_type",
+                      "value": "all"
+                    },
+                    {
+                      "key": "status",
+                      "value": "all"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "10"
+                    }
+                  ]
+                },
+                "description": "????? ????? ???????? ????? ????? ?? ????? support-actions ???????? ??????? ???? ??????."
+              },
+              "response": []
+            },
+            {
+              "name": "Suspend Account - Support Actions",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"suspend\",\n  \"admin_notes\": \"?? ????? ?????? ?? ???? ????? ????????\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/support-actions/accounts/{{support_action_account_type}}/{{support_action_account_id}}/action/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "support-actions",
+                    "accounts",
+                    "{{support_action_account_type}}",
+                    "{{support_action_account_id}}",
+                    "action",
+                    ""
+                  ]
+                },
+                "description": "????? ?????? ?????? ?? ???? ????? ????????."
+              },
+              "response": []
+            },
+            {
+              "name": "Activate Account - Support Actions",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"activate\",\n  \"admin_notes\": \"?? ?? ????? ?????? ?? ???? ????? ????????\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/support-actions/accounts/{{support_action_account_type}}/{{support_action_account_id}}/action/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "support-actions",
+                    "accounts",
+                    "{{support_action_account_type}}",
+                    "{{support_action_account_id}}",
+                    "action",
+                    ""
+                  ]
+                },
+                "description": "?? ????? ?????? ?????? ?? ???? ????? ????????."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Account - Support Actions",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"delete\",\n  \"admin_notes\": \"?? ??? ?????? ?? ???? ????? ????????\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/support-actions/accounts/{{support_action_account_type}}/{{support_action_account_id}}/action/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "support-actions",
+                    "accounts",
+                    "{{support_action_account_type}}",
+                    "{{support_action_account_id}}",
+                    "action",
+                    ""
+                  ]
+                },
+                "description": "??? ?????? ?????? ?? ???? ????? ????????."
               },
               "response": []
             }

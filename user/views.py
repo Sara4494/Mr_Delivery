@@ -23,6 +23,7 @@ from .models import (
     ADMIN_DESKTOP_READONLY_ADMIN_ROLES,
     ADMIN_DESKTOP_ROLE_CHOICES,
     AdminApprovalRequest,
+    AdminDesktopActivityLog,
     AdminDesktopUser,
     ShopCategory,
     ShopOwner,
@@ -541,6 +542,18 @@ def admin_desktop_users_view(request):
             request=request,
         )
 
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="admin_management",
+        section_label="الأدوار والأذونات",
+        action_key="create",
+        action_label="إضافة",
+        action_category="data_operations",
+        target_name=user.name,
+        details=f"إضافة حساب إداري جديد بدور {user.get_role_display()}",
+        metadata={"user_id": user.id, "role": user.role},
+    )
+
     return success_response(
         data={"user": _serialize_admin_desktop_user(request, user)},
         message="تم إضافة مستخدم الديسكتوب بنجاح",
@@ -626,6 +639,17 @@ def admin_desktop_user_detail_view(request, user_id):
                     request=request,
                 )
 
+        _log_admin_desktop_activity(
+            request.user,
+            section_key="admin_management",
+            section_label="الأدوار والأذونات",
+            action_key="update",
+            action_label="تعديل",
+            action_category="data_operations",
+            target_name=target_user.name,
+            details=f"تحديث بيانات الحساب الإداري {target_user.name}",
+            metadata={"user_id": target_user.id, "updated_fields": update_fields},
+        )
         return success_response(
             data={"user": _serialize_admin_desktop_user(request, target_user)},
             message="تم تحديث مستخدم الديسكتوب بنجاح",
@@ -639,6 +663,17 @@ def admin_desktop_user_detail_view(request, user_id):
             request=request,
         )
 
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="admin_management",
+        section_label="الأدوار والأذونات",
+        action_key="delete",
+        action_label="حذف",
+        action_category="data_operations",
+        target_name=target_user.name,
+        details=f"حذف الحساب الإداري {target_user.name}",
+        metadata={"user_id": target_user.id, "role": target_user.role},
+    )
     target_user.delete()
     return success_response(
         message="تم حذف مستخدم الديسكتوب بنجاح",
@@ -1091,6 +1126,17 @@ def admin_desktop_approval_request_approve_view(request, approval_request_id):
                 request=request,
             )
 
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="approvals",
+        section_label="الموافقات",
+        action_key="approve",
+        action_label="اعتماد",
+        action_category="review_actions",
+        target_name=approval_request.shop_owner.shop_name,
+        details=f"اعتماد طلب {approval_request.get_request_type_display()}",
+        metadata={"approval_request_id": approval_request.id, "request_type": approval_request.request_type},
+    )
     return success_response(
         data=serialize_admin_approval_request_detail(approval_request, request=request),
         message="approval_request_approved_successfully",
@@ -1126,6 +1172,17 @@ def admin_desktop_approval_request_reject_view(request, approval_request_id):
                 request=request,
             )
 
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="approvals",
+        section_label="الموافقات",
+        action_key="reject",
+        action_label="رفض",
+        action_category="review_actions",
+        target_name=approval_request.shop_owner.shop_name,
+        details=rejection_reason or f"رفض طلب {approval_request.get_request_type_display()}",
+        metadata={"approval_request_id": approval_request.id, "request_type": approval_request.request_type},
+    )
     return success_response(
         data=serialize_admin_approval_request_detail(approval_request, request=request),
         message="approval_request_rejected_successfully",
@@ -1364,6 +1421,18 @@ def admin_desktop_store_suspend_view(request, shop_id):
         update_fields.append("admin_notes")
     shop.save(update_fields=update_fields)
 
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="store_management",
+        section_label="إدارة المتجر",
+        action_key="suspend",
+        action_label="تعليق",
+        action_category="suspension_actions",
+        target_name=shop.shop_name,
+        details=reason,
+        metadata={"shop_id": shop.id, "duration_days": duration_days},
+    )
+
     return success_response(
         data={
             "store": _serialize_admin_store_list_item(request, shop),
@@ -1407,6 +1476,18 @@ def admin_desktop_store_activate_view(request, shop_id):
         update_fields.append("admin_notes")
     shop.save(update_fields=update_fields)
 
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="store_management",
+        section_label="إدارة المتجر",
+        action_key="activate",
+        action_label="إلغاء التعليق",
+        action_category="suspension_actions",
+        target_name=shop.shop_name,
+        details=str(admin_notes).strip() or f"تمت إعادة تفعيل المتجر {shop.shop_name}",
+        metadata={"shop_id": shop.id},
+    )
+
     return success_response(
         data={"store": _serialize_admin_store_list_item(request, shop)},
         message="تم تفعيل المتجر بنجاح",
@@ -1424,6 +1505,16 @@ def _require_admin_desktop_reports_permission(request):
     )
 
 
+def _require_admin_desktop_activity_logs_permission(request):
+    if _has_admin_desktop_permission(request.user, "activity_logs"):
+        return None
+    return error_response(
+        message="ليست لديك صلاحية لعرض سجل النشاطات",
+        status_code=status.HTTP_403_FORBIDDEN,
+        request=request,
+    )
+
+
 def _require_admin_desktop_abuse_reports_permission(request):
     if _has_admin_desktop_permission(request.user, "abuse_reports"):
         return None
@@ -1432,6 +1523,240 @@ def _require_admin_desktop_abuse_reports_permission(request):
         status_code=status.HTTP_403_FORBIDDEN,
         request=request,
     )
+
+
+def _log_admin_desktop_activity(
+    actor,
+    *,
+    section_key,
+    section_label,
+    action_key,
+    action_label,
+    action_category,
+    target_name=None,
+    details=None,
+    metadata=None,
+):
+    if not actor:
+        return None
+    return AdminDesktopActivityLog.objects.create(
+        actor=actor,
+        actor_name=getattr(actor, "name", None) or "مستخدم غير معروف",
+        actor_role=getattr(actor, "role", None) or ADMIN_DESKTOP_FULL_ADMIN_ROLE,
+        section_key=section_key,
+        section_label=section_label,
+        action_key=action_key,
+        action_label=action_label,
+        action_category=action_category,
+        target_name=target_name,
+        details=details,
+        metadata=metadata or {},
+    )
+
+
+def _require_admin_desktop_support_actions_permission(request):
+    if _has_admin_desktop_permission(request.user, "support_actions"):
+        return None
+    return error_response(
+        message="ليست لديك صلاحية لإدارة الحسابات",
+        status_code=status.HTTP_403_FORBIDDEN,
+        request=request,
+    )
+
+
+def _support_action_type_label(account_type):
+    return {
+        "customer": "عميل",
+        "shop_owner": "متجر",
+        "driver": "دليفري",
+    }.get(account_type, account_type)
+
+
+def _support_action_status_label(status_key):
+    return {
+        "active": "نشط",
+        "pending_review": "قيد المراجعة",
+        "suspended": "معلق",
+    }.get(status_key, status_key)
+
+
+def _get_support_action_pending_targets():
+    from shop.models import AbuseReport
+
+    pending_targets = {"customer": set(), "shop_owner": set(), "driver": set()}
+    rows = AbuseReport.objects.filter(status__in=["pending_review", "high_risk"]).values(
+        "target_type",
+        "target_customer_id",
+        "target_shop_owner_id",
+        "target_driver_id",
+    )
+    for item in rows:
+        if item["target_type"] == "customer" and item["target_customer_id"]:
+            pending_targets["customer"].add(item["target_customer_id"])
+        elif item["target_type"] == "shop_owner" and item["target_shop_owner_id"]:
+            pending_targets["shop_owner"].add(item["target_shop_owner_id"])
+        elif item["target_type"] == "driver" and item["target_driver_id"]:
+            pending_targets["driver"].add(item["target_driver_id"])
+    return pending_targets
+
+
+def _serialize_support_action_account(request, account, account_type, pending_targets=None):
+    pending_targets = pending_targets or {"customer": set(), "shop_owner": set(), "driver": set()}
+    type_label = _support_action_type_label(account_type)
+    profile_image_url = _build_media_url(request, getattr(account, "profile_image", None))
+
+    if account_type == "shop_owner":
+        status_key = "suspended" if getattr(account, "admin_status", None) == "suspended" or not getattr(account, "is_active", True) else "active"
+        if status_key == "active" and account.id in pending_targets["shop_owner"]:
+            status_key = "pending_review"
+        name = getattr(account, "shop_name", None) or getattr(account, "owner_name", None)
+    else:
+        moderation = getattr(account, "moderation_status", None)
+        status_key = "suspended" if moderation and moderation.is_suspended else "active"
+        if status_key == "active" and account.id in pending_targets[account_type]:
+            status_key = "pending_review"
+        name = getattr(account, "name", None)
+
+    return {
+        "id": account.id,
+        "account_type": account_type,
+        "account_type_label": type_label,
+        "name": name,
+        "phone_number": getattr(account, "phone_number", None),
+        "joined_at": getattr(account, "created_at", None),
+        "status": status_key,
+        "status_label": _support_action_status_label(status_key),
+        "profile_image_url": profile_image_url,
+        "actions": {
+            "can_suspend": status_key != "suspended",
+            "can_activate": status_key == "suspended",
+            "can_delete": True,
+        },
+    }
+
+
+def _build_support_actions_accounts(request):
+    from shop.models import Customer, Driver
+
+    search = str(request.query_params.get("search", "") or "").strip()
+    account_type = str(request.query_params.get("account_type", "all") or "all").strip().lower()
+    status_filter = str(request.query_params.get("status", "all") or "all").strip().lower()
+    page = max(int(request.query_params.get("page", 1) or 1), 1)
+    page_size = max(min(int(request.query_params.get("page_size", 10) or 10), 100), 1)
+    pending_targets = _get_support_action_pending_targets()
+
+    customers_qs = Customer.objects.select_related("moderation_status").all()
+    shops_qs = ShopOwner.objects.select_related("moderation_status").all()
+    drivers_qs = Driver.objects.select_related("moderation_status").all()
+
+    if search:
+        customers_qs = customers_qs.filter(Q(name__icontains=search) | Q(phone_number__icontains=search))
+        shops_qs = shops_qs.filter(
+            Q(shop_name__icontains=search)
+            | Q(owner_name__icontains=search)
+            | Q(phone_number__icontains=search)
+        )
+        drivers_qs = drivers_qs.filter(Q(name__icontains=search) | Q(phone_number__icontains=search))
+
+    accounts = []
+    if account_type in {"all", "customer"}:
+        accounts.extend(_serialize_support_action_account(request, item, "customer", pending_targets=pending_targets) for item in customers_qs)
+    if account_type in {"all", "shop_owner"}:
+        accounts.extend(_serialize_support_action_account(request, item, "shop_owner", pending_targets=pending_targets) for item in shops_qs)
+    if account_type in {"all", "driver"}:
+        accounts.extend(_serialize_support_action_account(request, item, "driver", pending_targets=pending_targets) for item in drivers_qs)
+
+    accounts.sort(key=lambda item: item.get("joined_at") or timezone.now(), reverse=True)
+    if status_filter in {"active", "pending_review", "suspended"}:
+        accounts = [item for item in accounts if item["status"] == status_filter]
+
+    total_count = len(accounts)
+    total_pages = ceil(total_count / page_size) if total_count else 1
+    start = (page - 1) * page_size
+
+    def _count(type_key):
+        return len([item for item in accounts if item["account_type"] == type_key])
+
+    return {
+        "summary": {
+            "total_accounts": total_count,
+            "active_accounts": len([item for item in accounts if item["status"] == "active"]),
+            "pending_review_accounts": len([item for item in accounts if item["status"] == "pending_review"]),
+            "suspended_accounts": len([item for item in accounts if item["status"] == "suspended"]),
+        },
+        "tab": {"key": "support-actions", "label": "إدارة الحسابات"},
+        "filters": {
+            "search": search,
+            "account_type": account_type,
+            "status": status_filter,
+            "account_types": [
+                {"key": "all", "label": "الجميع", "count": total_count},
+                {"key": "customer", "label": "العملاء", "count": _count("customer")},
+                {"key": "shop_owner", "label": "المتاجر", "count": _count("shop_owner")},
+                {"key": "driver", "label": "الدليفري", "count": _count("driver")},
+            ],
+            "statuses": [
+                {"key": "all", "label": "كل الحالات"},
+                {"key": "active", "label": "نشط"},
+                {"key": "suspended", "label": "معلق"},
+                {"key": "pending_review", "label": "قيد المراجعة"},
+            ],
+        },
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_previous": page > 1,
+        },
+        "accounts": accounts[start:start + page_size],
+    }
+
+
+def _resolve_support_action_target(account_type, account_id):
+    from shop.models import AccountModerationStatus, Customer, Driver
+
+    account_type = str(account_type or "").strip().lower()
+    if account_type == "customer":
+        account = Customer.objects.select_related("moderation_status").filter(id=account_id).first()
+        if not account:
+            return None, None, "الحساب غير موجود"
+        moderation, _ = AccountModerationStatus.objects.get_or_create(customer=account)
+        return account, moderation, None
+    if account_type == "driver":
+        account = Driver.objects.select_related("moderation_status").filter(id=account_id).first()
+        if not account:
+            return None, None, "الحساب غير موجود"
+        moderation, _ = AccountModerationStatus.objects.get_or_create(driver=account)
+        return account, moderation, None
+    if account_type == "shop_owner":
+        account = ShopOwner.objects.select_related("moderation_status").filter(id=account_id).first()
+        if not account:
+            return None, None, "الحساب غير موجود"
+        moderation, _ = AccountModerationStatus.objects.get_or_create(shop_owner=account)
+        return account, moderation, None
+    return None, None, "نوع الحساب غير صحيح"
+
+
+def _create_support_action_notification(account_type, account, title, message, data=None):
+    from shop.models import Notification
+
+    payload = {
+        "notification_type": "system",
+        "title": title,
+        "message": message,
+        "data": data or {},
+    }
+    if account_type == "customer":
+        payload["customer"] = account
+    elif account_type == "driver":
+        payload["driver"] = account
+    elif account_type == "shop_owner":
+        payload["shop_owner"] = account
+    else:
+        return None
+    return Notification.objects.create(**payload)
 
 
 def _admin_abuse_actor_name(obj, actor_type):
@@ -2320,6 +2645,27 @@ def admin_desktop_abuse_report_resolve_view(request, report_id):
             request=request,
         )
 
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="abuse_reports",
+        section_label="تقارير إساءة الاستخدام",
+        action_key=action,
+        action_label={
+            "warning": "تحذير",
+            "suspend": "تعليق",
+            "close_no_action": "إغلاق",
+        }.get(action, action),
+        action_category="review_actions" if action in {"warning", "close_no_action"} else "suspension_actions",
+        target_name=_admin_abuse_actor_name(report.target, report.target_type),
+        details=f"تمت مراجعة البلاغ {report.public_id}",
+        metadata={
+            "report_id": report.id,
+            "report_number": report.public_id,
+            "target_type": report.target_type,
+            "auto_suspended": auto_suspended,
+        },
+    )
+
     return success_response(
         data={
             "report": _serialize_admin_abuse_report_detail(request, report),
@@ -2327,6 +2673,286 @@ def admin_desktop_abuse_report_resolve_view(request, report_id):
             "warnings_count": moderation.warnings_count if moderation else 0,
         },
         message="تم تحديث حالة البلاغ بنجاح",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_support_actions_accounts_view(request):
+    permission_error = _require_admin_desktop_support_actions_permission(request)
+    if permission_error:
+        return permission_error
+
+    return success_response(
+        data=_build_support_actions_accounts(request),
+        message="تم جلب إدارة الحسابات بنجاح",
+        request=request,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_support_actions_account_action_view(request, account_type, account_id):
+    permission_error = _require_admin_desktop_support_actions_permission(request)
+    if permission_error:
+        return permission_error
+
+    action = str(request.data.get("action") or "").strip().lower()
+    admin_notes = str(request.data.get("admin_notes") or "").strip()
+    if action not in {"suspend", "activate", "delete"}:
+        return error_response(
+            message="الإجراء غير صحيح",
+            errors={"action": ["الإجراء يجب أن يكون suspend أو activate أو delete"]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    account, moderation, error_message = _resolve_support_action_target(account_type, account_id)
+    if error_message:
+        return error_response(
+            message=error_message,
+            status_code=status.HTTP_404_NOT_FOUND if "غير موجود" in error_message else status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    account_type = str(account_type or "").strip().lower()
+    account_name = (
+        getattr(account, "shop_name", None)
+        or getattr(account, "owner_name", None)
+        or getattr(account, "name", None)
+        or f"#{account.id}"
+    )
+
+    if action == "delete":
+        _log_admin_desktop_activity(
+            request.user,
+            section_key="support_actions",
+            section_label="إدارة الحسابات",
+            action_key="delete",
+            action_label="حذف",
+            action_category="data_operations",
+            target_name=account_name,
+            details=admin_notes or f"تم حذف حساب {account_name}",
+            metadata={"account_type": account_type, "account_id": account.id},
+        )
+        account.delete()
+        return success_response(
+            data={},
+            message="تم حذف الحساب بنجاح",
+            request=request,
+        )
+
+    now = timezone.now()
+
+    if action == "suspend":
+        moderation.is_suspended = True
+        moderation.suspended_at = now
+        moderation.suspension_reason = admin_notes or "تم تعليق الحساب من قبل الدعم الفني"
+        moderation.save(
+            update_fields=[
+                "is_suspended",
+                "suspended_at",
+                "suspension_reason",
+                "updated_at",
+            ]
+        )
+
+        if account_type == "shop_owner":
+            account.admin_status = "suspended"
+            account.is_active = False
+            account.suspension_reason = moderation.suspension_reason
+            account.suspension_started_at = now
+            account.suspension_ends_at = None
+            update_fields = [
+                "admin_status",
+                "is_active",
+                "suspension_reason",
+                "suspension_started_at",
+                "suspension_ends_at",
+            ]
+            if hasattr(account, "admin_notes"):
+                account.admin_notes = admin_notes or None
+                update_fields.append("admin_notes")
+            account.save(update_fields=update_fields)
+
+        _create_support_action_notification(
+            account_type,
+            account,
+            "تم تعليق الحساب",
+            "تم تعليق حسابك من قبل الدعم الفني. يمكنك التواصل مع الدعم لمراجعة الحالة.",
+            data={"action": "suspend", "account_type": account_type, "account_id": account.id},
+        )
+        _log_admin_desktop_activity(
+            request.user,
+            section_key="support_actions",
+            section_label="إدارة الحسابات",
+            action_key="suspend",
+            action_label="تعليق",
+            action_category="suspension_actions",
+            target_name=account_name,
+            details=admin_notes or f"تم تعليق حساب {account_name}",
+            metadata={"account_type": account_type, "account_id": account.id},
+        )
+        return success_response(
+            data={
+                "action": "suspend",
+                "account": _serialize_support_action_account(request, account, account_type),
+            },
+            message=f"تم تعليق حساب {account_name} بنجاح",
+            request=request,
+        )
+
+    moderation.is_suspended = False
+    moderation.suspended_at = None
+    moderation.suspension_reason = None
+    moderation.save(
+        update_fields=[
+            "is_suspended",
+            "suspended_at",
+            "suspension_reason",
+            "updated_at",
+        ]
+    )
+
+    if account_type == "shop_owner":
+        account.admin_status = "active"
+        account.is_active = True
+        account.suspension_reason = None
+        account.suspension_started_at = None
+        account.suspension_ends_at = None
+        update_fields = [
+            "admin_status",
+            "is_active",
+            "suspension_reason",
+            "suspension_started_at",
+            "suspension_ends_at",
+        ]
+        if hasattr(account, "admin_notes"):
+            account.admin_notes = admin_notes or None
+            update_fields.append("admin_notes")
+        account.save(update_fields=update_fields)
+
+    _create_support_action_notification(
+        account_type,
+        account,
+        "تم إعادة تفعيل الحساب",
+        "تمت إعادة تفعيل حسابك من قبل الدعم الفني ويمكنك استخدام التطبيق مرة أخرى.",
+        data={"action": "activate", "account_type": account_type, "account_id": account.id},
+    )
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="support_actions",
+        section_label="إدارة الحسابات",
+        action_key="activate",
+        action_label="إلغاء التعليق",
+        action_category="suspension_actions",
+        target_name=account_name,
+        details=admin_notes or f"تمت إعادة تفعيل حساب {account_name}",
+        metadata={"account_type": account_type, "account_id": account.id},
+    )
+    return success_response(
+        data={
+            "action": "activate",
+            "account": _serialize_support_action_account(request, account, account_type),
+        },
+        message=f"تم تفعيل حساب {account_name} بنجاح",
+        request=request,
+    )
+
+
+def _serialize_admin_activity_log(request, log_item):
+    actor_image = _build_media_url(request, getattr(getattr(log_item, "actor", None), "profile_image", None))
+    return {
+        "id": log_item.id,
+        "executor": {
+            "id": log_item.actor_id,
+            "name": log_item.actor_name,
+            "role": log_item.actor_role,
+            "role_display": dict(ADMIN_DESKTOP_ROLE_CHOICES).get(log_item.actor_role, log_item.actor_role),
+            "profile_image_url": actor_image,
+        },
+        "role": log_item.actor_role,
+        "role_display": dict(ADMIN_DESKTOP_ROLE_CHOICES).get(log_item.actor_role, log_item.actor_role),
+        "action_type": log_item.action_key,
+        "action_type_label": log_item.action_label,
+        "action_category": log_item.action_category,
+        "action_category_label": dict(AdminDesktopActivityLog.ACTION_CATEGORY_CHOICES).get(log_item.action_category, log_item.action_category),
+        "section": {
+            "key": log_item.section_key,
+            "label": log_item.section_label,
+        },
+        "target_name": log_item.target_name,
+        "details": log_item.details,
+        "metadata": log_item.metadata or {},
+        "executed_at": log_item.created_at,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_activity_logs_view(request):
+    permission_error = _require_admin_desktop_activity_logs_permission(request)
+    if permission_error:
+        return permission_error
+
+    search = str(request.query_params.get("search", "") or "").strip()
+    role = str(request.query_params.get("role", "all") or "all").strip().lower()
+    action_category = str(request.query_params.get("action_category", "all") or "all").strip().lower()
+    page = max(int(request.query_params.get("page", 1) or 1), 1)
+    page_size = max(min(int(request.query_params.get("page_size", 10) or 10), 100), 1)
+
+    queryset = AdminDesktopActivityLog.objects.select_related("actor").all().order_by("-created_at")
+    if search:
+        queryset = queryset.filter(
+            Q(actor_name__icontains=search)
+            | Q(target_name__icontains=search)
+            | Q(section_label__icontains=search)
+            | Q(details__icontains=search)
+        )
+    if role != "all":
+        queryset = queryset.filter(actor_role=role)
+    if action_category != "all":
+        queryset = queryset.filter(action_category=action_category)
+
+    total_count = queryset.count()
+    total_pages = ceil(total_count / page_size) if total_count else 1
+    start = (page - 1) * page_size
+    logs = list(queryset[start:start + page_size])
+    role_counts = Counter(queryset.values_list("actor_role", flat=True))
+
+    return success_response(
+        data={
+            "tab": {"key": "activity-logs", "label": "سجل النشاطات"},
+            "filters": {
+                "search": search,
+                "role": role,
+                "action_category": action_category,
+                "roles": [
+                    {"key": "all", "label": "الكل", "count": total_count},
+                    {"key": "dashboard_manager", "label": "مدير", "count": role_counts.get("dashboard_manager", 0)},
+                    {"key": "system_developer", "label": "مبرمج", "count": role_counts.get("system_developer", 0)},
+                    {"key": "store_supervisor", "label": "مشرف متجر", "count": role_counts.get("store_supervisor", 0)},
+                    {"key": "technical_support", "label": "دعم فني", "count": role_counts.get("technical_support", 0)},
+                ],
+                "action_categories": [
+                    {"key": "all", "label": "الكل"},
+                    {"key": "data_operations", "label": "عمليات البيانات"},
+                    {"key": "review_actions", "label": "عمليات المراجعة"},
+                    {"key": "suspension_actions", "label": "إجراءات التعليق"},
+                ],
+            },
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            },
+            "logs": [_serialize_admin_activity_log(request, item) for item in logs],
+        },
+        message="تم جلب سجل النشاطات بنجاح",
         request=request,
     )
 

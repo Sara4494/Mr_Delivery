@@ -13,6 +13,7 @@ urlpatterns = [
     path('admin-desktop/roles-permissions/', views.admin_desktop_roles_permissions_view, name='admin_desktop_roles_permissions'),
     path('admin-desktop/users/', views.admin_desktop_users_view, name='admin_desktop_users'),
     path('admin-desktop/users/<int:user_id>/', views.admin_desktop_user_detail_view, name='admin_desktop_user_detail'),
+    path('admin-desktop/activity-logs/', views.admin_desktop_activity_logs_view, name='admin_desktop_activity_logs'),
     path('admin-desktop/approvals/requests/', views.admin_desktop_approval_requests_view, name='admin_desktop_approval_requests'),
     path('admin-desktop/approvals/image-publish-requests/', views.admin_desktop_image_publish_requests_view, name='admin_desktop_image_publish_requests'),
     path('admin-desktop/approvals/shop-edit-requests/', views.admin_desktop_shop_edit_requests_view, name='admin_desktop_shop_edit_requests'),
@@ -35,6 +36,8 @@ urlpatterns = [
     path('admin-desktop/abuse-reports/', views.admin_desktop_abuse_reports_view, name='admin_desktop_abuse_reports'),
     path('admin-desktop/abuse-reports/<int:report_id>/', views.admin_desktop_abuse_report_detail_view, name='admin_desktop_abuse_report_detail'),
     path('admin-desktop/abuse-reports/<int:report_id>/resolve/', views.admin_desktop_abuse_report_resolve_view, name='admin_desktop_abuse_report_resolve'),
+    path('admin-desktop/support-actions/accounts/', views.admin_desktop_support_actions_accounts_view, name='admin_desktop_support_actions_accounts'),
+    path('admin-desktop/support-actions/accounts/<str:account_type>/<int:account_id>/action/', views.admin_desktop_support_actions_account_action_view, name='admin_desktop_support_actions_account_action'),
     
     # ==================== Unified Auth ====================
     # تسجيل دخول موحد لجميع المستخدمين
