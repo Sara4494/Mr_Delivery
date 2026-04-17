@@ -233,9 +233,11 @@ def _parse_bool(value, default=None):
     return default
 
 
-def _serialize_admin_desktop_user_list_item(user):
+def _serialize_admin_desktop_user_list_item(request, user):
     role_labels = dict(ADMIN_DESKTOP_ROLE_CHOICES)
     permissions = user.get_resolved_permissions()
+    profile_image = user.profile_image.url if user.profile_image else None
+    profile_image_url = request.build_absolute_uri(profile_image) if profile_image and request else profile_image
     return {
         "id": user.id,
         "name": user.name,
@@ -251,6 +253,8 @@ def _serialize_admin_desktop_user_list_item(user):
         ],
         "is_active": user.is_active,
         "status_label": "نشط" if user.is_active else "غير نشط",
+        "profile_image": profile_image,
+        "profile_image_url": profile_image_url,
         "created_at": user.created_at,
     }
 
@@ -494,7 +498,7 @@ def admin_desktop_users_view(request):
                     "can_view_admin_users": _can_view_admin_desktop_users(request.user),
                     "can_manage_admin_users": _can_manage_admin_desktop_users(request.user),
                 },
-                "users": [_serialize_admin_desktop_user_list_item(user) for user in users],
+                "users": [_serialize_admin_desktop_user_list_item(request, user) for user in users],
             },
             message="تم جلب مستخدمي الديسكتوب بنجاح",
             request=request,
