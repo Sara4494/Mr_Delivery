@@ -9,6 +9,21 @@ from user.utils import t
 from .models import Customer, Employee, Driver
 
 
+def _is_suspended_user(user):
+    if isinstance(user, ShopOwner):
+        return getattr(user, 'admin_status', None) == 'suspended' or not getattr(user, 'is_active', True)
+
+    if isinstance(user, Customer):
+        moderation = getattr(user, 'moderation_status', None)
+        return bool(moderation and moderation.is_suspended)
+
+    if isinstance(user, Driver):
+        moderation = getattr(user, 'moderation_status', None)
+        return bool(moderation and moderation.is_suspended)
+
+    return False
+
+
 def _token_user_type(request):
     token = getattr(request, 'auth', None)
     if token is None:
@@ -35,8 +50,8 @@ class IsShopOwner(BasePermission):
             return False
 
         if getattr(user, 'user_type', None) == 'shop_owner':
-            return True
-        return isinstance(user, ShopOwner)
+            return not _is_suspended_user(user)
+        return isinstance(user, ShopOwner) and not _is_suspended_user(user)
 
 
 class IsCustomer(BasePermission):
@@ -55,8 +70,8 @@ class IsCustomer(BasePermission):
             return False
 
         if getattr(user, 'user_type', None) == 'customer':
-            return True
-        return isinstance(user, Customer)
+            return not _is_suspended_user(user)
+        return isinstance(user, Customer) and not _is_suspended_user(user)
 
 
 class IsEmployee(BasePermission):
@@ -95,8 +110,8 @@ class IsDriver(BasePermission):
             return False
 
         if getattr(user, 'user_type', None) == 'driver':
-            return True
-        return isinstance(user, Driver)
+            return not _is_suspended_user(user)
+        return isinstance(user, Driver) and not _is_suspended_user(user)
 
 
 class IsShopOwnerOrEmployee(BasePermission):
@@ -116,8 +131,8 @@ class IsShopOwnerOrEmployee(BasePermission):
 
         user_type = getattr(user, 'user_type', None)
         if user_type in {'shop_owner', 'employee'}:
-            return True
-        return isinstance(user, (ShopOwner, Employee))
+            return not _is_suspended_user(user)
+        return isinstance(user, (ShopOwner, Employee)) and not _is_suspended_user(user)
 
 
 class IsShopStaff(BasePermission):
@@ -137,5 +152,5 @@ class IsShopStaff(BasePermission):
 
         user_type = getattr(user, 'user_type', None)
         if user_type in {'shop_owner', 'employee', 'driver'}:
-            return True
-        return isinstance(user, (ShopOwner, Employee, Driver))
+            return not _is_suspended_user(user)
+        return isinstance(user, (ShopOwner, Employee, Driver)) and not _is_suspended_user(user)

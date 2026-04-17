@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
+    AbuseReport, AccountModerationStatus,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, ShopReview, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver
@@ -68,6 +69,8 @@ from .serializers import (
     PaymentMethodSerializer,
     PaymentMethodCreateSerializer,
     NotificationSerializer,
+    AbuseReportSerializer,
+    AccountModerationStatusSerializer,
     CartSerializer,
     CartItemSerializer,
     AddToCartSerializer,
@@ -4631,6 +4634,178 @@ def _resolve_user_type(user):
     return None
 
 
+ABUSE_REPORT_REASON_OPTIONS = {
+    'customer': [
+        {'key': 'abusive_language', 'label': 'ألفاظ أو إساءة'},
+        {'key': 'delay', 'label': 'تأخير شديد'},
+        {'key': 'fraud', 'label': 'احتيال أو طلب غير صحيح'},
+        {'key': 'non_delivery', 'label': 'لم يتم التسليم'},
+        {'key': 'other', 'label': 'سبب آخر'},
+    ],
+    'shop_owner': [
+        {'key': 'abusive_language', 'label': 'ألفاظ أو إساءة'},
+        {'key': 'order_issue', 'label': 'مشكلة في الطلب'},
+        {'key': 'fraud', 'label': 'احتيال أو بلاغ كيدي'},
+        {'key': 'non_compliance', 'label': 'عدم التزام'},
+        {'key': 'other', 'label': 'سبب آخر'},
+    ],
+    'driver': [
+        {'key': 'abusive_language', 'label': 'ألفاظ أو إساءة'},
+        {'key': 'delay', 'label': 'تأخير شديد'},
+        {'key': 'non_delivery', 'label': 'لم يتم التسليم'},
+        {'key': 'unsafe_behavior', 'label': 'سلوك خطر'},
+        {'key': 'other', 'label': 'سبب آخر'},
+    ],
+}
+HIGH_RISK_REASON_KEYS = {'fraud', 'unsafe_behavior', 'threat', 'violence'}
+
+
+def _report_role_label(user_type):
+    if user_type in {'shop_owner', 'employee'}:
+        return 'shop_owner'
+    return user_type
+
+
+def _report_role_display(user_type):
+    return {
+        'customer': 'عميل',
+        'shop_owner': 'محل',
+        'employee': 'محل',
+        'driver': 'دليفري',
+    }.get(user_type, user_type)
+
+
+def _actor_name(user, user_type):
+    if not user:
+        return None
+    if user_type == 'shop_owner':
+        return getattr(user, 'shop_name', None) or getattr(user, 'owner_name', None)
+    return getattr(user, 'name', None) or getattr(user, 'owner_name', None)
+
+
+def _report_target_payload(report):
+    target = report.target
+    return {
+        'id': getattr(target, 'id', None),
+        'type': report.target_type,
+        'type_display': dict(AbuseReport.TARGET_TYPE_CHOICES).get(report.target_type, report.target_type),
+        'name': _actor_name(target, report.target_type),
+    }
+
+
+def _report_reporter_payload(report):
+    reporter = report.reporter
+    return {
+        'id': getattr(reporter, 'id', None),
+        'type': report.reporter_type,
+        'type_display': _report_role_display(report.reporter_type),
+        'name': _actor_name(reporter, report.reporter_type),
+    }
+
+
+def _get_target_moderation(target_type, target):
+    if target_type == 'customer':
+        moderation, _ = AccountModerationStatus.objects.get_or_create(customer=target)
+        return moderation
+    if target_type == 'shop_owner':
+        moderation, _ = AccountModerationStatus.objects.get_or_create(shop_owner=target)
+        return moderation
+    if target_type == 'driver':
+        moderation, _ = AccountModerationStatus.objects.get_or_create(driver=target)
+        return moderation
+    return None
+
+
+def _attach_notification_to_user(user_type, user, *, title, message, data=None):
+    payload = {
+        'notification_type': 'system',
+        'title': title,
+        'message': message,
+        'data': data or {},
+    }
+    if user_type == 'customer':
+        payload['customer'] = user
+    elif user_type == 'shop_owner':
+        payload['shop_owner'] = user
+    elif user_type == 'employee':
+        payload['employee'] = user
+    elif user_type == 'driver':
+        payload['driver'] = user
+    else:
+        return None
+    return Notification.objects.create(**payload)
+
+
+def _validate_abuse_report_target(order, reporter, reporter_type, target_type, target_id):
+    if target_type not in {'customer', 'shop_owner', 'driver'}:
+        return None, 'نوع المبلّغ عليه غير صحيح.'
+
+    if reporter_type == 'customer':
+        if order.customer_id != getattr(reporter, 'id', None):
+            return None, 'لا يمكنك إنشاء بلاغ على هذا الطلب.'
+        allowed = {
+            'shop_owner': order.shop_owner,
+            'driver': order.driver,
+        }
+    elif reporter_type in {'shop_owner', 'employee'}:
+        owner_id = getattr(reporter, 'shop_owner_id', None) if reporter_type == 'employee' else getattr(reporter, 'id', None)
+        if order.shop_owner_id != owner_id:
+            return None, 'لا يمكنك إنشاء بلاغ على هذا الطلب.'
+        allowed = {
+            'customer': order.customer,
+            'driver': order.driver,
+        }
+    elif reporter_type == 'driver':
+        if order.driver_id != getattr(reporter, 'id', None):
+            return None, 'لا يمكنك إنشاء بلاغ على هذا الطلب.'
+        allowed = {
+            'customer': order.customer,
+            'shop_owner': order.shop_owner,
+        }
+    else:
+        return None, 'نوع المستخدم غير مدعوم.'
+
+    target = allowed.get(target_type)
+    if not target:
+        return None, 'هذا الطرف غير مرتبط بالطلب الحالي.'
+    if getattr(target, 'id', None) != target_id:
+        return None, 'المبلّغ عليه لا يطابق الطلب الحالي.'
+    return target, None
+
+
+def _serialize_abuse_report_messages(report, request=None):
+    messages = (
+        ChatMessage.objects
+        .filter(order=report.order)
+        .select_related(
+            'sender_customer',
+            'sender_shop_owner',
+            'sender_employee',
+            'sender_driver',
+            'order',
+        )
+        .order_by('created_at')
+    )
+    return ChatMessageSerializer(messages, many=True, context={'request': request}).data
+
+
+def _serialize_abuse_report_detail(report, request=None):
+    moderation = _get_target_moderation(report.target_type, report.target)
+    return {
+        'report': AbuseReportSerializer(report, context={'request': request}).data,
+        'reporter': _report_reporter_payload(report),
+        'target': _report_target_payload(report),
+        'order': {
+            'id': report.order_id,
+            'order_number': report.order.order_number,
+            'status': report.order.status,
+            'status_display': report.order.get_status_display(),
+        },
+        'chat_messages': _serialize_abuse_report_messages(report, request=request),
+        'moderation': AccountModerationStatusSerializer(moderation).data if moderation else None,
+    }
+
+
 def _can_user_access_order(order, user, user_type):
     if user_type == 'shop_owner':
         return order.shop_owner_id == getattr(user, 'id', None)
@@ -4787,6 +4962,116 @@ def chat_order_media_upload_view(request, order_id):
         data=serialized,
         message='تم إرسال الوسائط بنجاح',
         status_code=status.HTTP_201_CREATED
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def abuse_report_reasons_view(request):
+    return success_response(
+        data={
+            'reporter_type': _resolve_user_type(request.user),
+            'reasons': ABUSE_REPORT_REASON_OPTIONS,
+        },
+        message='تم جلب أسباب البلاغات بنجاح',
+        request=request,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def abuse_reports_view(request):
+    user = request.user
+    user_type = _resolve_user_type(user)
+    if user_type not in {'customer', 'shop_owner', 'employee', 'driver'}:
+        return error_response(
+            message='نوع المستخدم غير مدعوم لإنشاء البلاغات.',
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    try:
+        order_id = int(request.data.get('order_id'))
+    except (TypeError, ValueError):
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'order_id': ['رقم الطلب مطلوب.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    try:
+        target_id = int(request.data.get('target_id'))
+    except (TypeError, ValueError):
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'target_id': ['المبلّغ عليه مطلوب.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    target_type = str(request.data.get('target_type') or '').strip()
+    reason = str(request.data.get('reason') or '').strip()
+    details = str(request.data.get('details') or '').strip() or None
+
+    if not reason:
+        return error_response(
+            message=t(request, 'invalid_data'),
+            errors={'reason': ['سبب البلاغ مطلوب.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    try:
+        order = Order.objects.select_related('customer', 'shop_owner', 'driver').get(id=order_id)
+    except Order.DoesNotExist:
+        return error_response(
+            message=t(request, 'order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    target, validation_error = _validate_abuse_report_target(order, user, user_type, target_type, target_id)
+    if validation_error:
+        return error_response(
+            message=validation_error,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    report_status = 'high_risk' if reason in HIGH_RISK_REASON_KEYS else 'pending_review'
+    reporter_kwargs = {'reporter_type': user_type}
+    if user_type == 'customer':
+        reporter_kwargs['reporter_customer'] = user
+    elif user_type == 'shop_owner':
+        reporter_kwargs['reporter_shop_owner'] = user
+    elif user_type == 'employee':
+        reporter_kwargs['reporter_employee'] = user
+    elif user_type == 'driver':
+        reporter_kwargs['reporter_driver'] = user
+
+    target_kwargs = {'target_type': target_type}
+    if target_type == 'customer':
+        target_kwargs['target_customer'] = target
+    elif target_type == 'shop_owner':
+        target_kwargs['target_shop_owner'] = target
+    elif target_type == 'driver':
+        target_kwargs['target_driver'] = target
+
+    report = AbuseReport.objects.create(
+        order=order,
+        reason=reason,
+        details=details,
+        status=report_status,
+        **reporter_kwargs,
+        **target_kwargs,
+    )
+
+    return success_response(
+        data=_serialize_abuse_report_detail(report, request=request),
+        message='تم إرسال البلاغ بنجاح',
+        status_code=status.HTTP_201_CREATED,
+        request=request,
     )
 
 

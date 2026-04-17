@@ -32,6 +32,9 @@ urlpatterns = [
     path('admin-desktop/reports/analytics/', views.admin_desktop_reports_analytics_view, name='admin_desktop_reports_analytics'),
     path('admin-desktop/reports/stores/<int:shop_id>/preview/', views.admin_desktop_reports_store_preview_view, name='admin_desktop_reports_store_preview'),
     path('admin-desktop/reports/export/', views.admin_desktop_reports_export_view, name='admin_desktop_reports_export'),
+    path('admin-desktop/abuse-reports/', views.admin_desktop_abuse_reports_view, name='admin_desktop_abuse_reports'),
+    path('admin-desktop/abuse-reports/<int:report_id>/', views.admin_desktop_abuse_report_detail_view, name='admin_desktop_abuse_report_detail'),
+    path('admin-desktop/abuse-reports/<int:report_id>/resolve/', views.admin_desktop_abuse_report_resolve_view, name='admin_desktop_abuse_report_resolve'),
     
     # ==================== Unified Auth ====================
     # تسجيل دخول موحد لجميع المستخدمين

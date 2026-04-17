@@ -359,6 +359,106 @@
           ]
         },
         {
+          "name": "Abuse Reports",
+          "item": [
+            {
+              "name": "Get Report Reasons",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/reports/reasons/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    "reasons",
+                    ""
+                  ]
+                },
+                "description": "يرجع أسباب البلاغات المتاحة للمستخدم الحالي قبل إرسال البلاغ."
+              },
+              "response": []
+            },
+            {
+              "name": "Create Abuse Report - Customer Against Driver",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"order_id\": {{report_order_id}},\n  \"target_type\": \"driver\",\n  \"target_id\": {{report_driver_id}},\n  \"reason\": \"delay\",\n  \"details\": \"تأخير شديد في التسليم\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/reports/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    ""
+                  ]
+                },
+                "description": "مثال لإنشاء بلاغ من العميل ضد الدليفري على طلب محدد."
+              },
+              "response": []
+            },
+            {
+              "name": "Create Abuse Report - Customer Against Shop",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customer_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"order_id\": {{report_order_id}},\n  \"target_type\": \"shop_owner\",\n  \"target_id\": {{report_shop_id}},\n  \"reason\": \"order_issue\",\n  \"details\": \"مشكلة في الطلب أو التعامل\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/reports/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    ""
+                  ]
+                },
+                "description": "مثال لإنشاء بلاغ من العميل ضد المحل."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
           "name": "🏬 المتاجر العامة (Public Shops)",
           "item": [
             {
@@ -6771,6 +6871,178 @@
                   ]
                 },
                 "description": "تصدير تقرير التقارير الحالي كملف CSV حسب نفس الفلاتر المستخدمة في الشاشة."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Abuse Reports",
+          "item": [
+            {
+              "name": "List Abuse Reports - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/abuse-reports/?tab=all",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "abuse-reports",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "tab",
+                      "value": "all"
+                    }
+                  ]
+                },
+                "description": "قائمة بلاغات الإساءة مع كروت الملخص والفلاتر الأساسية."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Abuse Report Detail - Admin Desktop",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/abuse-reports/{{abuse_report_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "abuse-reports",
+                    "{{abuse_report_id}}",
+                    ""
+                  ]
+                },
+                "description": "تفاصيل البلاغ مع بيانات الطلب والشات وسجل الإشراف."
+              },
+              "response": []
+            },
+            {
+              "name": "Resolve Abuse Report - Warning",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"warning\",\n  \"admin_notes\": \"تم توجيه تحذير بعد مراجعة الشات\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/abuse-reports/{{abuse_report_id}}/resolve/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "abuse-reports",
+                    "{{abuse_report_id}}",
+                    "resolve",
+                    ""
+                  ]
+                },
+                "description": "إصدار تحذير على الحساب. عند الوصول لـ 3 تحذيرات يتم التعليق تلقائيًا."
+              },
+              "response": []
+            },
+            {
+              "name": "Resolve Abuse Report - Suspend",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"suspend\",\n  \"admin_notes\": \"تم تعليق الحساب بعد ثبوت المخالفة\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/abuse-reports/{{abuse_report_id}}/resolve/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "abuse-reports",
+                    "{{abuse_report_id}}",
+                    "resolve",
+                    ""
+                  ]
+                },
+                "description": "تعليق الحساب مباشرة من شاشة مراجعة البلاغ."
+              },
+              "response": []
+            },
+            {
+              "name": "Resolve Abuse Report - Close Without Action",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_desktop_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"close_no_action\",\n  \"admin_notes\": \"تمت المراجعة ولم يتم اتخاذ إجراء\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin-desktop/abuse-reports/{{abuse_report_id}}/resolve/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin-desktop",
+                    "abuse-reports",
+                    "{{abuse_report_id}}",
+                    "resolve",
+                    ""
+                  ]
+                },
+                "description": "إغلاق البلاغ بدون اتخاذ أي إجراء على الحساب."
               },
               "response": []
             }

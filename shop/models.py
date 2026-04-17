@@ -1154,6 +1154,153 @@ class Notification(models.Model):
         return f"{self.title} - {self.notification_type}"
 
 
+class AccountModerationStatus(models.Model):
+    """Tracks warnings and suspension state for reportable accounts."""
+
+    customer = models.OneToOneField(
+        Customer,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='moderation_status',
+        verbose_name="العميل",
+    )
+    shop_owner = models.OneToOneField(
+        ShopOwner,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='moderation_status',
+        verbose_name="المحل",
+    )
+    driver = models.OneToOneField(
+        Driver,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='moderation_status',
+        verbose_name="الدليفري",
+    )
+    warnings_count = models.PositiveIntegerField(default=0, verbose_name="عدد التحذيرات")
+    is_suspended = models.BooleanField(default=False, verbose_name="معلق")
+    suspended_at = models.DateTimeField(null=True, blank=True, verbose_name="تاريخ التعليق")
+    suspension_reason = models.TextField(blank=True, null=True, verbose_name="سبب التعليق")
+    last_warning_at = models.DateTimeField(null=True, blank=True, verbose_name="تاريخ آخر تحذير")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "حالة الإشراف على الحساب"
+        verbose_name_plural = "حالات الإشراف على الحسابات"
+        indexes = [
+            models.Index(fields=['is_suspended', '-updated_at'], name='acctmod_suspended_idx'),
+        ]
+
+    @property
+    def target_type(self):
+        if self.customer_id:
+            return 'customer'
+        if self.shop_owner_id:
+            return 'shop_owner'
+        if self.driver_id:
+            return 'driver'
+        return None
+
+    @property
+    def target(self):
+        return self.customer or self.shop_owner or self.driver
+
+    def clean(self):
+        linked_targets = [self.customer_id, self.shop_owner_id, self.driver_id]
+        if sum(1 for value in linked_targets if value) != 1:
+            raise ValidationError("Exactly one moderation target must be linked.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.target_type or 'unknown'} moderation #{self.pk}"
+
+
+class AbuseReport(models.Model):
+    """Cross-party abuse report for customer, shop, and driver disputes."""
+
+    REPORTER_TYPE_CHOICES = [
+        ('customer', 'عميل'),
+        ('shop_owner', 'محل'),
+        ('employee', 'محل'),
+        ('driver', 'دليفري'),
+    ]
+    TARGET_TYPE_CHOICES = [
+        ('customer', 'عميل'),
+        ('shop_owner', 'محل'),
+        ('driver', 'دليفري'),
+    ]
+    STATUS_CHOICES = [
+        ('pending_review', 'قيد المراجعة'),
+        ('high_risk', 'خطير'),
+        ('closed', 'مغلق'),
+    ]
+    ACTION_CHOICES = [
+        ('warning', 'تحذير'),
+        ('suspend', 'تعليق الحساب'),
+        ('close_no_action', 'إغلاق بدون إجراء'),
+    ]
+
+    public_id = models.CharField(max_length=32, unique=True, blank=True, verbose_name="رقم البلاغ")
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='abuse_reports', verbose_name="الطلب")
+
+    reporter_type = models.CharField(max_length=20, choices=REPORTER_TYPE_CHOICES, verbose_name="نوع المبلّغ")
+    reporter_customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='submitted_abuse_reports', verbose_name="العميل المبلّغ")
+    reporter_shop_owner = models.ForeignKey(ShopOwner, on_delete=models.SET_NULL, null=True, blank=True, related_name='submitted_abuse_reports', verbose_name="المحل المبلّغ")
+    reporter_employee = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name='submitted_abuse_reports', verbose_name="الموظف المبلّغ")
+    reporter_driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='submitted_abuse_reports', verbose_name="الدليفري المبلّغ")
+
+    target_type = models.CharField(max_length=20, choices=TARGET_TYPE_CHOICES, verbose_name="نوع المبلّغ عليه")
+    target_customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='received_abuse_reports', verbose_name="العميل المبلّغ عليه")
+    target_shop_owner = models.ForeignKey(ShopOwner, on_delete=models.SET_NULL, null=True, blank=True, related_name='received_abuse_reports', verbose_name="المحل المبلّغ عليه")
+    target_driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='received_abuse_reports', verbose_name="الدليفري المبلّغ عليه")
+
+    reason = models.CharField(max_length=120, verbose_name="سبب البلاغ")
+    details = models.TextField(blank=True, null=True, verbose_name="تفاصيل البلاغ")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending_review', verbose_name="الحالة")
+    resolution_action = models.CharField(max_length=20, choices=ACTION_CHOICES, null=True, blank=True, verbose_name="الإجراء النهائي")
+    admin_notes = models.TextField(blank=True, null=True, verbose_name="ملاحظات الإدارة")
+    reviewed_by_admin_id = models.IntegerField(null=True, blank=True, verbose_name="معرّف المراجع")
+    reviewed_by_admin_name = models.CharField(max_length=120, blank=True, null=True, verbose_name="اسم المراجع")
+    reviewed_at = models.DateTimeField(null=True, blank=True, verbose_name="تاريخ المراجعة")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "بلاغ إساءة"
+        verbose_name_plural = "بلاغات الإساءة"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at'], name='abusereport_status_idx'),
+            models.Index(fields=['reporter_type', '-created_at'], name='abusereport_reporter_idx'),
+            models.Index(fields=['target_type', '-created_at'], name='abusereport_target_idx'),
+        ]
+
+    @property
+    def reporter(self):
+        return self.reporter_customer or self.reporter_shop_owner or self.reporter_employee or self.reporter_driver
+
+    @property
+    def target(self):
+        return self.target_customer or self.target_shop_owner or self.target_driver
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.public_id:
+            self.public_id = f"REP-{9000 + self.pk}"
+            super().save(update_fields=['public_id'])
+
+    def __str__(self):
+        return self.public_id or f"Report #{self.pk}"
+
+
 class Cart(models.Model):
     """نموذج سلة التسوق"""
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='carts', verbose_name="العميل")

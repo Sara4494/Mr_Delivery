@@ -1420,6 +1420,187 @@ def _require_admin_desktop_reports_permission(request):
     )
 
 
+def _require_admin_desktop_abuse_reports_permission(request):
+    if _has_admin_desktop_permission(request.user, "abuse_reports"):
+        return None
+    return error_response(
+        message="ليست لديك صلاحية لعرض بلاغات الإساءة",
+        status_code=status.HTTP_403_FORBIDDEN,
+        request=request,
+    )
+
+
+def _admin_abuse_actor_name(obj, actor_type):
+    if not obj:
+        return None
+    if actor_type == "shop_owner":
+        return getattr(obj, "shop_name", None) or getattr(obj, "owner_name", None)
+    return getattr(obj, "name", None) or getattr(obj, "owner_name", None)
+
+
+def _admin_abuse_report_type_label(report):
+    if report.reporter_type in {"shop_owner", "employee"}:
+        return "بلاغ محل"
+    if report.reporter_type == "driver":
+        return "بلاغ دليفري"
+    return "بلاغ عميل"
+
+
+def _serialize_admin_abuse_report_row(report):
+    reporter = report.reporter_customer or report.reporter_shop_owner or report.reporter_employee or report.reporter_driver
+    target = report.target_customer or report.target_shop_owner or report.target_driver
+    return {
+        "id": report.id,
+        "report_number": report.public_id,
+        "report_type": report.reporter_type,
+        "report_type_label": _admin_abuse_report_type_label(report),
+        "reported_against_type": report.target_type,
+        "reported_against_name": _admin_abuse_actor_name(target, report.target_type),
+        "reporter_name": _admin_abuse_actor_name(reporter, report.reporter_type),
+        "reason": report.reason,
+        "details": report.details,
+        "status": report.status,
+        "status_label": report.get_status_display(),
+        "action_taken": report.resolution_action,
+        "action_taken_label": report.get_resolution_action_display() if report.resolution_action else None,
+        "created_at": report.created_at,
+    }
+
+
+def _get_abuse_report_moderation(report):
+    from shop.models import AccountModerationStatus
+
+    target = report.target_customer or report.target_shop_owner or report.target_driver
+    if report.target_type == "customer":
+        moderation, _ = AccountModerationStatus.objects.get_or_create(customer=target)
+        return moderation
+    if report.target_type == "shop_owner":
+        moderation, _ = AccountModerationStatus.objects.get_or_create(shop_owner=target)
+        return moderation
+    if report.target_type == "driver":
+        moderation, _ = AccountModerationStatus.objects.get_or_create(driver=target)
+        return moderation
+    return None
+
+
+def _create_abuse_target_notification(report, title, message, data=None):
+    from shop.models import Notification
+
+    payload = {
+        "notification_type": "system",
+        "title": title,
+        "message": message,
+        "data": data or {},
+    }
+    if report.target_type == "customer" and report.target_customer_id:
+        payload["customer"] = report.target_customer
+    elif report.target_type == "shop_owner" and report.target_shop_owner_id:
+        payload["shop_owner"] = report.target_shop_owner
+    elif report.target_type == "driver" and report.target_driver_id:
+        payload["driver"] = report.target_driver
+    else:
+        return None
+    return Notification.objects.create(**payload)
+
+
+def _apply_abuse_report_resolution(report, *, action, admin_user, admin_notes=None):
+    moderation = _get_abuse_report_moderation(report)
+    now = timezone.now()
+    action = str(action or "").strip()
+    auto_suspended = False
+
+    if action == "warning":
+        moderation.warnings_count = int(moderation.warnings_count or 0) + 1
+        moderation.last_warning_at = now
+        moderation.suspension_reason = None
+        if moderation.warnings_count >= 3:
+            moderation.is_suspended = True
+            moderation.suspended_at = now
+            moderation.suspension_reason = "تم تعليق الحساب تلقائيًا بعد الوصول إلى 3 تحذيرات."
+            auto_suspended = True
+        moderation.save()
+        _create_abuse_target_notification(
+            report,
+            "تحذير على الحساب",
+            "تم تسجيل تحذير على حسابك بسبب بلاغ تمت مراجعته من الإدارة.",
+            data={
+                "report_id": report.id,
+                "report_number": report.public_id,
+                "warnings_count": moderation.warnings_count,
+                "auto_suspended": auto_suspended,
+            },
+        )
+        if auto_suspended and report.target_type == "shop_owner" and report.target_shop_owner_id:
+            report.target_shop_owner.admin_status = "suspended"
+            report.target_shop_owner.is_active = False
+            report.target_shop_owner.suspension_reason = moderation.suspension_reason
+            report.target_shop_owner.suspension_started_at = now
+            report.target_shop_owner.save(update_fields=["admin_status", "is_active", "suspension_reason", "suspension_started_at", "updated_at"])
+    elif action == "suspend":
+        moderation.is_suspended = True
+        moderation.suspended_at = now
+        moderation.suspension_reason = admin_notes or "تم تعليق الحساب بعد مراجعة البلاغ."
+        moderation.save()
+        _create_abuse_target_notification(
+            report,
+            "تم تعليق الحساب",
+            moderation.suspension_reason,
+            data={"report_id": report.id, "report_number": report.public_id},
+        )
+        if report.target_type == "shop_owner" and report.target_shop_owner_id:
+            report.target_shop_owner.admin_status = "suspended"
+            report.target_shop_owner.is_active = False
+            report.target_shop_owner.suspension_reason = moderation.suspension_reason
+            report.target_shop_owner.suspension_started_at = now
+            report.target_shop_owner.save(update_fields=["admin_status", "is_active", "suspension_reason", "suspension_started_at", "updated_at"])
+    elif action != "close_no_action":
+        raise ValueError("invalid_action")
+
+    report.status = "closed"
+    report.resolution_action = action
+    report.admin_notes = admin_notes or None
+    report.reviewed_by_admin_id = getattr(admin_user, "id", None)
+    report.reviewed_by_admin_name = getattr(admin_user, "name", None)
+    report.reviewed_at = now
+    report.save(update_fields=["status", "resolution_action", "admin_notes", "reviewed_by_admin_id", "reviewed_by_admin_name", "reviewed_at", "updated_at"])
+    return moderation, auto_suspended
+
+
+def _serialize_admin_abuse_report_detail(request, report):
+    from shop.models import ChatMessage
+    from shop.serializers import AbuseReportSerializer, AccountModerationStatusSerializer, ChatMessageSerializer
+
+    moderation = _get_abuse_report_moderation(report)
+    messages = (
+        ChatMessage.objects
+        .filter(order=report.order)
+        .select_related("sender_customer", "sender_shop_owner", "sender_employee", "sender_driver", "order")
+        .order_by("created_at")
+    )
+    return {
+        "report": AbuseReportSerializer(report, context={"request": request}).data,
+        "summary": _serialize_admin_abuse_report_row(report),
+        "order": {
+            "id": report.order_id,
+            "order_number": report.order.order_number,
+            "status": report.order.status,
+            "status_display": report.order.get_status_display(),
+        },
+        "reporter": {
+            "type": report.reporter_type,
+            "type_display": "محل" if report.reporter_type in {"shop_owner", "employee"} else dict(report.REPORTER_TYPE_CHOICES).get(report.reporter_type, report.reporter_type),
+            "name": _admin_abuse_actor_name(report.reporter, report.reporter_type),
+        },
+        "target": {
+            "type": report.target_type,
+            "type_display": dict(report.TARGET_TYPE_CHOICES).get(report.target_type, report.target_type),
+            "name": _admin_abuse_actor_name(report.target, report.target_type),
+        },
+        "chat_messages": ChatMessageSerializer(messages, many=True, context={"request": request}).data,
+        "moderation": AccountModerationStatusSerializer(moderation).data if moderation else None,
+    }
+
+
 def _format_admin_report_date_range_label(start_date, end_date):
     start_label = f"{start_date.day:02d} {ARABIC_MONTH_NAMES.get(start_date.month, start_date.month)}"
     end_label = f"{end_date.day:02d} {ARABIC_MONTH_NAMES.get(end_date.month, end_date.month)}"
@@ -1995,6 +2176,155 @@ def admin_desktop_reports_export_view(request):
     response = HttpResponse(buffer.getvalue(), content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="admin_desktop_reports.csv"'
     return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_abuse_reports_view(request):
+    from shop.models import AbuseReport
+
+    permission_error = _require_admin_desktop_abuse_reports_permission(request)
+    if permission_error:
+        return permission_error
+
+    tab = str(request.query_params.get("tab", "all") or "all").strip().lower()
+    queryset = (
+        AbuseReport.objects
+        .select_related(
+            "order",
+            "reporter_customer",
+            "reporter_shop_owner",
+            "reporter_employee",
+            "reporter_driver",
+            "target_customer",
+            "target_shop_owner",
+            "target_driver",
+        )
+        .order_by("-created_at")
+    )
+    if tab in {"customer", "driver", "shop_owner"}:
+        queryset = queryset.filter(reporter_type=tab)
+    elif tab == "shop":
+        queryset = queryset.filter(reporter_type__in=["shop_owner", "employee"])
+
+    status_filter = str(request.query_params.get("status", "") or "").strip().lower()
+    if status_filter in {"pending_review", "high_risk", "closed"}:
+        queryset = queryset.filter(status=status_filter)
+
+    reports = list(queryset[:100])
+    summary_queryset = AbuseReport.objects.all()
+    return success_response(
+        data={
+            "summary": {
+                "total_reports": summary_queryset.count(),
+                "pending_reports": summary_queryset.filter(status="pending_review").count(),
+                "closed_reports": summary_queryset.filter(status="closed").count(),
+                "high_risk_reports": summary_queryset.filter(status="high_risk").count(),
+            },
+            "filters": {
+                "tab": tab,
+                "status": status_filter or None,
+            },
+            "reports": [_serialize_admin_abuse_report_row(report) for report in reports],
+        },
+        message="تم جلب بلاغات الإساءة بنجاح",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_abuse_report_detail_view(request, report_id):
+    from shop.models import AbuseReport
+
+    permission_error = _require_admin_desktop_abuse_reports_permission(request)
+    if permission_error:
+        return permission_error
+
+    try:
+        report = (
+            AbuseReport.objects
+            .select_related(
+                "order",
+                "reporter_customer",
+                "reporter_shop_owner",
+                "reporter_employee",
+                "reporter_driver",
+                "target_customer",
+                "target_shop_owner",
+                "target_driver",
+            )
+            .get(id=report_id)
+        )
+    except AbuseReport.DoesNotExist:
+        return error_response(
+            message="البلاغ غير موجود",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    return success_response(
+        data=_serialize_admin_abuse_report_detail(request, report),
+        message="تم جلب تفاصيل البلاغ بنجاح",
+        request=request,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_abuse_report_resolve_view(request, report_id):
+    from shop.models import AbuseReport
+
+    permission_error = _require_admin_desktop_abuse_reports_permission(request)
+    if permission_error:
+        return permission_error
+
+    try:
+        report = (
+            AbuseReport.objects
+            .select_related("order", "target_customer", "target_shop_owner", "target_driver")
+            .get(id=report_id)
+        )
+    except AbuseReport.DoesNotExist:
+        return error_response(
+            message="البلاغ غير موجود",
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    action = str(request.data.get("action") or "").strip()
+    admin_notes = str(request.data.get("admin_notes") or "").strip() or None
+    if action not in {"warning", "suspend", "close_no_action"}:
+        return error_response(
+            message="الإجراء غير صحيح",
+            errors={"action": ["الإجراء يجب أن يكون warning أو suspend أو close_no_action"]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    try:
+        moderation, auto_suspended = _apply_abuse_report_resolution(
+            report,
+            action=action,
+            admin_user=request.user,
+            admin_notes=admin_notes,
+        )
+    except ValueError:
+        return error_response(
+            message="الإجراء غير صحيح",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    return success_response(
+        data={
+            "report": _serialize_admin_abuse_report_detail(request, report),
+            "auto_suspended": auto_suspended,
+            "warnings_count": moderation.warnings_count if moderation else 0,
+        },
+        message="تم تحديث حالة البلاغ بنجاح",
+        request=request,
+    )
 
 
 def _require_admin_desktop_dashboard_permission(request):

@@ -136,6 +136,10 @@ urlpatterns = [
     path('notifications/', views.notification_list_view, name='notification_list'),
     path('notifications/<int:notification_id>/read/', views.notification_mark_read_view, name='notification_mark_read'),
     path('notifications/read-all/', views.notification_mark_all_read_view, name='notification_mark_all_read'),
+
+    # ==================== Abuse Reports ====================
+    path('reports/reasons/', views.abuse_report_reasons_view, name='abuse_report_reasons'),
+    path('reports/', views.abuse_reports_view, name='abuse_reports'),
     
     # ==================== Chat ====================
     re_path(r'^chat/order/(?P<conversation_id>support_[\w-]+)/send-media/$', views.support_chat_media_upload_view, name='chat_order_support_media_upload'),

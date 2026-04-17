@@ -8,7 +8,7 @@ from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OrderRating, PaymentMethod,
-    Notification, Cart, CartItem, ShopDriver
+    Notification, Cart, CartItem, ShopDriver, AbuseReport, AccountModerationStatus
 )
 from .presence import format_utc_iso8601
 from user.models import ShopOwner, ShopCategory
@@ -1839,6 +1839,12 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
                 'detail': t(request, 'account_is_not_verified_complete_otp_verification')
             })
 
+        moderation = getattr(driver, 'moderation_status', None)
+        if moderation and moderation.is_suspended:
+            raise serializers.ValidationError({
+                'detail': moderation.suspension_reason or 'تم تعليق هذا الحساب من الإدارة.'
+            })
+
         refresh = self.get_token(driver)
 
         return {
@@ -1934,6 +1940,12 @@ class CustomerTokenObtainPairSerializer(serializers.Serializer):
                 'password': 'كلمة المرور غير صحيحة'
             })
         
+        moderation = getattr(customer, 'moderation_status', None)
+        if moderation and moderation.is_suspended:
+            raise serializers.ValidationError({
+                'detail': moderation.suspension_reason or 'تم تعليق هذا الحساب من الإدارة.'
+            })
+
         refresh = self.get_token(customer)
         
         return {
@@ -2080,6 +2092,42 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = ['id', 'notification_type', 'notification_type_display', 
                   'title', 'message', 'data', 'is_read', 'created_at']
         read_only_fields = ['id', 'created_at']
+
+
+class AccountModerationStatusSerializer(serializers.ModelSerializer):
+    target_type = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = AccountModerationStatus
+        fields = [
+            'target_type', 'warnings_count', 'is_suspended', 'suspended_at',
+            'suspension_reason', 'last_warning_at', 'updated_at',
+        ]
+
+
+class AbuseReportSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    resolution_action_display = serializers.CharField(source='get_resolution_action_display', read_only=True)
+    reporter_type_display = serializers.SerializerMethodField()
+    target_type_display = serializers.CharField(source='get_target_type_display', read_only=True)
+
+    class Meta:
+        model = AbuseReport
+        fields = [
+            'id', 'public_id', 'order', 'reporter_type', 'reporter_type_display',
+            'target_type', 'target_type_display', 'reason', 'details', 'status',
+            'status_display', 'resolution_action', 'resolution_action_display',
+            'admin_notes', 'reviewed_at', 'created_at',
+        ]
+        read_only_fields = [
+            'id', 'public_id', 'status', 'resolution_action', 'admin_notes',
+            'reviewed_at', 'created_at',
+        ]
+
+    def get_reporter_type_display(self, obj):
+        if obj.reporter_type in {'shop_owner', 'employee'}:
+            return 'محل'
+        return obj.get_reporter_type_display()
 
 
 # Cart Serializers

@@ -9,6 +9,7 @@ from user.models import (
     ShopOwner,
     get_admin_desktop_role_permissions,
 )
+from shop.models import AbuseReport, AccountModerationStatus, Customer, Driver, Order
 from user.views import (
     _admin_desktop_role_catalog,
     _can_manage_admin_desktop_users,
@@ -203,3 +204,103 @@ class AdminDesktopStoreDeletionEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(ShopOwner.objects.filter(id=self.shop_owner.id).exists())
+
+
+class AbuseReportsFlowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = AdminDesktopUser.objects.create(
+            name="Support Admin",
+            phone_number="+201000000010",
+            email="support@example.com",
+            password="secret123",
+            role="technical_support",
+        )
+        self.shop_owner = ShopOwner.objects.create(
+            owner_name="Shop Owner",
+            shop_name="سوبر المندي",
+            shop_number="S5001",
+            phone_number="+201000000020",
+            password="secret123",
+        )
+        self.customer = Customer.objects.create(
+            name="أحمد العميل",
+            phone_number="+201000000021",
+            password="secret123",
+            is_verified=True,
+        )
+        self.driver = Driver.objects.create(
+            name="كريم السائق",
+            phone_number="+201000000022",
+            password="secret123",
+            is_verified=True,
+            status="available",
+        )
+        self.order = Order.objects.create(
+            shop_owner=self.shop_owner,
+            customer=self.customer,
+            driver=self.driver,
+            order_number="ORD-5001",
+            status="on_way",
+            items='["وجبة"]',
+            total_amount="120.00",
+            delivery_fee="20.00",
+            address="Nasr City",
+            payment_method="cash",
+        )
+
+    def test_customer_can_create_abuse_report_against_driver(self):
+        self.client.force_authenticate(user=self.customer)
+
+        response = self.client.post(
+            "/api/reports/",
+            {
+                "order_id": self.order.id,
+                "target_type": "driver",
+                "target_id": self.driver.id,
+                "reason": "delay",
+                "details": "تأخير أكتر من المتوقع",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(AbuseReport.objects.count(), 1)
+        report = AbuseReport.objects.first()
+        self.assertEqual(report.reporter_customer, self.customer)
+        self.assertEqual(report.target_driver, self.driver)
+        self.assertEqual(response.data["data"]["report"]["public_id"], report.public_id)
+
+    def test_three_warnings_suspend_target_account(self):
+        report = AbuseReport.objects.create(
+            order=self.order,
+            reporter_customer=self.customer,
+            reporter_type="customer",
+            target_driver=self.driver,
+            target_type="driver",
+            reason="abusive_language",
+            details="test",
+        )
+        moderation = AccountModerationStatus.objects.create(
+            driver=self.driver,
+            warnings_count=2,
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            f"/api/admin-desktop/abuse-reports/{report.id}/resolve/",
+            {
+                "action": "warning",
+                "admin_notes": "آخر تحذير",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        moderation.refresh_from_db()
+        report.refresh_from_db()
+        self.assertEqual(moderation.warnings_count, 3)
+        self.assertTrue(moderation.is_suspended)
+        self.assertEqual(report.status, "closed")
+        self.assertEqual(report.resolution_action, "warning")
+        self.assertTrue(response.data["data"]["auto_suspended"])
