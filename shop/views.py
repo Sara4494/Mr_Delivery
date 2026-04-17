@@ -5068,7 +5068,7 @@ def abuse_reports_view(request):
     )
 
     return success_response(
-        data=_serialize_abuse_report_detail(report, request=request),
+        data={},
         message='تم إرسال البلاغ بنجاح',
         status_code=status.HTTP_201_CREATED,
         request=request,
