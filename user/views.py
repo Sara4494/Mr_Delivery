@@ -135,6 +135,11 @@ def _admin_desktop_phone_variants(phone_number):
     return list(dict.fromkeys(v for v in variants if v))
 
 
+def _looks_like_valid_login_phone(phone_number):
+    raw_phone = "".join(ch for ch in str(phone_number or "") if ch.isdigit())
+    return len(raw_phone) >= 10
+
+
 def _serialize_admin_desktop_user(request, user):
     permissions = user.get_resolved_permissions()
     profile_image = user.profile_image.url if user.profile_image else None
@@ -390,6 +395,17 @@ def admin_desktop_login_view(request):
             request=request,
         )
 
+    if not _looks_like_valid_login_phone(phone_number):
+        return error_response(
+            message="يرجى إدخال رقم موبايل صحيح وكامل لتسجيل الدخول",
+            errors={
+                "code": "INVALID_PHONE_FORMAT",
+                "phone_number": ["رقم الموبايل غير مكتمل أو غير صحيح"],
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
     user = (
         AdminDesktopUser.objects
         .filter(phone_number__in=_admin_desktop_phone_variants(phone_number))
@@ -399,14 +415,21 @@ def admin_desktop_login_view(request):
 
     if not user or not user.check_password(password):
         return error_response(
-            message=t(request, "phone_number_or_password_is_incorrect"),
+            message="رقم الموبايل أو كلمة المرور غير صحيحة",
+            errors={
+                "code": "INVALID_ADMIN_DESKTOP_CREDENTIALS",
+                "non_field_errors": ["تأكّد من رقم الموبايل وكلمة المرور ثم حاول مرة أخرى"],
+            },
             status_code=status.HTTP_401_UNAUTHORIZED,
             request=request,
         )
 
     if not user.is_active:
         return error_response(
-            message=t(request, "account_is_inactive"),
+            message="هذا الحساب غير مفعل حاليًا. برجاء التواصل مع مسؤول النظام",
+            errors={
+                "code": "ADMIN_DESKTOP_ACCOUNT_INACTIVE",
+            },
             status_code=status.HTTP_401_UNAUTHORIZED,
             request=request,
         )

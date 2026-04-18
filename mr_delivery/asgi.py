@@ -19,12 +19,12 @@ django_asgi_app = get_asgi_application()
 
 # الآن يمكن استيراد routing و middleware بعد setup Django
 from channels.routing import ProtocolTypeRouter, URLRouter
-import shop.routing
+from mr_delivery.websocket_urls import websocket_urlpatterns
 from shop.middleware import JWTAuthMiddleware
 
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
     "websocket": JWTAuthMiddleware(
-        URLRouter(shop.routing.websocket_urlpatterns)
+        URLRouter(websocket_urlpatterns)
     ),
 })

@@ -44,9 +44,6 @@ from .serializers import (
     ShopOrderListSerializer,
     OrderCreateSerializer,
     CustomerOrderCreateSerializer,
-    CustomerSupportConversationCreateSerializer,
-    CustomerSupportConversationSerializer,
-    CustomerSupportMessageSerializer,
     InvoiceSerializer,
     InvoiceCreateSerializer,
     EmployeeSerializer,
@@ -79,6 +76,16 @@ from .serializers import (
     AppStatusSerializer,
 )
 from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
+from .core.identity import (
+    resolve_customer_user as _resolve_customer_user,
+    resolve_shop_owner_or_employee_owner as _resolve_shop_owner_or_employee_owner,
+    resolve_user_type as _core_resolve_user_type,
+)
+from .support_center.api import (
+    customer_support_conversations_view,
+    shop_support_conversations_view,
+    support_chat_media_upload_view,
+)
 from user.models import (
     ShopCategory,
     ShopOwner,
@@ -95,8 +102,6 @@ from .websocket_utils import (
     broadcast_chat_message_to_order,
     broadcast_chat_message_to_customer,
     broadcast_chat_message,
-    notify_support_conversation_update,
-    notify_support_message,
     notify_shop_status_updated,
     notify_driver_status_updated,
 )
@@ -249,12 +254,12 @@ class OrderPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
-    
+
     def get_paginated_response(self, data):
         """تخصيص شكل الـ response للـ pagination"""
         from rest_framework.response import Response
         from rest_framework import status
-        
+
         response_data = {
             "status": status.HTTP_200_OK,
             **build_message_fields(
@@ -268,7 +273,7 @@ class OrderPagination(PageNumberPagination):
                 'results': data
             }
         }
-        
+
         return Response(response_data, status=status.HTTP_200_OK)
 
 
@@ -277,12 +282,12 @@ class CustomerPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
-    
+
     def get_paginated_response(self, data):
         """تخصيص شكل الـ response للـ pagination"""
         from rest_framework.response import Response
         from rest_framework import status
-        
+
         response_data = {
             "status": status.HTTP_200_OK,
             **build_message_fields(
@@ -296,7 +301,7 @@ class CustomerPagination(PageNumberPagination):
                 'results': data
             }
         }
-        
+
         return Response(response_data, status=status.HTTP_200_OK)
 
 
@@ -2592,150 +2597,6 @@ def driver_order_chat_view(request, order_id):
 
     if request.method == 'POST':
         if not can_open:
-            return Response(
-                {
-                    'status': status.HTTP_403_FORBIDDEN,
-                    'message': 'هذه المحادثة غير متاحة الآن',
-                    'data': {
-                    'conversation_id': conversation_id,
-                    'order_id': order.id,
-                    'chat_type': 'driver_customer',
-                    'can_open': False,
-                    'ws_path': ws_path,
-                    },
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        content = str(request.data.get('content') or request.data.get('text') or '').strip()
-        if not content:
-            return error_response(
-                message='نص الرسالة مطلوب',
-                errors={'content': 'This field is required.'},
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        message = ChatMessage.objects.create(
-            order=order,
-            chat_type='driver_customer',
-            message_type='text',
-            content=content,
-            sender_type='driver',
-            sender_driver=driver,
-        )
-
-        payload = _chat_message_payload(message, request=request)
-        broadcast_chat_message(order.id, 'driver_customer', payload, request=request)
-
-        normalized_message = {
-            'id': payload.get('id'),
-            'type': payload.get('message_type'),
-            'message_type': payload.get('message_type'),
-            'sender': payload.get('sender_type'),
-            'sender_type': payload.get('sender_type'),
-            'sender_name': payload.get('sender_name'),
-            'text': payload.get('content'),
-            'message': payload.get('content'),
-            'content': payload.get('content'),
-            'image_url': payload.get('image_file_url'),
-            'audio_url': payload.get('audio_file_url'),
-            'voice_duration_seconds': None,
-            'sent_at': payload.get('created_at'),
-            'created_at': payload.get('created_at'),
-            'delivery_status': 'sent',
-            'is_read': payload.get('is_read'),
-        }
-
-        return success_response(
-            data={
-                'conversation_id': conversation_id,
-                'order_id': order.id,
-                'chat_type': 'driver_customer',
-                'can_open': True,
-                'ws_path': ws_path,
-                'message': normalized_message,
-            },
-            message='تم إرسال الرسالة بنجاح',
-            status_code=status.HTTP_201_CREATED,
-        )
-
-    messages_qs = (
-        ChatMessage.objects
-        .filter(order=order, chat_type='driver_customer')
-        .select_related('sender_customer', 'sender_shop_owner', 'sender_employee', 'sender_driver')
-        .order_by('-created_at')[:50]
-    )
-    messages = [_chat_message_payload(message, request=request) for message in reversed(list(messages_qs))]
-    normalized_messages = [
-        {
-            'id': item.get('id'),
-            'type': item.get('message_type'),
-            'message_type': item.get('message_type'),
-            'sender': item.get('sender_type'),
-            'sender_type': item.get('sender_type'),
-            'sender_name': item.get('sender_name'),
-            'text': item.get('content'),
-            'message': item.get('content'),
-            'content': item.get('content'),
-            'image_url': item.get('image_file_url'),
-            'audio_url': item.get('audio_file_url'),
-            'voice_duration_seconds': None,
-            'sent_at': item.get('created_at'),
-            'created_at': item.get('created_at'),
-            'delivery_status': 'read' if item.get('is_read') else 'sent',
-            'is_read': item.get('is_read'),
-        }
-        for item in messages
-    ]
-
-    data = {
-        'conversation_id': conversation_id,
-        'order_id': order.id,
-        'chat_type': 'driver_customer',
-        'can_open': can_open,
-        'ws_path': ws_path,
-        'messages': normalized_messages,
-    }
-
-    if not can_open:
-        return success_response(
-            data=data,
-            message='هذه المحادثة غير متاحة الآن',
-            status_code=status.HTTP_200_OK,
-        )
-
-    return success_response(
-        data=data,
-        message=t(request, 'driver_chat_opened_successfully'),
-        status_code=status.HTTP_200_OK,
-    )
-
-
-@api_view(['GET', 'POST'])
-@permission_classes([IsDriver])
-def driver_order_chat_view(request, order_id):
-    """
-    Driver chat bootstrap for the driver-customer chat.
-    GET /api/driver/orders/{id}/chat/
-    POST /api/driver/orders/{id}/chat/
-    """
-    driver = _get_driver_from_request(request)
-    if not driver:
-        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
-    if not order:
-        return error_response(
-            message=t(request, 'driver_order_not_found'),
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-
-    can_open = bool(order.driver_chat_opened_at)
-    conversation_id = f'order_{order.id}_driver_customer'
-    ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
-
-    if request.method == 'POST':
-        if not can_open:
             order.driver_chat_opened_at = timezone.now()
             order.save(update_fields=['driver_chat_opened_at', 'updated_at'])
             can_open = True
@@ -2866,7 +2727,7 @@ def shop_status_view(request):
         return _owner_or_cashier_forbidden(request)
 
     status_obj, created = ShopStatus.objects.get_or_create(shop_owner=shop_owner)
-    
+
     if request.method == 'GET':
         serializer = ShopStatusSerializer(status_obj)
         return success_response(
@@ -2874,7 +2735,7 @@ def shop_status_view(request):
             message=t(request, 'shop_status_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
-    
+
     elif request.method == 'PUT':
         serializer = ShopStatusSerializer(status_obj, data=request.data, partial=True)
         if serializer.is_valid():
@@ -2972,32 +2833,32 @@ def customer_list_view(request):
     POST /api/shop/customers/ - إضافة عميل جديد
     """
     shop_owner = request.user
-    
+
     if request.method == 'GET':
         search_query = request.query_params.get('search', '')
         queryset = Customer.objects.filter(shop_owner=shop_owner)
-        
+
         if search_query:
             queryset = queryset.filter(
                 Q(name__icontains=search_query) |
                 Q(phone_number__icontains=search_query)
             )
-        
+
         # Pagination
         paginator = CustomerPagination()
         page = paginator.paginate_queryset(queryset, request)
-        
+
         if page is not None:
             serializer = CustomerSerializer(page, many=True, context={'request': request})
             return paginator.get_paginated_response(serializer.data)
-        
+
         serializer = CustomerSerializer(queryset, many=True, context={'request': request})
         return success_response(
             data=serializer.data,
             message=t(request, 'customers_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
-    
+
     elif request.method == 'POST':
         serializer = CustomerCreateSerializer(
             data=request.data,
@@ -3028,7 +2889,7 @@ def customer_detail_view(request, customer_id):
     DELETE /api/shop/customers/{id}/ - حذف عميل
     """
     shop_owner = request.user
-    
+
     try:
         customer = Customer.objects.get(id=customer_id, shop_owner=shop_owner)
     except Customer.DoesNotExist:
@@ -3036,7 +2897,7 @@ def customer_detail_view(request, customer_id):
             message=t(request, 'customer_not_found'),
             status_code=status.HTTP_404_NOT_FOUND
         )
-    
+
     if request.method == 'GET':
         serializer = CustomerSerializer(customer, context={'request': request})
         return success_response(
@@ -3044,7 +2905,7 @@ def customer_detail_view(request, customer_id):
             message=t(request, 'customer_data_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
-    
+
     elif request.method == 'PUT':
         serializer = CustomerCreateSerializer(customer, data=request.data, partial=True)
         if serializer.is_valid():
@@ -3060,7 +2921,7 @@ def customer_detail_view(request, customer_id):
             errors=serializer.errors,
             status_code=status.HTTP_400_BAD_REQUEST
         )
-    
+
     elif request.method == 'DELETE':
         customer.delete()
         return success_response(
@@ -3324,43 +3185,43 @@ def order_list_view(request):
     shop_owner = _get_shop_owner_from_request(request)
     if not shop_owner:
         return _owner_or_employee_forbidden(request)
-    
+
     if request.method == 'GET':
         status_filter = request.query_params.get('status')
         search_query = request.query_params.get('search')
-        
+
         queryset = Order.objects.filter(shop_owner=shop_owner).select_related('customer')
-        
+
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
+
         if search_query:
             queryset = queryset.filter(
                 Q(order_number__icontains=search_query) |
                 Q(customer__name__icontains=search_query) |
                 Q(customer__phone_number__icontains=search_query)
             )
-        
+
         # Sorting
         sort_by = request.query_params.get('sort_by', '-created_at')
         if sort_by.lstrip('-') in ['created_at', 'updated_at', 'total_amount']:
             queryset = queryset.order_by(sort_by)
-        
+
         # Pagination
         paginator = OrderPagination()
         page = paginator.paginate_queryset(queryset, request)
-        
+
         if page is not None:
             serializer = ShopOrderListSerializer(page, many=True, context={'request': request})
             return paginator.get_paginated_response(serializer.data)
-        
+
         serializer = ShopOrderListSerializer(queryset, many=True, context={'request': request})
         return success_response(
             data=serializer.data,
             message=t(request, 'orders_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
-    
+
     elif request.method == 'POST':
         serializer = OrderCreateSerializer(
             data=request.data,
@@ -3383,7 +3244,7 @@ def order_list_view(request):
 
 def _get_shop_owner_from_request(request):
     """صاحب المحل من الطلب (صاحب محل أو موظف)"""
-    return _resolve_owner_for_owner_or_employee(request.user)
+    return _resolve_shop_owner_or_employee_owner(request.user)
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
@@ -3398,7 +3259,7 @@ def order_detail_view(request, order_id):
     shop_owner = _get_shop_owner_from_request(request)
     if not shop_owner:
         return _owner_or_employee_forbidden(request)
-    
+
     try:
         order = Order.objects.get(id=order_id, shop_owner=shop_owner)
     except Order.DoesNotExist:
@@ -3406,7 +3267,7 @@ def order_detail_view(request, order_id):
             message=t(request, 'order_not_found'),
             status_code=status.HTTP_404_NOT_FOUND
         )
-    
+
     if request.method == 'GET':
         serializer = OrderSerializer(order, context={'request': request})
         return success_response(
@@ -3414,7 +3275,7 @@ def order_detail_view(request, order_id):
             message=t(request, 'order_data_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
-    
+
     elif request.method == 'PUT':
         # تحديث الطلب
         old_driver = order.driver
@@ -3462,7 +3323,7 @@ def order_detail_view(request, order_id):
                     message='اختار الدليفري أولاً قبل تحويل حالة الأوردر.',
                     status_code=status.HTTP_400_BAD_REQUEST
                 )
-        
+
         # قبول الطلب: يجب تعبئة سعر الطلب (سعر التوصيل اختياري)
         if new_status == 'pending_customer_confirm':
             new_total = request.data.get('total_amount')
@@ -3477,7 +3338,7 @@ def order_detail_view(request, order_id):
                     message=t(request, 'order_price_required_for_accept'),
                     status_code=status.HTTP_400_BAD_REQUEST
                 )
-        
+
         if 'customer_id' in request.data:
             try:
                 customer = Customer.objects.get(id=request.data['customer_id'], shop_owner=shop_owner)
@@ -3487,7 +3348,7 @@ def order_detail_view(request, order_id):
                     message=t(request, 'customer_not_found'),
                     status_code=status.HTTP_404_NOT_FOUND
                 )
-        
+
         if 'employee_id' in request.data:
             emp_id = request.data['employee_id']
             if emp_id:
@@ -3503,7 +3364,7 @@ def order_detail_view(request, order_id):
         elif getattr(request.user, 'user_type', None) == 'employee' and not order.employee_id:
             # Auto-link the order with the logged-in employee when no explicit employee_id is sent.
             order.employee = request.user
-        
+
         if 'driver_id' in request.data:
             driver_id = request.data['driver_id']
             if driver_id:
@@ -3529,7 +3390,7 @@ def order_detail_view(request, order_id):
                 order.driver_assigned_at = None
                 order.driver_accepted_at = None
                 order.driver_chat_opened_at = None
-        
+
         # تحديث باقي الحقول
         for field in ['status', 'items', 'total_amount', 'delivery_fee', 'address', 'notes']:
             if field in request.data:
@@ -3537,10 +3398,10 @@ def order_detail_view(request, order_id):
                 if field == 'items' and isinstance(field_value, list):
                     field_value = json.dumps(field_value, ensure_ascii=False)
                 setattr(order, field, field_value)
-        
+
         order.save()
         sender_type = 'employee' if getattr(request.user, 'user_type', None) == 'employee' else 'shop_owner'
-        
+
         # رسائل تلقائية عند الرفض/الإلغاء/القبول (حسب الصور والـ PDF)
         try:
             if new_status == 'cancelled':
@@ -3589,14 +3450,14 @@ def order_detail_view(request, order_id):
                 broadcast_chat_message_to_order(order.id, _chat_message_payload(driver_msg, request=request), request=request)
         except Exception as e:
             print(f"Order system message broadcast error: {e}")
-        
+
         # تحديث عدد الطلبات للسائقين
         if old_driver:
             old_driver.current_orders_count = old_driver.orders.filter(
                 status__in=['new', 'preparing', 'on_way']
             ).count()
             old_driver.save()
-        
+
         if order.driver:
             order.driver.current_orders_count = order.driver.orders.filter(
                 status__in=['new', 'preparing', 'on_way']
@@ -3607,9 +3468,9 @@ def order_detail_view(request, order_id):
             sync_order_assignment_change(order, old_driver=old_driver, new_driver=order.driver, request=request)
         except Exception as e:
             print(f"driver_chat sync error: {e}")
-        
+
         response_serializer = OrderSerializer(order, context={'request': request})
-        
+
         # إرسال إشعار WebSocket بتحديث الطلب
         try:
             order_data = response_serializer.data
@@ -3619,7 +3480,7 @@ def order_detail_view(request, order_id):
                 driver_id=order.driver_id if order.driver else None,
                 order_data=order_data
             )
-            
+
             # إذا تم تعيين سائق جديد، إشعاره
             if order.driver and (not old_driver or old_driver.id != order.driver.id):
                 notify_driver_assigned(order.driver.id, order_data)
@@ -3640,13 +3501,13 @@ def order_detail_view(request, order_id):
             previous_driver_accepted_at=old_driver_accepted_at,
             request=request,
         )
-        
+
         return success_response(
             data=response_serializer.data,
             message=t(request, 'order_updated_successfully'),
             status_code=status.HTTP_200_OK
         )
-    
+
     elif request.method == 'DELETE':
         deleted_order_id = order.id
         deleted_customer_id = order.customer_id
@@ -3680,7 +3541,7 @@ def invoice_list_view(request):
     POST /api/shop/invoices/ - إنشاء فاتورة سريعة
     """
     shop_owner = request.user
-    
+
     if request.method == 'GET':
         queryset = Invoice.objects.filter(shop_owner=shop_owner).select_related('customer', 'order')
         serializer = InvoiceSerializer(queryset, many=True, context={'request': request})
@@ -3689,7 +3550,7 @@ def invoice_list_view(request):
             message=t(request, 'invoices_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
-    
+
     elif request.method == 'POST':
         data = request.data.copy()
         if 'items' in data and isinstance(data.get('items'), str):
@@ -3721,7 +3582,7 @@ def invoice_list_view(request):
                 address=data['address'],
                 phone_number=data['phone_number']
             )
-            
+
             response_serializer = InvoiceSerializer(invoice, context={'request': request})
             return success_response(
                 data=response_serializer.data,
@@ -3744,7 +3605,7 @@ def invoice_detail_view(request, invoice_id):
     PUT /api/shop/invoices/{id}/ - تحديث حالة الإرسال
     """
     shop_owner = request.user
-    
+
     try:
         invoice = Invoice.objects.get(id=invoice_id, shop_owner=shop_owner)
     except Invoice.DoesNotExist:
@@ -3752,7 +3613,7 @@ def invoice_detail_view(request, invoice_id):
             message=t(request, 'invoice_not_found'),
             status_code=status.HTTP_404_NOT_FOUND
         )
-    
+
     if request.method == 'GET':
         serializer = InvoiceSerializer(invoice, context={'request': request})
         return success_response(
@@ -3760,14 +3621,14 @@ def invoice_detail_view(request, invoice_id):
             message=t(request, 'invoice_data_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
-    
+
     elif request.method == 'PUT':
         is_sent = request.data.get('is_sent', False)
         invoice.is_sent = is_sent
         if is_sent and not invoice.sent_at:
             invoice.sent_at = timezone.now()
         invoice.save()
-        
+
         serializer = InvoiceSerializer(invoice, context={'request': request})
         return success_response(
             data=serializer.data,
@@ -3909,7 +3770,7 @@ def shop_dashboard_statistics_view(request):
         },
         'generated_at': timezone.now().isoformat(),
     }
-    
+
     return success_response(
         data=statistics,
         message=t(request, 'statistics_retrieved_successfully'),
@@ -4013,7 +3874,7 @@ def employee_login_view(request):
     }
     """
     serializer = EmployeeTokenObtainPairSerializer(data=request.data, context={'request': request})
-    
+
     try:
         serializer.is_valid(raise_exception=True)
     except Exception as e:
@@ -4026,7 +3887,7 @@ def employee_login_view(request):
             errors=errors,
             status_code=status.HTTP_403_FORBIDDEN if is_blocked else status.HTTP_400_BAD_REQUEST
         )
-    
+
     return success_response(
         data=serializer.validated_data,
         message=t(request, 'login_successful'),
@@ -4047,7 +3908,7 @@ def driver_login_view(request):
     }
     """
     serializer = DriverTokenObtainPairSerializer(data=request.data, context={'request': request})
-    
+
     try:
         serializer.is_valid(raise_exception=True)
     except Exception as e:
@@ -4064,7 +3925,7 @@ def driver_login_view(request):
             errors=errors,
             status_code=status.HTTP_401_UNAUTHORIZED if detail_message else status.HTTP_400_BAD_REQUEST
         )
-    
+
     return success_response(
         data=serializer.validated_data,
         message=t(request, 'login_successful'),
@@ -4369,13 +4230,7 @@ def customer_login_view(request):
 
 def _get_customer_from_request(request):
     """العميل من الطلب (لـ JWT عميل)"""
-    user = request.user
-    if isinstance(user, Customer):
-        return user
-    try:
-        return Customer.objects.get(id=user.id)
-    except (Customer.DoesNotExist, AttributeError):
-        return None
+    return _resolve_customer_user(request.user)
 
 
 CUSTOMER_PHONE_CHANGE_OTP_TTL_SECONDS = 600
@@ -4474,124 +4329,6 @@ def _build_customer_message_summary_payload(message, request):
     }
 
 
-def _build_support_message_payload(message, request=None, base_url=None):
-    serializer = CustomerSupportMessageSerializer(
-        message,
-        context={'request': request, 'base_url': base_url} if request is not None or base_url else {}
-    )
-    serialized = serializer.data
-    return {
-        'id': serialized.get('id'),
-        'thread_id': serialized.get('thread_id'),
-        'support_conversation_id': serialized.get('support_conversation_id'),
-        'chat_type': serialized.get('chat_type'),
-        'conversation_type': serialized.get('conversation_type'),
-        'conversation_type_display': serialized.get('conversation_type_display'),
-        'sender_type': serialized.get('sender_type'),
-        'sender_name': serialized.get('sender_name'),
-        'sender_id': serialized.get('sender_id'),
-        'customer_profile_image_url': serialized.get('customer_profile_image_url'),
-        'message_type': serialized.get('message_type'),
-        'content': serialized.get('content'),
-        'is_read': serialized.get('is_read'),
-        'created_at': serialized.get('created_at'),
-        'audio_file_url': serialized.get('audio_file_url'),
-        'image_file_url': serialized.get('image_file_url'),
-        'latitude': serialized.get('latitude'),
-        'longitude': serialized.get('longitude'),
-    }
-
-
-def _build_customer_order_brief_payload(order):
-    return {
-        'id': order.id,
-        'order_number': order.order_number,
-        'status': order.status,
-        'status_display': order.get_status_display(),
-        'created_at': order.created_at.isoformat() if order.created_at else None,
-        'updated_at': order.updated_at.isoformat() if order.updated_at else None,
-    }
-
-
-def _get_customer_friendly_delivery_status(order):
-    mapping = {
-        'confirmed': 'تم الاستلام',
-        'preparing': 'تم الاستلام',
-        'on_way': 'في الطريق',
-    }
-    return mapping.get(order.status, order.get_status_display())
-
-
-def _build_customer_driver_payload(order, request):
-    driver = order.driver
-    if not driver:
-        return None
-
-    return {
-        'id': driver.id,
-        'name': driver.name,
-        'phone_number': driver.phone_number,
-        'profile_image_url': _build_file_url(request, driver.profile_image),
-        'status': driver.status,
-        'status_display': driver.get_status_display(),
-        'current_latitude': str(driver.current_latitude) if driver.current_latitude is not None else None,
-        'current_longitude': str(driver.current_longitude) if driver.current_longitude is not None else None,
-        'location_updated_at': driver.location_updated_at.isoformat() if driver.location_updated_at else None,
-    }
-
-
-def _build_customer_shop_conversation_item(order, request, base_url=None):
-    last_message = _get_prefetched_latest_message(order)
-    return {
-        'shop_id': order.shop_owner_id,
-        'shop_name': order.shop_owner.shop_name,
-        'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image, base_url=base_url),
-        'subtitle': 'تم التواصل مؤخراً' if last_message else 'لا يوجد تواصل بعد',
-        'chat': {
-            'thread_id': str(order.id),
-            'order_id': order.id,
-            'chat_type': 'shop_customer',
-            'shop_id': order.shop_owner_id,
-        },
-    }
-
-
-def _build_customer_support_shop_conversation_item(conversation, request, base_url=None):
-    payload = CustomerSupportConversationSerializer(
-        conversation,
-        context={'request': request, 'base_url': base_url} if request is not None or base_url else {}
-    ).data
-    return {
-        'shop_id': payload.get('shop_id'),
-        'shop_name': payload.get('shop_name'),
-        'shop_logo_url': payload.get('shop_logo_url'),
-        'subtitle': payload.get('subtitle'),
-        'chat': payload.get('chat'),
-        'support_conversation': payload,
-    }
-
-
-def _build_support_message_notification_payload(conversation, message, request=None, base_url=None):
-    conversation_payload = CustomerSupportConversationSerializer(
-        conversation,
-        context={'request': request, 'base_url': base_url} if request is not None or base_url else {}
-    ).data
-    return {
-        'support_conversation_id': conversation.public_id,
-        'thread_id': conversation.public_id,
-        'chat_type': 'support_customer',
-        'conversation_type': conversation.conversation_type,
-        'message': _build_support_message_payload(message, request=request, base_url=base_url),
-        'conversation': conversation_payload,
-        'shop_id': conversation.shop_owner_id,
-        'shop_name': conversation.shop_owner.shop_name,
-        'customer_id': conversation.customer_id,
-        'customer_name': conversation.customer.name,
-        'customer_profile_image_url': conversation_payload.get('customer_profile_image_url'),
-        'customer': conversation_payload.get('customer'),
-    }
-
-
 def _build_customer_on_way_order_item(order, request, base_url=None):
     driver = order.driver
     can_chat_with_driver = bool(order.driver_id and order.status in {'preparing', 'on_way'})
@@ -4620,18 +4357,7 @@ def _build_customer_on_way_order_item(order, request, base_url=None):
 
 
 def _resolve_user_type(user):
-    user_type = getattr(user, 'user_type', None)
-    if user_type in {'customer', 'shop_owner', 'employee', 'driver'}:
-        return user_type
-    if isinstance(user, Customer):
-        return 'customer'
-    if isinstance(user, ShopOwner):
-        return 'shop_owner'
-    if isinstance(user, Employee):
-        return 'employee'
-    if isinstance(user, Driver):
-        return 'driver'
-    return None
+    return _core_resolve_user_type(user)
 
 
 ABUSE_REPORT_REASON_OPTIONS = {
@@ -4833,43 +4559,6 @@ def _sender_kwargs_for_user(user, user_type):
     return sender_kwargs
 
 
-def _support_sender_kwargs_for_user(user, user_type):
-    sender_kwargs = {'sender_type': user_type}
-    if user_type == 'customer':
-        sender_kwargs['sender_customer'] = user
-    elif user_type == 'shop_owner':
-        sender_kwargs['sender_shop_owner'] = user
-    elif user_type == 'employee':
-        sender_kwargs['sender_employee'] = user
-    else:
-        return None
-    return sender_kwargs
-
-
-def _can_user_access_chat(order, user, user_type, chat_type):
-    if user_type == 'shop_owner':
-        return chat_type == 'shop_customer' and order.shop_owner_id == user.id
-    if user_type == 'employee':
-        return chat_type == 'shop_customer' and order.shop_owner_id == getattr(user, 'shop_owner_id', None)
-    if user_type == 'driver':
-        return chat_type == 'driver_customer' and order.driver_id == user.id
-    if user_type == 'customer':
-        if order.customer_id != user.id:
-            return False
-        if chat_type == 'driver_customer':
-            return order.driver_chat_opened_at is not None
-        return chat_type == 'shop_customer'
-    return False
-
-
-def _can_user_access_support_conversation(conversation, user, user_type):
-    if user_type == 'shop_owner':
-        return conversation.shop_owner_id == getattr(user, 'id', None)
-    if user_type == 'employee':
-        return conversation.shop_owner_id == getattr(user, 'shop_owner_id', None)
-    if user_type == 'customer':
-        return conversation.customer_id == getattr(user, 'id', None)
-    return False
 
 
 @api_view(['POST'])
@@ -5077,223 +4766,6 @@ def abuse_reports_view(request):
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsCustomer])
-def customer_support_conversations_view(request):
-    """
-    Create or list standalone customer support chats.
-    GET /api/customer/support-chats/
-    POST /api/customer/support-chats/
-    """
-    customer = _get_customer_from_request(request)
-    if not customer:
-        return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-    if request.method == 'GET':
-        conversations = (
-            CustomerSupportConversation.objects
-            .filter(customer=customer)
-            .select_related('shop_owner', 'customer')
-            .order_by('-updated_at', '-created_at')
-        )
-        serializer = CustomerSupportConversationSerializer(conversations, many=True, context={'request': request})
-        return success_response(
-            data={
-                'count': len(serializer.data),
-                'results': serializer.data,
-            },
-            message='support_conversations_retrieved_successfully',
-            status_code=status.HTTP_200_OK,
-            request=request,
-        )
-
-    serializer = CustomerSupportConversationCreateSerializer(
-        data=request.data,
-        context={'customer': customer, 'request': request},
-    )
-    if not serializer.is_valid():
-        return error_response(
-            message=t(request, 'invalid_data'),
-            errors=serializer.errors,
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    conversation = serializer.save()
-    initial_message = str(serializer.validated_data.get('initial_message') or '').strip()
-    if initial_message:
-        message = CustomerSupportMessage.objects.create(
-            conversation=conversation,
-            sender_type='customer',
-            sender_customer=customer,
-            message_type='text',
-            content=initial_message,
-        )
-        conversation.last_message_preview = initial_message
-        conversation.last_message_at = message.created_at
-        conversation.unread_for_shop_count = conversation.messages.filter(
-            is_read=False,
-            sender_type='customer',
-        ).count()
-        conversation.unread_for_customer_count = conversation.messages.filter(
-            is_read=False,
-        ).exclude(sender_type='customer').count()
-        conversation.save(update_fields=[
-            'last_message_preview',
-            'last_message_at',
-            'unread_for_shop_count',
-            'unread_for_customer_count',
-            'updated_at',
-        ])
-        support_payload = _build_support_message_notification_payload(conversation, message, request=request)
-        notify_support_message(conversation.shop_owner_id, conversation.customer_id, support_payload)
-
-    response_serializer = CustomerSupportConversationSerializer(conversation, context={'request': request})
-    notify_support_conversation_update(
-        conversation.shop_owner_id,
-        conversation.customer_id,
-        response_serializer.data,
-    )
-    return success_response(
-        data=response_serializer.data,
-        message='تم فتح المحادثة بنجاح',
-        status_code=status.HTTP_201_CREATED,
-        request=request,
-    )
-
-
-@api_view(['GET'])
-@permission_classes([IsShopOwnerOrEmployee])
-def shop_support_conversations_view(request):
-    """
-    List standalone customer support chats for a shop.
-    GET /api/shop/support-chats/
-    """
-    shop_owner = _get_shop_owner_from_request(request)
-    if not shop_owner:
-        return error_response(message=t(request, 'shop_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-
-    conversations = (
-        CustomerSupportConversation.objects
-        .filter(shop_owner=shop_owner)
-        .select_related('shop_owner', 'customer')
-        .order_by('-updated_at', '-created_at')
-    )
-    serializer = CustomerSupportConversationSerializer(conversations, many=True, context={'request': request})
-    return success_response(
-        data={
-            'count': len(serializer.data),
-            'results': serializer.data,
-        },
-        message='support_conversations_retrieved_successfully',
-        status_code=status.HTTP_200_OK,
-        request=request,
-    )
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def support_chat_media_upload_view(request, conversation_id):
-    """
-    Upload support chat media then broadcast instantly to WebSocket subscribers.
-    POST /api/chat/support/{conversation_id}/send-media/
-    """
-    try:
-        conversation = (
-            CustomerSupportConversation.objects
-            .select_related('shop_owner', 'customer')
-            .get(public_id=conversation_id)
-        )
-    except CustomerSupportConversation.DoesNotExist:
-        return error_response(
-            message='محادثة الدعم غير موجودة.',
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-
-    user = request.user
-    user_type = _resolve_user_type(user)
-    if not user_type or not _can_user_access_support_conversation(conversation, user, user_type):
-        return error_response(
-            message='ليس لديك صلاحية للوصول إلى هذه المحادثة.',
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
-
-    image_file = request.FILES.get('image_file')
-    audio_file = request.FILES.get('audio_file')
-    if bool(image_file) == bool(audio_file):
-        return error_response(
-            message=t(request, 'invalid_data'),
-            errors={'file': 'Send exactly one file: image_file or audio_file.'},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    requested_type = str(request.data.get('message_type') or '').strip().lower()
-    if image_file:
-        if requested_type and requested_type != 'image':
-            return error_response(
-                message=t(request, 'invalid_data'),
-                errors={'message_type': 'message_type must be image when image_file is provided.'},
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        message_type = 'image'
-        default_preview = 'صورة'
-    else:
-        if requested_type and requested_type != 'audio':
-            return error_response(
-                message=t(request, 'invalid_data'),
-                errors={'message_type': 'message_type must be audio when audio_file is provided.'},
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        message_type = 'audio'
-        default_preview = 'رسالة صوتية'
-
-    sender_kwargs = _support_sender_kwargs_for_user(user, user_type)
-    if not sender_kwargs:
-        return error_response(
-            message='ليس لديك صلاحية للإرسال في هذه المحادثة.',
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
-
-    content = str(request.data.get('content') or '').strip() or None
-    message = CustomerSupportMessage.objects.create(
-        conversation=conversation,
-        message_type=message_type,
-        content=content,
-        audio_file=audio_file,
-        image_file=image_file,
-        **sender_kwargs,
-    )
-    conversation.last_message_preview = content or default_preview
-    conversation.last_message_at = message.created_at
-    conversation.unread_for_shop_count = conversation.messages.filter(
-        is_read=False,
-        sender_type='customer',
-    ).count()
-    conversation.unread_for_customer_count = conversation.messages.filter(
-        is_read=False,
-    ).exclude(sender_type='customer').count()
-    conversation.save(update_fields=[
-        'last_message_preview',
-        'last_message_at',
-        'unread_for_shop_count',
-        'unread_for_customer_count',
-        'updated_at',
-    ])
-
-    payload = _build_support_message_payload(message, request=request)
-    from .websocket_utils import broadcast_support_chat_message
-    broadcast_support_chat_message(conversation.public_id, payload)
-    notify_support_message(
-        conversation.shop_owner_id,
-        conversation.customer_id,
-        _build_support_message_notification_payload(conversation, message, request=request),
-    )
-
-    serialized = CustomerSupportMessageSerializer(message, context={'request': request}).data
-    return success_response(
-        data=serialized,
-        message='تم إرسال الوسائط بنجاح',
-        status_code=status.HTTP_201_CREATED,
-    )
-
-
 # ==================== Shop Categories (master data for shop type) ====================
 
 @api_view(['GET', 'POST'])
@@ -5589,7 +5061,7 @@ def _build_public_shop_payload(shop, request, published_images=None):
             'label': live_status_label,
             'is_open_now': is_open_now,
             'within_schedule_now': within_schedule_now,
-       
+
         },
         'rating': {
             'average': average_rating if ratings_count else 0,
@@ -5675,7 +5147,7 @@ def _build_public_shop_profile_summary_payload(shop, request):
                 'label': live_status_label,
                 'is_open_now': is_open_now,
                 'within_schedule_now': within_schedule_now,
-                 
+
                 'shop_status_label': status_label,
             },
             'rating': {
@@ -5683,7 +5155,7 @@ def _build_public_shop_profile_summary_payload(shop, request):
                 'count': ratings_count,
             },
         },
-       
+
     }
 
 
@@ -5926,7 +5398,7 @@ def public_shop_schedule_view(request, shop_id):
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     status_obj = _safe_shop_status(shop)
     status_value = status_obj.status if status_obj else 'closed'
-    
+
     schedule_payload['status'] = {
         'key': status_value,
         'label': status_obj.get_status_display() if status_obj else 'مغلق',
@@ -6418,7 +5890,7 @@ def customer_orders_list_create_view(request):
     customer = _get_customer_from_request(request)
     if not customer:
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     serializer = CustomerOrderCreateSerializer(
         data=request.data,
         context={'customer': customer, 'request': request}
@@ -6497,7 +5969,7 @@ def customer_order_confirm_view(request, order_id):
     customer = _get_customer_from_request(request)
     if not customer:
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     try:
         order = Order.objects.get(id=order_id, customer=customer)
     except Order.DoesNotExist:
@@ -6505,13 +5977,13 @@ def customer_order_confirm_view(request, order_id):
             message=t(request, 'order_not_found'),
             status_code=status.HTTP_404_NOT_FOUND
         )
-    
+
     if order.status != 'pending_customer_confirm':
         return error_response(
             message=t(request, 'order_not_pending_confirm'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
-    
+
     old_status = order.status
     old_driver_accepted_at = order.driver_accepted_at
     order.status = 'confirmed'
@@ -6529,7 +6001,7 @@ def customer_order_confirm_view(request, order_id):
         broadcast_chat_message_to_order(order.id, _chat_message_payload(accepted_msg, request=request), request=request)
     except Exception as e:
         print(f"confirm order chat message error: {e}")
-    
+
     response_serializer = OrderSerializer(order, context={'request': request})
     try:
         notify_order_update(
@@ -6548,7 +6020,7 @@ def customer_order_confirm_view(request, order_id):
         previous_driver_accepted_at=old_driver_accepted_at,
         request=request,
     )
-    
+
     return success_response(
         data=response_serializer.data,
         message=t(request, 'order_confirmed_successfully'),
@@ -6641,7 +6113,7 @@ def customer_profile_view(request):
     """
     # التحقق من أن المستخدم هو عميل
     user = request.user
-    
+
     # إذا كان المستخدم Customer مباشرة من الـ authentication
     if isinstance(user, Customer):
         customer = user
@@ -6651,14 +6123,14 @@ def customer_profile_view(request):
             customer = Customer.objects.get(id=user.id)
         except Customer.DoesNotExist:
             return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     if not customer:
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     if request.method == 'GET':
         serializer = CustomerAppProfileSerializer(customer, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'profile_retrieved_successfully'))
-    
+
     elif request.method in ('PUT', 'PATCH'):
         payload = {}
 
@@ -6878,12 +6350,12 @@ def customer_address_list_view(request):
         customer = Customer.objects.get(id=customer_id)
     except Customer.DoesNotExist:
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     if request.method == 'GET':
         addresses = customer.addresses.all()
         serializer = CustomerAppAddressSerializer(addresses, many=True, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'addresses_retrieved_successfully'))
-    
+
     elif request.method == 'POST':
         serializer = CustomerAddressSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
@@ -6905,11 +6377,11 @@ def customer_address_detail_view(request, address_id):
         address = CustomerAddress.objects.get(id=address_id, customer_id=customer_id)
     except CustomerAddress.DoesNotExist:
         return error_response(message=t(request, 'address_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     if request.method == 'GET':
         serializer = CustomerAppAddressSerializer(address, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'address_retrieved_successfully'))
-    
+
     elif request.method == 'PUT':
         serializer = CustomerAddressSerializer(address, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
@@ -6917,7 +6389,7 @@ def customer_address_detail_view(request, address_id):
             response_serializer = CustomerAppAddressSerializer(address, context={'request': request})
             return success_response(data=response_serializer.data, message=t(request, 'address_updated_successfully'))
         return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
-    
+
     elif request.method == 'DELETE':
         address.delete()
         return success_response(message=t(request, 'address_deleted_successfully'))
@@ -6934,12 +6406,12 @@ def category_list_view(request):
     POST /api/shop/categories/
     """
     shop_owner = request.user
-    
+
     if request.method == 'GET':
         categories = Category.objects.filter(shop_owner=shop_owner, is_active=True)
         serializer = CategorySerializer(categories, many=True, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'categories_retrieved_successfully'))
-    
+
     elif request.method == 'POST':
         serializer = CategorySerializer(data=request.data)
         if serializer.is_valid():
@@ -6960,18 +6432,18 @@ def category_detail_view(request, category_id):
         category = Category.objects.get(id=category_id, shop_owner=shop_owner)
     except Category.DoesNotExist:
         return error_response(message=t(request, 'category_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     if request.method == 'GET':
         serializer = CategorySerializer(category, context={'request': request})
         return success_response(data=serializer.data, message=t(request, 'category_retrieved_successfully'))
-    
+
     elif request.method == 'PUT':
         serializer = CategorySerializer(category, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return success_response(data=serializer.data, message=t(request, 'category_updated_successfully'))
         return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
-    
+
     elif request.method == 'DELETE':
         category.delete()
         return success_response(message=t(request, 'category_deleted_successfully'))
@@ -7039,11 +6511,11 @@ def order_rating_create_view(request):
     serializer = OrderRatingCreateSerializer(data=request.data)
     if not serializer.is_valid():
         return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
-    
+
     data = serializer.validated_data
     order_id = data.get('order_id')
     shop_id = data.get('shop_id')
-    
+
     if order_id:
         try:
             order = Order.objects.get(id=order_id)
@@ -7068,20 +6540,20 @@ def order_rating_create_view(request):
 
     if order.customer_id != request.user.id:
         return error_response(message=t(request, 'order_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     if order.status != 'delivered':
         return error_response(message=t(request, 'cannot_rate_an_incomplete_order'), status_code=status.HTTP_400_BAD_REQUEST)
-    
+
     if hasattr(order, 'rating'):
         return error_response(message=t(request, 'this_order_has_already_been_rated'), status_code=status.HTTP_400_BAD_REQUEST)
-    
+
     rating = OrderRating.objects.create(
         order=order,
         customer=order.customer,
         shop_rating=data['shop_rating'],
         comment=data.get('comment', '')
     )
-    
+
     # تحديث تقييم السائق إن وجد
     if False and order.driver and data.get('driver_rating'):
         driver = order.driver
@@ -7091,7 +6563,7 @@ def order_rating_create_view(request):
         if avg_rating:
             driver.rating = round(avg_rating, 2)
             driver.save()
-    
+
     response_serializer = OrderRatingSerializer(rating)
     response_data = dict(response_serializer.data)
     response_data.pop('driver_rating', None)
@@ -7135,7 +6607,7 @@ def shop_rating_create_view(request, shop_id):
     if existing_review:
         return error_response(
             message=t(request, 'this_shop_has_already_been_rated'),
- 
+
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -7149,7 +6621,7 @@ def shop_rating_create_view(request, shop_id):
     except IntegrityError:
         return error_response(
             message=t(request, 'this_shop_has_already_been_rated'),
-        
+
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -7168,8 +6640,8 @@ def shop_rating_create_view(request, shop_id):
         message=t(request, 'rating_added_successfully'),
         status_code=status.HTTP_201_CREATED,
     )
- 
- 
+
+
 @api_view(['GET'])
 @permission_classes([IsShopOwner])
 def order_rating_view(request, order_id):
@@ -7181,7 +6653,7 @@ def order_rating_view(request, order_id):
         rating = OrderRating.objects.get(order_id=order_id, order__shop_owner=request.user)
     except OrderRating.DoesNotExist:
         return error_response(message=t(request, 'no_rating_found_for_this_order'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     serializer = OrderRatingSerializer(rating)
     return success_response(data=serializer.data, message=t(request, 'rating_retrieved_successfully'))
 
@@ -7201,12 +6673,12 @@ def payment_method_list_view(request):
         customer = Customer.objects.get(id=customer_id)
     except Customer.DoesNotExist:
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     if request.method == 'GET':
         methods = customer.payment_methods.all()
         serializer = PaymentMethodSerializer(methods, many=True)
         return success_response(data=serializer.data, message=t(request, 'payment_methods_retrieved_successfully'))
-    
+
     elif request.method == 'POST':
         serializer = PaymentMethodCreateSerializer(data=request.data)
         if serializer.is_valid():
@@ -7237,7 +6709,7 @@ def payment_method_delete_view(request, method_id):
         method = PaymentMethod.objects.get(id=method_id, customer_id=customer_id)
     except PaymentMethod.DoesNotExist:
         return error_response(message=t(request, 'payment_method_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     method.delete()
     return success_response(message=t(request, 'payment_method_deleted_successfully'))
 
@@ -7254,7 +6726,7 @@ def notification_list_view(request):
     user = request.user
     # تحديد نوع المستخدم
     notifications = Notification.objects.none()
-    
+
     if isinstance(user, ShopOwner):
         notifications = Notification.objects.filter(shop_owner=user)
     elif isinstance(user, Customer):
@@ -7270,7 +6742,7 @@ def notification_list_view(request):
             notifications = Notification.objects.filter(customer=customer)
         except:
             pass
-    
+
     serializer = NotificationSerializer(notifications[:50], many=True)
     unread_count = notifications.filter(is_read=False).count()
     return success_response(
@@ -7324,7 +6796,7 @@ def cart_view(request, shop_id):
         customer = Customer.objects.get(id=customer_id)
     except Customer.DoesNotExist:
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     cart, created = Cart.objects.get_or_create(customer=customer, shop_owner_id=shop_id)
     serializer = CartSerializer(cart, context={'request': request})
     return success_response(data=serializer.data, message=t(request, 'cart_retrieved_successfully'))
@@ -7343,31 +6815,31 @@ def cart_add_item_view(request, shop_id):
         customer = Customer.objects.get(id=customer_id)
     except Customer.DoesNotExist:
         return error_response(message=t(request, 'customer_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     serializer = AddToCartSerializer(data=request.data)
     if not serializer.is_valid():
         return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
-    
+
     data = serializer.validated_data
     try:
         product = Product.objects.get(id=data['product_id'], shop_owner_id=shop_id, is_available=True)
     except Product.DoesNotExist:
         return error_response(message=t(request, 'product_not_found_or_unavailable'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     cart, _ = Cart.objects.get_or_create(customer=customer, shop_owner_id=shop_id)
-    
+
     cart_item, created = CartItem.objects.get_or_create(
         cart=cart,
         product=product,
         defaults={'quantity': data['quantity'], 'notes': data.get('notes', '')}
     )
-    
+
     if not created:
         cart_item.quantity += data['quantity']
         if data.get('notes'):
             cart_item.notes = data['notes']
         cart_item.save()
-    
+
     cart_serializer = CartSerializer(cart, context={'request': request})
     return success_response(data=cart_serializer.data, message=t(request, 'product_added_to_cart_successfully'))
 
@@ -7386,12 +6858,12 @@ def cart_item_view(request, shop_id, item_id):
         cart_item = cart.items.get(id=item_id)
     except (Cart.DoesNotExist, CartItem.DoesNotExist):
         return error_response(message=t(request, 'item_not_found'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     if request.method == 'PUT':
         serializer = UpdateCartItemSerializer(data=request.data)
         if not serializer.is_valid():
             return error_response(message=t(request, 'invalid_data'), errors=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
-        
+
         data = serializer.validated_data
         if data['quantity'] == 0:
             cart_item.delete()
@@ -7400,10 +6872,10 @@ def cart_item_view(request, shop_id, item_id):
             if 'notes' in data:
                 cart_item.notes = data['notes']
             cart_item.save()
-    
+
     elif request.method == 'DELETE':
         cart_item.delete()
-    
+
     cart.refresh_from_db()
     cart_serializer = CartSerializer(cart, context={'request': request})
     return success_response(data=cart_serializer.data, message=t(request, 'cart_updated_successfully'))
@@ -7443,14 +6915,14 @@ def order_tracking_view(request, order_id):
             message=t(request, 'permission_only_shop_staff'),
             status_code=status.HTTP_403_FORBIDDEN
         )
-    
+
     if order.status not in ['on_way', 'preparing']:
         return error_response(message=t(request, 'order_is_not_trackable_at_the_moment'), status_code=status.HTTP_400_BAD_REQUEST)
-    
+
     driver = order.driver
     if not driver:
         return error_response(message=t(request, 'no_driver_has_been_assigned_to_the_order'), status_code=status.HTTP_404_NOT_FOUND)
-    
+
     return success_response(
         data={
             'order_id': order.id,

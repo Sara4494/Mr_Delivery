@@ -6,11 +6,17 @@ from django.utils import timezone
 from rest_framework import serializers
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
-    CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OrderRating, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver, AbuseReport, AccountModerationStatus
 )
 from .presence import format_utc_iso8601
+from .support_center.serializers import (
+    CustomerSupportConversationCreateSerializer,
+    CustomerSupportConversationSerializer,
+    CustomerSupportMessageSerializer,
+    ShopSupportTicketMessageSerializer,
+    ShopSupportTicketSerializer,
+)
 from user.models import ShopOwner, ShopCategory
 from user.utils import t, build_absolute_file_url
 from user.otp_service import normalize_phone
@@ -29,7 +35,7 @@ class ShopCategorySerializer(serializers.ModelSerializer):
 class ShopStatusSerializer(serializers.ModelSerializer):
     """Serializer لحالة المتجر"""
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
+
     class Meta:
         model = ShopStatus
         fields = ['id', 'status', 'status_display', 'updated_at']
@@ -48,7 +54,7 @@ class CustomerAddressSerializer(serializers.ModelSerializer):
     floor = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     apartment = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     address_type_display = serializers.CharField(source='get_address_type_display', read_only=True)
-    
+
     class Meta:
         model = CustomerAddress
         fields = ['id', 'title', 'address_type', 'address_type_display', 'full_address',
@@ -142,20 +148,20 @@ class CustomerSerializer(serializers.ModelSerializer):
     unread_messages_count = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     last_seen = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Customer
         fields = ['id', 'name', 'phone_number',  'profile_image', 'profile_image_url',
                   'addresses', 'default_address', 'is_online', 'last_seen', 'is_verified',
                   'unread_messages_count', 'last_message', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
-    
+
     def get_profile_image_url(self, obj):
         """إرجاع رابط صورة العميل الكامل"""
         if obj.profile_image:
             return _context_file_url(self, obj.profile_image)
         return None
-    
+
     def get_default_address(self, obj):
         """العنوان الافتراضي"""
         addr = obj.addresses.filter(is_default=True).first()
@@ -165,7 +171,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     def get_last_seen(self, obj):
         return format_utc_iso8601(obj.last_seen)
-    
+
     def get_unread_messages_count(self, obj):
         """عدد الرسائل غير المقروءة للعميل"""
         return sum(order.unread_messages_count for order in obj.orders.all())
@@ -184,7 +190,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             'text': '',
         }
         return preview_map.get(message_type, '')
-    
+
     def get_last_message(self, obj):
         """آخر رسالة من العميل"""
         last_order = obj.orders.order_by('-updated_at').first()
@@ -363,11 +369,11 @@ class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
 class CustomerCreateSerializer(serializers.ModelSerializer):
     """Serializer لإنشاء عميل جديد"""
     password = serializers.CharField(write_only=True, required=False)
-    
+
     class Meta:
         model = Customer
         fields = ['name', 'phone_number',  'password', 'profile_image']
-    
+
     def create(self, validated_data):
         password = validated_data.pop('password', None)
         customer = Customer.objects.create(**validated_data)
@@ -375,7 +381,7 @@ class CustomerCreateSerializer(serializers.ModelSerializer):
             customer.set_password(password)
             customer.save()
         return customer
-    
+
     def create(self, validated_data):
         """إنشاء عميل جديد"""
         shop_owner = self.context['shop_owner']
@@ -397,14 +403,14 @@ class DriverSerializer(serializers.ModelSerializer):
     profile_image_url = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     vehicle_type_display = serializers.CharField(source='get_vehicle_type_display', read_only=True)
-    
+
     class Meta:
         model = Driver
         fields = ['id', 'name', 'phone_number', 'profile_image', 'profile_image_url',
                   'vehicle_type', 'vehicle_type_display', 'is_verified',
                   'status', 'status_display', 'current_orders_count', 'rating', 'total_rides', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
-    
+
     def get_profile_image_url(self, obj):
         """إرجاع رابط صورة السائق الكامل"""
         if obj.profile_image:
@@ -415,26 +421,26 @@ class DriverSerializer(serializers.ModelSerializer):
 class DriverCreateSerializer(serializers.ModelSerializer):
     """Serializer لإنشاء سائق جديد"""
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    
+
     class Meta:
         model = Driver
         fields = ['name', 'phone_number', 'password', 'profile_image', 'vehicle_type', 'status']
-    
+
     def create(self, validated_data):
         """إنشاء سائق جديد"""
         # ملاحظة: في النظام الجديد، السائق يُنشأ مستقلاً ثم يُربط بالمحل
         # هذا الكود يفترض أن الإنشاء يتم من داخل محل، لذا نربطه مباشرة
         shop_owner = self.context.get('shop_owner')
         password = validated_data.pop('password', None)
-        
+
         driver = Driver.objects.create(**validated_data)
         if password:
             driver.set_password(password)
             driver.save()
-        
+
         if shop_owner:
             ShopDriver.objects.create(shop_owner=shop_owner, driver=driver, status='active')
-            
+
         return driver
 
 
@@ -786,7 +792,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     image_file_url = serializers.SerializerMethodField()
     content = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = ChatMessage
         fields = ['id', 'chat_type', 'chat_type_display', 'sender_type', 'sender_type_display',
@@ -794,7 +800,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
                   'content', 'audio_file', 'audio_file_url', 'image_file', 'image_file_url',
                   'latitude', 'longitude', 'invoice', 'is_read', 'created_at']
         read_only_fields = ['id', 'created_at']
-    
+
     def get_content(self, obj):
         from user.utils import localize_message
         request = self.context.get('request')
@@ -815,94 +821,15 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         elif obj.sender_type == 'driver' and obj.sender_driver:
             return obj.sender_driver.id
         return None
-    
+
     def get_audio_file_url(self, obj):
         """إرجاع رابط الملف الصوتي"""
         if obj.audio_file:
             return _context_file_url(self, obj.audio_file)
         return None
-    
+
     def get_image_file_url(self, obj):
         """إرجاع رابط الصورة"""
-        if obj.image_file:
-            return _context_file_url(self, obj.image_file)
-        return None
-
-
-class CustomerSupportMessageSerializer(serializers.ModelSerializer):
-    sender_type_display = serializers.CharField(source='get_sender_type_display', read_only=True)
-    message_type_display = serializers.CharField(source='get_message_type_display', read_only=True)
-    sender_name = serializers.CharField(read_only=True)
-    sender_id = serializers.SerializerMethodField()
-    customer_profile_image_url = serializers.SerializerMethodField()
-    support_conversation_id = serializers.CharField(source='conversation.public_id', read_only=True)
-    thread_id = serializers.CharField(source='conversation.public_id', read_only=True)
-    chat_type = serializers.SerializerMethodField()
-    conversation_type = serializers.CharField(source='conversation.conversation_type', read_only=True)
-    conversation_type_display = serializers.CharField(source='conversation.get_conversation_type_display', read_only=True)
-    audio_file_url = serializers.SerializerMethodField()
-    image_file_url = serializers.SerializerMethodField()
-    content = serializers.SerializerMethodField()
-
-    class Meta:
-        model = CustomerSupportMessage
-        fields = [
-            'id',
-            'support_conversation_id',
-            'thread_id',
-            'chat_type',
-            'conversation_type',
-            'conversation_type_display',
-            'sender_type',
-            'sender_type_display',
-            'sender_name',
-            'sender_id',
-            'customer_profile_image_url',
-            'message_type',
-            'message_type_display',
-            'content',
-            'audio_file',
-            'audio_file_url',
-            'image_file',
-            'image_file_url',
-            'latitude',
-            'longitude',
-            'is_read',
-            'created_at',
-        ]
-        read_only_fields = ['id', 'created_at']
-
-    def get_chat_type(self, obj):
-        return 'support_customer'
-
-    def get_content(self, obj):
-        from user.utils import localize_message
-        request = self.context.get('request')
-        lang = self.context.get('lang')
-        return localize_message(request, obj.content, lang=lang)
-
-    def get_sender_id(self, obj):
-        if obj.sender_type == 'customer' and obj.sender_customer:
-            return obj.sender_customer.id
-        if obj.sender_type == 'shop_owner' and obj.sender_shop_owner:
-            return obj.sender_shop_owner.id
-        if obj.sender_type == 'employee' and obj.sender_employee:
-            return obj.sender_employee.id
-        return None
-
-    def get_customer_profile_image_url(self, obj):
-        customer = getattr(getattr(obj, 'conversation', None), 'customer', None)
-        if not customer or not customer.profile_image:
-            return None
-
-        return _context_file_url(self, customer.profile_image)
-
-    def get_audio_file_url(self, obj):
-        if obj.audio_file:
-            return _context_file_url(self, obj.audio_file)
-        return None
-
-    def get_image_file_url(self, obj):
         if obj.image_file:
             return _context_file_url(self, obj.image_file)
         return None
@@ -930,24 +857,24 @@ class OrderSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     last_message = serializers.SerializerMethodField()
     items = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Order
         fields = ['id', 'order_number', 'customer', 'employee', 'driver', 'status', 'status_display',
                   'items', 'total_amount', 'delivery_fee', 'address', 'notes',
                   'unread_messages_count', 'last_message', 'created_at', 'updated_at']
         read_only_fields = ['id', 'order_number', 'created_at', 'updated_at']
-    
+
     def get_items(self, obj):
         """عرض الأصناف كقائمة (بند 1، بند 2، ...)"""
         return _order_items_to_representation(obj.items)
-    
+
     def get_employee(self, obj):
         """الموظف المسؤول (معرف + اسم)"""
         if obj.employee_id:
             return {'id': obj.employee.id, 'name': obj.employee.name}
         return None
-    
+
     def get_last_message(self, obj):
         """آخر رسالة في الطلب"""
         last_message = obj.messages.order_by('-created_at').first()
@@ -1018,7 +945,7 @@ class OrderCreateSerializer(serializers.Serializer):
     delivery_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     address = serializers.CharField(required=True)
     notes = serializers.CharField(required=False, allow_blank=True)
-    
+
     def validate_items(self, value):
         if value is None:
             raise serializers.ValidationError('تفاصيل الطلب (البند) مطلوبة')
@@ -1027,7 +954,7 @@ class OrderCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError('تفاصيل الطلب (البند) مطلوبة')
             return _items_to_db_value(value)
         return _items_to_db_value([value]) if isinstance(value, str) else value
-    
+
     def validate_customer_id(self, value):
         """التحقق من وجود العميل"""
         shop_owner = self.context['shop_owner']
@@ -1036,7 +963,7 @@ class OrderCreateSerializer(serializers.Serializer):
         except Customer.DoesNotExist:
             raise serializers.ValidationError('العميل غير موجود')
         return value
-    
+
     def validate_employee_id(self, value):
         """التحقق من وجود الموظف"""
         if value is None:
@@ -1047,7 +974,7 @@ class OrderCreateSerializer(serializers.Serializer):
         except Employee.DoesNotExist:
             raise serializers.ValidationError('الموظف غير موجود')
         return value
-    
+
     def validate_driver_id(self, value):
         """التحقق من وجود السائق"""
         if value is None:
@@ -1062,14 +989,14 @@ class OrderCreateSerializer(serializers.Serializer):
         except ShopDriver.DoesNotExist:
             raise serializers.ValidationError('السائق غير موجود')
         return value
-    
+
     def create(self, validated_data):
         """إنشاء طلب جديد"""
         shop_owner = self.context['shop_owner']
         customer_id = validated_data.pop('customer_id')
         employee_id = validated_data.pop('employee_id', None)
         driver_id = validated_data.pop('driver_id', None)
-        
+
         customer = Customer.objects.get(id=customer_id, shop_owner=shop_owner)
         employee = None
         if employee_id:
@@ -1081,10 +1008,10 @@ class OrderCreateSerializer(serializers.Serializer):
                 driver_id=driver_id,
                 status='active',
             ).driver
-        
+
         # إنشاء رقم طلب تلقائي
         order_number = _generate_short_order_number()
-        
+
         order = Order.objects.create(
             shop_owner=shop_owner,
             customer=customer,
@@ -1095,12 +1022,12 @@ class OrderCreateSerializer(serializers.Serializer):
             order_number=order_number,
             **validated_data
         )
-        
+
         # تحديث عدد الطلبات للسائق
         if driver:
             driver.current_orders_count = driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
             driver.save()
-        
+
         return order
 
 
@@ -1175,161 +1102,11 @@ class CustomerOrderCreateSerializer(serializers.Serializer):
         return order
 
 
-class CustomerSupportConversationCreateSerializer(serializers.Serializer):
-    """Create a standalone customer support chat with a shop."""
-
-    conversation_type = serializers.ChoiceField(choices=CustomerSupportConversation.CONVERSATION_TYPE_CHOICES)
-    initial_message = serializers.CharField(required=False, allow_blank=True, write_only=True)
-    shop_owner_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
-    shop_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
-    id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
-    shop_number = serializers.CharField(required=False, allow_blank=True, write_only=True)
-
-    def validate(self, attrs):
-        customer = self.context['customer']
-        requested_shop_id = attrs.get('shop_owner_id') or attrs.get('shop_id') or attrs.get('id')
-        requested_shop_number = str(attrs.get('shop_number') or '').strip()
-
-        shop_owner = None
-        if requested_shop_id:
-            shop_owner = ShopOwner.objects.filter(id=requested_shop_id, is_active=True).first()
-            if not shop_owner:
-                raise serializers.ValidationError({'shop': 'المحل غير موجود'})
-        elif requested_shop_number:
-            shop_owner = ShopOwner.objects.filter(shop_number=requested_shop_number, is_active=True).first()
-            if not shop_owner:
-                raise serializers.ValidationError({'shop': 'المحل غير موجود'})
-        else:
-            shop_owner = getattr(customer, 'shop_owner', None)
-
-        if not shop_owner:
-            raise serializers.ValidationError({
-                'shop': 'العميل غير مرتبط بمحل. يرجى اختيار المحل أولاً أو إرسال shop_owner_id.'
-            })
-
-        attrs['resolved_shop_owner'] = shop_owner
-        return attrs
-
-    def create(self, validated_data):
-        customer = self.context['customer']
-        shop_owner = validated_data.pop('resolved_shop_owner', None) or getattr(customer, 'shop_owner', None)
-        validated_data.pop('shop_owner_id', None)
-        validated_data.pop('shop_id', None)
-        validated_data.pop('id', None)
-        validated_data.pop('shop_number', None)
-
-        if not shop_owner:
-            raise serializers.ValidationError({
-                'shop': 'العميل غير مرتبط بمحل. يرجى اختيار المحل أولاً أو إرسال shop_owner_id.'
-            })
-
-        if customer.shop_owner_id != shop_owner.id:
-            customer.shop_owner = shop_owner
-            customer.save(update_fields=['shop_owner'])
-
-        return CustomerSupportConversation.objects.create(
-            shop_owner=shop_owner,
-            customer=customer,
-            conversation_type=validated_data['conversation_type'],
-        )
-
-
-class CustomerSupportConversationSerializer(serializers.ModelSerializer):
-    support_conversation_id = serializers.CharField(source='public_id', read_only=True)
-    conversation_type_display = serializers.CharField(source='get_conversation_type_display', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    shop_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
-    shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
-    shop_logo_url = serializers.SerializerMethodField()
-    customer_id = serializers.IntegerField(source='customer.id', read_only=True)
-    customer_name = serializers.CharField(source='customer.name', read_only=True)
-    customer_profile_image_url = serializers.SerializerMethodField()
-    customer = serializers.SerializerMethodField()
-    subtitle = serializers.SerializerMethodField()
-    last_message_preview = serializers.SerializerMethodField()
-    chat = serializers.SerializerMethodField()
-
-    class Meta:
-        model = CustomerSupportConversation
-        fields = [
-            'support_conversation_id',
-            'conversation_type',
-            'conversation_type_display',
-            'status',
-            'status_display',
-            'shop_id',
-            'shop_name',
-            'shop_logo_url',
-            'customer_id',
-            'customer_name',
-            'customer_profile_image_url',
-            'customer',
-            'subtitle',
-            'last_message_preview',
-            'last_message_at',
-            'unread_for_customer_count',
-            'unread_for_shop_count',
-            'created_at',
-            'updated_at',
-            'chat',
-        ]
-
-    def get_shop_logo_url(self, obj):
-        return build_absolute_file_url(
-            getattr(obj.shop_owner, 'profile_image', None),
-            request=self.context.get('request'),
-            scope=self.context.get('scope'),
-            base_url=self.context.get('base_url'),
-        )
-
-    def get_customer_profile_image_url(self, obj):
-        return build_absolute_file_url(
-            getattr(obj.customer, 'profile_image', None),
-            request=self.context.get('request'),
-            scope=self.context.get('scope'),
-            base_url=self.context.get('base_url'),
-        )
-
-    def get_customer(self, obj):
-        customer = getattr(obj, 'customer', None)
-        if not customer:
-            return None
-
-        return {
-            'id': customer.id,
-            'name': customer.name,
-            'phone_number': customer.phone_number,
-            'profile_image_url': self.get_customer_profile_image_url(obj),
-            'is_online': bool(customer.is_online),
-            'last_seen': format_utc_iso8601(customer.last_seen),
-        }
-
-    def get_last_message_preview(self, obj):
-        from user.utils import localize_message
-        request = self.context.get('request')
-        lang = self.context.get('lang')
-        return localize_message(request, obj.last_message_preview, lang=lang)
-
-    def get_subtitle(self, obj):
-        preview = self.get_last_message_preview(obj)
-        if preview:
-            return preview
-        return f"{obj.get_conversation_type_display()} مفتوح"
-
-    def get_chat(self, obj):
-        return {
-            'thread_id': obj.public_id,
-            'support_conversation_id': obj.public_id,
-            'chat_type': 'support_customer',
-            'conversation_type': obj.conversation_type,
-            'shop_id': obj.shop_owner_id,
-        }
-
 class InvoiceSerializer(serializers.ModelSerializer):
     """Serializer للفاتورة"""
     customer = CustomerSerializer(read_only=True)
     order = OrderSerializer(read_only=True)
-    
+
     class Meta:
         model = Invoice
         fields = ['id', 'invoice_number', 'customer', 'order', 'items', 'total_amount',
@@ -1343,7 +1120,7 @@ class  ProductSerializer(serializers.ModelSerializer):
     category_name = serializers.SerializerMethodField()
     final_price = serializers.SerializerMethodField()
     has_offer = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Product
         fields = [
@@ -1353,7 +1130,7 @@ class  ProductSerializer(serializers.ModelSerializer):
             'is_featured', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
-    
+
     def get_image_url(self, obj):
         if obj.image:
             request = self.context.get('request')
@@ -1589,7 +1366,7 @@ class OfferCreateUpdateSerializer(serializers.ModelSerializer):
 
 class ProductCreateSerializer(serializers.ModelSerializer):
     """Serializer لإنشاء/تحديث منتج"""
-    
+
     class Meta:
         model = Product
         fields = [
@@ -1626,7 +1403,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
     items_text = serializers.CharField(required=False, allow_blank=True)
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     delivery = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
-    
+
     def validate(self, attrs):
         items_list = attrs.get('items')
         items_text = attrs.get('items_text') or ''
@@ -1651,13 +1428,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     total_orders_count = serializers.SerializerMethodField()
     custody_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
-    
+
     class Meta:
         model = Employee
         fields = ['id', 'name', 'phone_number', 'role', 'role_display', 'profile_image', 'profile_image_url',
                   'total_orders_count', 'custody_amount', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at', 'total_orders_count']
-    
+
     def get_profile_image_url(self, obj):
         """إرجاع رابط صورة الموظف الكامل"""
         if obj.profile_image:
@@ -1666,7 +1443,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.profile_image.url)
             return obj.profile_image.url
         return None
-    
+
     def get_total_orders_count(self, obj):
         """عدد الطلبات التي تعامل معها الموظف"""
         return obj.total_orders_count
@@ -1675,7 +1452,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
 class EmployeeCreateSerializer(serializers.ModelSerializer):
     """Serializer لإنشاء موظف جديد"""
     password = serializers.CharField(write_only=True, required=True)
-    
+
     class Meta:
         model = Employee
         fields = ['name', 'phone_number', 'password', 'role', 'profile_image']
@@ -1689,7 +1466,7 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
                 t(request, 'phone_number_is_already_used_for_this_shop')
             )
         return value
-    
+
     def create(self, validated_data):
         """إنشاء موظف جديد"""
         shop_owner = self.context['shop_owner']
@@ -1703,11 +1480,11 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
 class EmployeeUpdateSerializer(serializers.ModelSerializer):
     """Serializer لتحديث موظف"""
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    
+
     class Meta:
         model = Employee
         fields = ['name', 'phone_number', 'password', 'role', 'profile_image', 'custody_amount', 'is_active']
-    
+
     def update(self, instance, validated_data):
         """تحديث بيانات الموظف"""
         password = validated_data.pop('password', None)
@@ -1721,7 +1498,7 @@ class EmployeeTokenObtainPairSerializer(serializers.Serializer):
     """Custom Token Serializer للموظف"""
     phone_number = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
-    
+
     @classmethod
     def get_token(cls, employee):
         """
@@ -1734,7 +1511,7 @@ class EmployeeTokenObtainPairSerializer(serializers.Serializer):
         token['shop_owner_id'] = employee.shop_owner.id
         token['user_type'] = 'employee'
         return token
-    
+
     def validate(self, attrs):
         """
         التحقق من بيانات تسجيل الدخول وإرجاع token
@@ -1742,7 +1519,7 @@ class EmployeeTokenObtainPairSerializer(serializers.Serializer):
         request = self.context.get('request')
         phone_number = attrs.get('phone_number')
         password = attrs.get('password')
-        
+
         try:
             employee = Employee.objects.get(phone_number=phone_number)
         except Employee.DoesNotExist:
@@ -1754,14 +1531,14 @@ class EmployeeTokenObtainPairSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'detail': t(request, 'employee_account_is_blocked')
             })
-        
+
         if not employee.check_password(password):
             raise serializers.ValidationError({
                 'password': t(request, 'phone_number_or_password_is_incorrect')
             })
-        
+
         refresh = self.get_token(employee)
-        
+
         return {
             'refresh': str(refresh),
             'access': str(refresh.access_token),
@@ -1866,7 +1643,7 @@ class DriverInvitationRespondSerializer(serializers.Serializer):
     def validate(self, attrs):
         phone_number = attrs.get('phone_number')
         shop_id = attrs.get('shop_id')
-        
+
         # 1. التحقق من وجود السائق
         try:
             driver = Driver.objects.get(phone_number=phone_number)
@@ -1874,31 +1651,31 @@ class DriverInvitationRespondSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'phone_number': 'رقم الهاتف غير صحيح أو السائق غير موجود.'
             })
-        
+
         # 2. التحقق من وجود دعوة معلقة (Pending) لهذا السائق في هذا المتجر
         try:
             shop_driver = ShopDriver.objects.get(
-                driver=driver, 
+                driver=driver,
                 shop_owner_id=shop_id
             )
         except ShopDriver.DoesNotExist:
             raise serializers.ValidationError({
                 'shop_id': 'لا توجد علاقة أو دعوة بين هذا السائق وهذا المتجر.'
             })
-            
+
         if shop_driver.status != 'pending':
             raise serializers.ValidationError({
                 'status': f'لا يمكن الرد على الدعوة. الحالة الحالية: {shop_driver.get_status_display()}'
             })
-            
+
         attrs['driver'] = driver
         attrs['shop_driver'] = shop_driver
         return attrs
-        
+
     def save(self, **kwargs):
         shop_driver = self.validated_data['shop_driver']
         action = self.validated_data['action']
-        
+
         if action == 'accept':
             shop_driver.status = 'active'
             shop_driver.save()
@@ -1906,7 +1683,7 @@ class DriverInvitationRespondSerializer(serializers.Serializer):
             shop_driver.status = 'rejected'
             shop_driver.save()
             # أو يمكن حذف السجل نهائياً: shop_driver.delete()
-            
+
         return shop_driver
 
 # Customer Login Serializer
@@ -1914,7 +1691,7 @@ class CustomerTokenObtainPairSerializer(serializers.Serializer):
     """Custom Token Serializer للعميل"""
     phone_number = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
-    
+
     @classmethod
     def get_token(cls, customer):
         """إنشاء token مع customer_id"""
@@ -1923,23 +1700,23 @@ class CustomerTokenObtainPairSerializer(serializers.Serializer):
         token['phone_number'] = customer.phone_number
         token['user_type'] = 'customer'
         return token
-    
+
     def validate(self, attrs):
         phone_number = attrs.get('phone_number')
         password = attrs.get('password')
-        
+
         try:
             customer = Customer.objects.get(phone_number=phone_number)
         except Customer.DoesNotExist:
             raise serializers.ValidationError({
                 'phone_number': 'رقم الهاتف غير مسجل'
             })
-        
+
         if not customer.password or not customer.check_password(password):
             raise serializers.ValidationError({
                 'password': 'كلمة المرور غير صحيحة'
             })
-        
+
         moderation = getattr(customer, 'moderation_status', None)
         if moderation and moderation.is_suspended:
             raise serializers.ValidationError({
@@ -1947,7 +1724,7 @@ class CustomerTokenObtainPairSerializer(serializers.Serializer):
             })
 
         refresh = self.get_token(customer)
-        
+
         return {
             'refresh': str(refresh),
             'access': str(refresh.access_token),
@@ -1967,12 +1744,12 @@ class CustomerRegisterSerializer(serializers.Serializer):
     name = serializers.CharField(required=True)
     phone_number = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True, min_length=6)
-    
+
     def validate_phone_number(self, value):
         if Customer.objects.filter(phone_number=value).exists():
             raise serializers.ValidationError('رقم الهاتف مسجل بالفعل')
         return value
-    
+
     def create(self, validated_data):
         password = validated_data.pop('password')
         customer = Customer.objects.create(**validated_data)
@@ -1986,13 +1763,13 @@ class CategorySerializer(serializers.ModelSerializer):
     """Serializer للتصنيف"""
     image_url = serializers.SerializerMethodField()
     products_count = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Category
-        fields = ['id', 'name', 'name_en', 'icon', 'image', 'image_url', 
+        fields = ['id', 'name', 'name_en', 'icon', 'image', 'image_url',
                   'display_order', 'is_active', 'products_count', 'created_at']
         read_only_fields = ['id', 'created_at']
-    
+
     def get_image_url(self, obj):
         if obj.image:
             request = self.context.get('request')
@@ -2000,7 +1777,7 @@ class CategorySerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.image.url)
             return obj.image.url
         return None
-    
+
     def get_products_count(self, obj):
         return obj.products.filter(is_available=True).count()
 
@@ -2010,23 +1787,23 @@ class OrderRatingSerializer(serializers.ModelSerializer):
     """Serializer لتقييم الطلب"""
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     order_number = serializers.CharField(source='order.order_number', read_only=True)
-    
+
     class Meta:
         model = OrderRating
         fields = ['id', 'order', 'order_number', 'customer', 'customer_name',
                   'shop_rating', 'driver_rating', 'food_rating', 'comment', 'created_at']
         read_only_fields = ['id', 'customer', 'created_at']
-    
+
     def validate_shop_rating(self, value):
         if value < 1 or value > 5:
             raise serializers.ValidationError('التقييم يجب أن يكون بين 1 و 5')
         return value
-    
+
     def validate_driver_rating(self, value):
         if value and (value < 1 or value > 5):
             raise serializers.ValidationError('التقييم يجب أن يكون بين 1 و 5')
         return value
-    
+
     def validate_food_rating(self, value):
         if value and (value < 1 or value > 5):
             raise serializers.ValidationError('التقييم يجب أن يكون بين 1 و 5')
@@ -2058,10 +1835,10 @@ class ShopRatingCreateSerializer(serializers.Serializer):
 class PaymentMethodSerializer(serializers.ModelSerializer):
     """Serializer لطريقة الدفع"""
     card_type_display = serializers.CharField(source='get_card_type_display', read_only=True)
-    
+
     class Meta:
         model = PaymentMethod
-        fields = ['id', 'card_type', 'card_type_display', 'last_four_digits', 
+        fields = ['id', 'card_type', 'card_type_display', 'last_four_digits',
                   'card_holder_name', 'expiry_month', 'expiry_year', 'is_default', 'created_at']
         read_only_fields = ['id', 'created_at']
 
@@ -2075,7 +1852,7 @@ class PaymentMethodCreateSerializer(serializers.Serializer):
     expiry_year = serializers.CharField(required=True, min_length=4, max_length=4)
     cvv = serializers.CharField(required=True, min_length=3, max_length=4, write_only=True)
     is_default = serializers.BooleanField(default=False)
-    
+
     def validate_card_number(self, value):
         if not value.isdigit():
             raise serializers.ValidationError('رقم البطاقة يجب أن يحتوي على أرقام فقط')
@@ -2086,10 +1863,10 @@ class PaymentMethodCreateSerializer(serializers.Serializer):
 class NotificationSerializer(serializers.ModelSerializer):
     """Serializer للإشعار"""
     notification_type_display = serializers.CharField(source='get_notification_type_display', read_only=True)
-    
+
     class Meta:
         model = Notification
-        fields = ['id', 'notification_type', 'notification_type_display', 
+        fields = ['id', 'notification_type', 'notification_type_display',
                   'title', 'message', 'data', 'is_read', 'created_at']
         read_only_fields = ['id', 'created_at']
 
@@ -2137,13 +1914,13 @@ class CartItemSerializer(serializers.ModelSerializer):
     product_image = serializers.SerializerMethodField()
     unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     total_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    
+
     class Meta:
         model = CartItem
-        fields = ['id', 'product', 'product_name', 'product_image', 
+        fields = ['id', 'product', 'product_name', 'product_image',
                   'quantity', 'notes', 'unit_price', 'total_price']
         read_only_fields = ['id']
-    
+
     def get_product_image(self, obj):
         if obj.product.image:
             request = self.context.get('request')
@@ -2159,7 +1936,7 @@ class CartSerializer(serializers.ModelSerializer):
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
     total_items = serializers.IntegerField(read_only=True)
     subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    
+
     class Meta:
         model = Cart
         fields = ['id', 'shop_owner', 'shop_name', 'items', 'total_items', 'subtotal', 'created_at', 'updated_at']

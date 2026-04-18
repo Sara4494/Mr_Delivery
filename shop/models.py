@@ -889,6 +889,162 @@ class CustomerSupportMessage(models.Model):
         return f"رسالة دعم من {self.sender_name} - {self.conversation.public_id}"
 
 
+class ShopSupportTicket(models.Model):
+    """Technical support ticket between a shop and the company support desk."""
+
+    PRIORITY_CHOICES = [
+        ('low', 'قليلة'),
+        ('medium', 'متوسطة'),
+        ('high', 'عالية'),
+        ('urgent', 'عاجلة'),
+    ]
+
+    STATUS_CHOICES = [
+        ('open', 'مفتوحة'),
+        ('in_progress', 'قيد المتابعة'),
+        ('waiting_shop', 'بانتظار المحل'),
+        ('waiting_support', 'بانتظار الدعم'),
+        ('resolved', 'تم الحل'),
+        ('closed', 'مغلقة'),
+    ]
+
+    shop_owner = models.ForeignKey(
+        ShopOwner,
+        on_delete=models.CASCADE,
+        related_name='support_tickets',
+        verbose_name="المحل",
+    )
+    created_by_employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_support_tickets',
+        verbose_name="الموظف المنشئ",
+    )
+    assigned_admin = models.ForeignKey(
+        'user.AdminDesktopUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_support_tickets',
+        verbose_name="موظف الدعم المسؤول",
+    )
+    public_id = models.CharField(max_length=64, unique=True, blank=True, verbose_name="المعرف العام")
+    subject = models.CharField(max_length=255, verbose_name="عنوان المشكلة")
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium', verbose_name="الأولوية")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open', verbose_name="الحالة")
+    unread_for_shop_count = models.PositiveIntegerField(default=0, verbose_name="غير المقروء للمحل")
+    unread_for_admin_count = models.PositiveIntegerField(default=0, verbose_name="غير المقروء للدعم")
+    last_message_preview = models.TextField(blank=True, null=True, verbose_name="معاينة آخر رسالة")
+    last_message_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت آخر رسالة")
+    resolved_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت الحل")
+    closed_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت الإغلاق")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "تذكرة دعم للمحل"
+        verbose_name_plural = "تذاكر دعم المحلات"
+        ordering = ['-updated_at', '-created_at']
+        indexes = [
+            models.Index(fields=['shop_owner', '-updated_at'], name='shopsupticket_shop_upd_idx'),
+            models.Index(fields=['status', '-updated_at'], name='shopsupticket_status_upd_idx'),
+            models.Index(fields=['priority', '-updated_at'], name='shopsupticket_priority_upd_idx'),
+            models.Index(fields=['public_id'], name='shopsupticket_public_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.public_id:
+            self.public_id = f"ticket_{self.pk}"
+            super().save(update_fields=['public_id'])
+
+    def __str__(self):
+        return f"{self.public_id}: {self.subject}"
+
+
+class ShopSupportTicketMessage(models.Model):
+    """Messages exchanged inside a technical support ticket."""
+
+    SENDER_TYPE_CHOICES = [
+        ('shop_owner', 'صاحب المحل'),
+        ('employee', 'موظف المحل'),
+        ('admin_desktop', 'الدعم الفني'),
+        ('system', 'النظام'),
+    ]
+
+    MESSAGE_TYPE_CHOICES = [
+        ('text', 'نصي'),
+        ('image', 'صورة'),
+        ('audio', 'صوت'),
+        ('location', 'موقع'),
+        ('system', 'نظام'),
+    ]
+
+    ticket = models.ForeignKey(
+        ShopSupportTicket,
+        on_delete=models.CASCADE,
+        related_name='messages',
+        verbose_name="التذكرة",
+    )
+    sender_type = models.CharField(max_length=20, choices=SENDER_TYPE_CHOICES, verbose_name="نوع المرسل")
+    sender_shop_owner = models.ForeignKey(
+        ShopOwner,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sent_support_ticket_messages',
+        verbose_name="صاحب المحل",
+    )
+    sender_employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sent_support_ticket_messages',
+        verbose_name="الموظف",
+    )
+    sender_admin = models.ForeignKey(
+        'user.AdminDesktopUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sent_support_ticket_messages',
+        verbose_name="موظف الدعم",
+    )
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPE_CHOICES, default='text', verbose_name="نوع الرسالة")
+    content = models.TextField(blank=True, null=True, verbose_name="المحتوى")
+    image_url = models.TextField(blank=True, null=True, verbose_name="رابط الصورة")
+    audio_url = models.TextField(blank=True, null=True, verbose_name="رابط الصوت")
+    latitude = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True, verbose_name="خط العرض")
+    longitude = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True, verbose_name="خط الطول")
+    metadata = models.JSONField(default=dict, blank=True, verbose_name="بيانات إضافية")
+    is_read = models.BooleanField(default=False, verbose_name="مقروءة")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإرسال")
+
+    class Meta:
+        verbose_name = "رسالة تذكرة دعم"
+        verbose_name_plural = "رسائل تذاكر الدعم"
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['ticket', 'created_at'], name='shopsupmsg_ticket_created_idx'),
+        ]
+
+    @property
+    def sender_name(self):
+        if self.sender_type == 'shop_owner' and self.sender_shop_owner:
+            return self.sender_shop_owner.owner_name
+        if self.sender_type == 'employee' and self.sender_employee:
+            return self.sender_employee.name
+        if self.sender_type == 'admin_desktop' and self.sender_admin:
+            return self.sender_admin.name
+        return "النظام"
+
+    def __str__(self):
+        return f"رسالة {self.sender_name} - {self.ticket.public_id}"
+
+
 class Invoice(models.Model):
     """نموذج الفاتورة"""
     shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='invoices', verbose_name="صاحب المحل")

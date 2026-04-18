@@ -4,7 +4,7 @@ from rest_framework_simplejwt.tokens import UntypedToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from jwt import decode as jwt_decode
 from django.conf import settings
-from user.models import ShopOwner
+from user.models import AdminDesktopUser, ShopOwner
 from shop.models import Customer, Employee, Driver
 
 
@@ -60,6 +60,16 @@ def get_user_from_token(token):
                 user = Driver.objects.get(id=driver_id)
                 return user, 'driver'
             except Driver.DoesNotExist:
+                return None, None
+
+        if user_type == 'admin_desktop':
+            admin_user_id = decoded_data.get('admin_desktop_user_id')
+            if not admin_user_id:
+                return None, None
+            try:
+                user = AdminDesktopUser.objects.get(id=admin_user_id, is_active=True)
+                return user, 'admin_desktop'
+            except AdminDesktopUser.DoesNotExist:
                 return None, None
                 
     except (InvalidToken, TokenError, Exception) as e:

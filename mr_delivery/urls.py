@@ -21,9 +21,14 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/', include('admin_desktop_app.urls')),
+    path('api/', include('shop_app.urls')),
+    path('api/', include('driver_app.urls')),
+    path('api/', include('customer_app.urls')),
+    path('api/', include('support_center.urls')),
+    path('api/', include('platform_core.urls')),
     path('api/', include('user.urls')),
     path('api/', include('gallery.urls')),
-    path('api/', include('shop.urls')),
 ]
 
 # إضافة مسار الملفات الوسائط في وضع التطوير
