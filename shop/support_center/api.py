@@ -1,3 +1,7 @@
+import os
+import uuid
+
+from django.core.files.storage import default_storage
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -6,13 +10,15 @@ from user.utils import error_response, success_response, t
 
 from ..core.identity import resolve_customer_user, resolve_shop_owner_or_employee_owner, resolve_user_type
 from ..core.permissions import IsCustomer, IsShopOwnerOrEmployee
-from ..models import CustomerSupportConversation, CustomerSupportMessage
+from ..models import CustomerSupportConversation, CustomerSupportMessage, ShopSupportTicket
 from ..websocket_utils import broadcast_support_chat_message, notify_support_conversation_update, notify_support_message
 from .serializers import (
     CustomerSupportConversationCreateSerializer,
     CustomerSupportConversationSerializer,
     CustomerSupportMessageSerializer,
+    ShopSupportTicketMessageSerializer,
 )
+from .service import broadcast_ticket_message, get_ticket_by_public_id, send_ticket_message
 
 
 def build_support_message_payload(message, request=None, base_url=None):
@@ -83,6 +89,101 @@ def _support_sender_kwargs_for_user(user, user_type):
     else:
         return None
     return sender_kwargs
+
+
+def _extract_media_upload_payload(request):
+    image_file = request.FILES.get('image_file')
+    audio_file = request.FILES.get('audio_file')
+    generic_file = request.FILES.get('file')
+    requested_type = str(
+        request.data.get('message_type')
+        or request.data.get('media_type')
+        or ''
+    ).strip().lower()
+
+    if generic_file is not None:
+        if image_file is not None or audio_file is not None:
+            return {
+                'error': error_response(
+                    message=t(request, 'invalid_data'),
+                    errors={'file': 'Send one file field only: file, image_file, or audio_file.'},
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            }
+
+        inferred_type = requested_type
+        if not inferred_type:
+            content_type = str(getattr(generic_file, 'content_type', '') or '').lower()
+            inferred_type = 'audio' if content_type.startswith('audio/') else 'image'
+
+        if inferred_type == 'audio':
+            audio_file = generic_file
+        elif inferred_type == 'image':
+            image_file = generic_file
+        else:
+            return {
+                'error': error_response(
+                    message=t(request, 'invalid_data'),
+                    errors={'media_type': 'media_type must be image or audio when file is provided.'},
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            }
+
+    if bool(image_file) == bool(audio_file):
+        return {
+            'error': error_response(
+                message=t(request, 'invalid_data'),
+                errors={'file': 'Send exactly one file: image_file, audio_file, or file.'},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        }
+
+    if image_file:
+        if requested_type and requested_type != 'image':
+            return {
+                'error': error_response(
+                    message=t(request, 'invalid_data'),
+                    errors={'message_type': 'message_type/media_type must be image when an image file is provided.'},
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            }
+        return {'message_type': 'image', 'image_file': image_file, 'audio_file': None}
+
+    if requested_type and requested_type != 'audio':
+        return {
+            'error': error_response(
+                message=t(request, 'invalid_data'),
+                errors={'message_type': 'message_type/media_type must be audio when an audio file is provided.'},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        }
+    return {'message_type': 'audio', 'image_file': None, 'audio_file': audio_file}
+
+
+def _resolve_support_center_actor_type(user):
+    user_type = getattr(user, 'user_type', None)
+    if user_type in {'shop_owner', 'employee', 'admin_desktop'}:
+        return user_type
+    return None
+
+
+def _can_user_access_support_ticket(ticket, user, actor_type):
+    if actor_type == 'shop_owner':
+        return ticket.shop_owner_id == getattr(user, 'id', None)
+    if actor_type == 'employee':
+        return ticket.shop_owner_id == getattr(user, 'shop_owner_id', None)
+    if actor_type == 'admin_desktop':
+        has_permission = getattr(user, 'has_permission', None)
+        return bool(callable(has_permission) and has_permission('support_center'))
+    return False
+
+
+def _store_support_ticket_media_file(request, uploaded_file, message_type):
+    extension = os.path.splitext(uploaded_file.name or '')[-1] or ('.jpg' if message_type == 'image' else '.webm')
+    folder = 'support_center/images' if message_type == 'image' else 'support_center/audio'
+    storage_path = f'{folder}/{uuid.uuid4().hex}{extension}'
+    saved_path = default_storage.save(storage_path, uploaded_file)
+    return request.build_absolute_uri(default_storage.url(saved_path))
 
 
 def _can_user_access_support_conversation(conversation, user, user_type):
@@ -199,7 +300,65 @@ def shop_support_conversations_view(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def support_ticket_media_upload_view(request, ticket_id):
+    ticket = get_ticket_by_public_id(ticket_id)
+    if not isinstance(ticket, ShopSupportTicket):
+        return error_response(
+            message='تذكرة الدعم غير موجودة.',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    user = request.user
+    actor_type = _resolve_support_center_actor_type(user)
+    if not actor_type or not _can_user_access_support_ticket(ticket, user, actor_type):
+        return error_response(
+            message='ليس لديك صلاحية للوصول إلى هذه التذكرة.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    upload_payload = _extract_media_upload_payload(request)
+    if upload_payload.get('error') is not None:
+        return upload_payload['error']
+
+    message_type = upload_payload['message_type']
+    media_url = _store_support_ticket_media_file(
+        request,
+        upload_payload['image_file'] or upload_payload['audio_file'],
+        message_type,
+    )
+    content = str(request.data.get('content') or '').strip() or None
+    metadata = request.data.get('metadata')
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    message = send_ticket_message(
+        ticket=ticket,
+        actor_type=actor_type,
+        actor=user,
+        message_type=message_type,
+        content=content,
+        image_url=media_url if message_type == 'image' else None,
+        audio_url=media_url if message_type == 'audio' else None,
+        metadata=metadata,
+        request=request,
+    )
+    broadcast_ticket_message(message, request=request)
+
+    serialized = ShopSupportTicketMessageSerializer(message, context={'request': request}).data
+    return success_response(
+        data=serialized,
+        message='تم إرسال الوسائط بنجاح',
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def support_chat_media_upload_view(request, conversation_id):
+    ticket_hint = str(request.data.get('ticket_id') or request.data.get('conversation_id') or '').strip()
+    if ticket_hint.startswith('ticket_') or str(conversation_id).strip().startswith('ticket_'):
+        return support_ticket_media_upload_view(request, ticket_hint or conversation_id)
+
     try:
         conversation = (
             CustomerSupportConversation.objects
@@ -220,34 +379,14 @@ def support_chat_media_upload_view(request, conversation_id):
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
-    image_file = request.FILES.get('image_file')
-    audio_file = request.FILES.get('audio_file')
-    if bool(image_file) == bool(audio_file):
-        return error_response(
-            message=t(request, 'invalid_data'),
-            errors={'file': 'Send exactly one file: image_file or audio_file.'},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
+    upload_payload = _extract_media_upload_payload(request)
+    if upload_payload.get('error') is not None:
+        return upload_payload['error']
 
-    requested_type = str(request.data.get('message_type') or '').strip().lower()
-    if image_file:
-        if requested_type and requested_type != 'image':
-            return error_response(
-                message=t(request, 'invalid_data'),
-                errors={'message_type': 'message_type must be image when image_file is provided.'},
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        message_type = 'image'
-        default_preview = 'صورة'
-    else:
-        if requested_type and requested_type != 'audio':
-            return error_response(
-                message=t(request, 'invalid_data'),
-                errors={'message_type': 'message_type must be audio when audio_file is provided.'},
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        message_type = 'audio'
-        default_preview = 'رسالة صوتية'
+    image_file = upload_payload['image_file']
+    audio_file = upload_payload['audio_file']
+    message_type = upload_payload['message_type']
+    default_preview = 'صورة' if message_type == 'image' else 'رسالة صوتية'
 
     sender_kwargs = _support_sender_kwargs_for_user(user, user_type)
     if not sender_kwargs:

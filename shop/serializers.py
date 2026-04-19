@@ -1619,6 +1619,7 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
         moderation = getattr(driver, 'moderation_status', None)
         if moderation and moderation.is_suspended:
             raise serializers.ValidationError({
+                'code': 'DRIVER_ACCOUNT_SUSPENDED',
                 'detail': moderation.suspension_reason or 'تم تعليق هذا الحساب من الإدارة.'
             })
 
@@ -1720,6 +1721,7 @@ class CustomerTokenObtainPairSerializer(serializers.Serializer):
         moderation = getattr(customer, 'moderation_status', None)
         if moderation and moderation.is_suspended:
             raise serializers.ValidationError({
+                'code': 'CUSTOMER_ACCOUNT_SUSPENDED',
                 'detail': moderation.suspension_reason or 'تم تعليق هذا الحساب من الإدارة.'
             })
 

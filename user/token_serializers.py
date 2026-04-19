@@ -28,14 +28,31 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
         """
         shop_number = attrs.get('shop_number')
         password = attrs.get('password')
-        
+
         try:
-            shop_owner = ShopOwner.objects.get(shop_number=shop_number, is_active=True)
+            shop_owner = ShopOwner.objects.select_related('moderation_status').get(shop_number=shop_number)
         except ShopOwner.DoesNotExist:
             raise serializers.ValidationError({
-                'shop_number': 'رقم المحل غير صحيح أو الحساب غير نشط'
+                'shop_number': 'رقم المحل أو كلمة المرور غير صحيحة'
             })
-        
+
+        moderation = getattr(shop_owner, 'moderation_status', None)
+        if getattr(shop_owner, 'admin_status', None) == 'suspended' or (moderation and moderation.is_suspended):
+            raise serializers.ValidationError({
+                'code': 'SHOP_OWNER_ACCOUNT_SUSPENDED',
+                'detail': (
+                    getattr(shop_owner, 'suspension_reason', None)
+                    or getattr(moderation, 'suspension_reason', None)
+                    or 'هذا الحساب معلق حاليًا. برجاء التواصل مع الدعم.'
+                )
+            })
+
+        if not shop_owner.is_active:
+            raise serializers.ValidationError({
+                'code': 'SHOP_OWNER_ACCOUNT_INACTIVE',
+                'detail': 'هذا الحساب غير نشط حاليًا. برجاء التواصل مع الإدارة.'
+            })
+
         if not shop_owner.check_password(password):
             raise serializers.ValidationError({
                 'password': 'كلمة المرور غير صحيحة'

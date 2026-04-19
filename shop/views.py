@@ -85,6 +85,7 @@ from .support_center.api import (
     customer_support_conversations_view,
     shop_support_conversations_view,
     support_chat_media_upload_view,
+    support_ticket_media_upload_view,
 )
 from user.models import (
     ShopCategory,
@@ -2572,6 +2573,40 @@ def _normalize_driver_customer_chat_message_payload(item):
     }
 
 
+AUTH_SUSPENDED_ERROR_CODES = {
+    'CUSTOMER_ACCOUNT_SUSPENDED',
+    'DRIVER_ACCOUNT_SUSPENDED',
+}
+
+
+def _extract_auth_error_metadata(errors):
+    if not isinstance(errors, dict):
+        return None, None
+
+    code_value = errors.get('code')
+    detail_value = errors.get('detail')
+
+    if isinstance(code_value, list):
+        code_value = code_value[0] if code_value else None
+    if isinstance(detail_value, list):
+        detail_value = detail_value[0] if detail_value else None
+
+    return code_value, detail_value
+
+
+def _login_validation_error_response(request, *, errors, default_status):
+    code, detail_message = _extract_auth_error_metadata(errors)
+    return error_response(
+        message=detail_message or t(request, 'login_failed'),
+        errors=errors,
+        status_code=(
+            status.HTTP_403_FORBIDDEN
+            if code in AUTH_SUSPENDED_ERROR_CODES
+            else default_status
+        )
+    )
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsDriver])
 def driver_order_chat_view(request, order_id):
@@ -3913,17 +3948,10 @@ def driver_login_view(request):
         serializer.is_valid(raise_exception=True)
     except Exception as e:
         errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
-        detail_message = None
-        if isinstance(errors, dict):
-            detail_value = errors.get('detail')
-            if isinstance(detail_value, list) and detail_value:
-                detail_message = detail_value[0]
-            elif isinstance(detail_value, str):
-                detail_message = detail_value
-        return error_response(
-            message=detail_message or t(request, 'login_failed'),
+        return _login_validation_error_response(
+            request,
             errors=errors,
-            status_code=status.HTTP_401_UNAUTHORIZED if detail_message else status.HTTP_400_BAD_REQUEST
+            default_status=status.HTTP_401_UNAUTHORIZED,
         )
 
     return success_response(
@@ -4216,10 +4244,10 @@ def customer_login_view(request):
         serializer.is_valid(raise_exception=True)
     except Exception as e:
         errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
-        return error_response(
-            message=t(request, 'login_failed'),
+        return _login_validation_error_response(
+            request,
             errors=errors,
-            status_code=status.HTTP_400_BAD_REQUEST
+            default_status=status.HTTP_400_BAD_REQUEST,
         )
     return success_response(
         data=serializer.validated_data,

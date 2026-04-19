@@ -65,6 +65,43 @@ ARABIC_WEEKDAY_NAMES = {
 }
 
 
+SUSPENDED_ACCOUNT_ERROR_CODES = {
+    "SHOP_OWNER_ACCOUNT_SUSPENDED",
+    "CUSTOMER_ACCOUNT_SUSPENDED",
+    "DRIVER_ACCOUNT_SUSPENDED",
+}
+
+
+def _extract_auth_error_metadata(errors):
+    if not isinstance(errors, dict):
+        return None, None
+
+    code_value = errors.get("code")
+    detail_value = errors.get("detail")
+
+    if isinstance(code_value, list):
+        code_value = code_value[0] if code_value else None
+    if isinstance(detail_value, list):
+        detail_value = detail_value[0] if detail_value else None
+
+    return code_value, detail_value
+
+
+def _auth_error_response(request, *, errors, default_message, default_status):
+    code, detail_message = _extract_auth_error_metadata(errors)
+    if code in SUSPENDED_ACCOUNT_ERROR_CODES:
+        return error_response(
+            message=detail_message or default_message,
+            errors=errors,
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+    return error_response(
+        message=detail_message or default_message,
+        errors=errors,
+        status_code=default_status,
+    )
+
+
 class ShopOwnerTokenObtainPairView(TokenObtainPairView):
     """
     تسجيل دخول صاحب المحل وإرجاع JWT Token
@@ -83,10 +120,11 @@ class ShopOwnerTokenObtainPairView(TokenObtainPairView):
             serializer.is_valid(raise_exception=True)
         except Exception as e:
             errors = serializer.errors if hasattr(serializer, 'errors') else {'detail': str(e)}
-            return error_response(
-                message=t(request, 'login_failed'),
+            return _auth_error_response(
+                request,
                 errors=errors,
-                status_code=status.HTTP_400_BAD_REQUEST
+                default_message=t(request, 'login_failed'),
+                default_status=status.HTTP_400_BAD_REQUEST,
             )
         
         return success_response(
@@ -3457,6 +3495,14 @@ def unified_login_view(request):
             message=t(request, 'password_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
+
+    def _suspended_account_response(message, *, code):
+        return _auth_error_response(
+            request,
+            errors={'code': code, 'detail': message},
+            default_message=message,
+            default_status=status.HTTP_403_FORBIDDEN,
+        )
     
     # ===== Shop Owner Login =====
     if role == 'shop_owner':
@@ -3467,11 +3513,19 @@ def unified_login_view(request):
             )
         
         try:
-            shop_owner = ShopOwner.objects.get(shop_number=shop_number)
+            shop_owner = ShopOwner.objects.select_related('moderation_status').get(shop_number=shop_number)
             if not shop_owner.check_password(password):
                 return error_response(
                     message=t(request, 'shop_number_or_password_is_incorrect'),
                     status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            moderation = getattr(shop_owner, 'moderation_status', None)
+            if getattr(shop_owner, 'admin_status', None) == 'suspended' or (moderation and moderation.is_suspended):
+                return _suspended_account_response(
+                    getattr(shop_owner, 'suspension_reason', None)
+                    or getattr(moderation, 'suspension_reason', None)
+                    or 'هذا الحساب معلق حاليًا. برجاء التواصل مع الدعم.',
+                    code='SHOP_OWNER_ACCOUNT_SUSPENDED',
                 )
             if not shop_owner.is_active:
                 return error_response(
@@ -3519,7 +3573,12 @@ def unified_login_view(request):
         
         from shop.models import Customer
         try:
-            customer = Customer.objects.get(phone_number=phone_number)
+            customer = (
+                _find_customer_by_phone(phone_number)
+                if phone_number else None
+            )
+            if not customer:
+                raise Customer.DoesNotExist
             if not customer.check_password(password):
                 return error_response(
                     message=t(request, 'phone_number_or_password_is_incorrect'),
@@ -3529,6 +3588,12 @@ def unified_login_view(request):
                 return error_response(
                     message=t(request, 'account_is_not_verified_complete_otp_verification'),
                     status_code=status.HTTP_401_UNAUTHORIZED
+                )
+            moderation = getattr(customer, 'moderation_status', None)
+            if moderation and moderation.is_suspended:
+                return _suspended_account_response(
+                    moderation.suspension_reason or 'هذا الحساب معلق حاليًا. برجاء التواصل مع الدعم.',
+                    code='CUSTOMER_ACCOUNT_SUSPENDED',
                 )
              
             # إنشاء التوكن
@@ -3635,6 +3700,13 @@ def unified_login_view(request):
             return error_response(
                 message=t(request, 'account_is_not_verified_complete_otp_verification'),
                 status_code=status.HTTP_401_UNAUTHORIZED
+            )
+
+        moderation = getattr(driver, 'moderation_status', None)
+        if moderation and moderation.is_suspended:
+            return _suspended_account_response(
+                moderation.suspension_reason or 'هذا الحساب معلق حاليًا. برجاء التواصل مع الدعم.',
+                code='DRIVER_ACCOUNT_SUSPENDED',
             )
 
         # إنشاء التوكن
@@ -3990,6 +4062,13 @@ def verify_otp_login_view(request):
             return error_response(
                 message=t(request, 'account_is_not_verified_complete_otp_verification_for_registration'),
                 status_code=status.HTTP_401_UNAUTHORIZED
+            )
+        moderation = getattr(customer, 'moderation_status', None)
+        if moderation and moderation.is_suspended:
+            return error_response(
+                message=moderation.suspension_reason or 'هذا الحساب معلق حاليًا. برجاء التواصل مع الدعم.',
+                errors={'code': 'CUSTOMER_ACCOUNT_SUSPENDED'},
+                status_code=status.HTTP_403_FORBIDDEN
             )
 
     if not otp_verify(phone_number, otp_code):
