@@ -2581,6 +2581,46 @@ def _mark_driver_customer_chat_opened(order):
     order.save(update_fields=['driver_chat_opened_at', 'updated_at'])
 
 
+def _build_driver_customer_chat_bootstrap_response(request, order, *, mark_as_opened=False):
+    can_open = has_driver_accepted(order)
+    conversation_id = f'order_{order.id}_driver_customer'
+    ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
+
+    messages_qs = (
+        ChatMessage.objects
+        .filter(order=order, chat_type='driver_customer')
+        .select_related('sender_customer', 'sender_shop_owner', 'sender_employee', 'sender_driver')
+        .order_by('-created_at')[:50]
+    )
+    messages = [_chat_message_payload(message, request=request) for message in reversed(list(messages_qs))]
+    normalized_messages = [_normalize_driver_customer_chat_message_payload(item) for item in messages]
+
+    if can_open and mark_as_opened:
+        _mark_driver_customer_chat_opened(order)
+
+    data = {
+        'conversation_id': conversation_id,
+        'order_id': order.id,
+        'chat_type': 'driver_customer',
+        'can_open': can_open,
+        'ws_path': ws_path,
+        'messages': normalized_messages,
+    }
+
+    if not can_open:
+        return success_response(
+            data=data,
+            message='Ù‡Ø°Ù‡ Ø§Ù„Ù…Ø­Ø§Ø¯Ø«Ø© ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø§Ù„Ø¢Ù†',
+            status_code=status.HTTP_200_OK,
+        )
+
+    return success_response(
+        data=data,
+        message=t(request, 'driver_chat_opened_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
 AUTH_SUSPENDED_ERROR_CODES = {
     'CUSTOMER_ACCOUNT_SUSPENDED',
     'DRIVER_ACCOUNT_SUSPENDED',
@@ -2727,6 +2767,12 @@ def driver_order_chat_view(request, order_id):
             status_code=status.HTTP_201_CREATED,
         )
 
+    return _build_driver_customer_chat_bootstrap_response(
+        request,
+        order,
+        mark_as_opened=True,
+    )
+
     messages_qs = (
         ChatMessage.objects
         .filter(order=order, chat_type='driver_customer')
@@ -2759,6 +2805,47 @@ def driver_order_chat_view(request, order_id):
         data=data,
         message=t(request, 'driver_chat_opened_successfully'),
         status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsCustomer])
+def customer_order_chat_view(request, order_id):
+    """
+    Customer chat bootstrap for the driver-customer chat.
+    GET /api/customer/orders/{id}/chat/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(
+            message=t(request, 'customer_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    chat_type = str(request.query_params.get('chat_type') or 'driver_customer').strip()
+    if chat_type != 'driver_customer':
+        return error_response(
+            message='Ù†ÙˆØ¹ Ø§Ù„Ù…Ø­Ø§Ø¯Ø«Ø© ØºÙŠØ± ØµØ­ÙŠØ­',
+            errors={'chat_type': 'chat_type must be driver_customer.'},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    order = (
+        Order.objects
+        .select_related('shop_owner', 'driver', 'customer')
+        .filter(id=order_id, customer=customer)
+        .first()
+    )
+    if not order:
+        return error_response(
+            message='Chat not found',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    return _build_driver_customer_chat_bootstrap_response(
+        request,
+        order,
+        mark_as_opened=False,
     )
 
 

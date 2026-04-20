@@ -113,6 +113,7 @@ urlpatterns = [
     # ==================== Customer Orders (طلب أوردر - البند 1، 2، 3، ...) ====================
     path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
     path('customer/support-chats/', views.customer_support_conversations_view, name='customer_support_conversations'),
+    path('customer/orders/<int:order_id>/chat/', views.customer_order_chat_view, name='customer_order_chat'),
     path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
     path('customer/orders/<int:order_id>/reject/', views.customer_order_reject_view, name='customer_order_reject'),
     

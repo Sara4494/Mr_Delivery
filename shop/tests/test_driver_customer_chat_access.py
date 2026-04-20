@@ -11,7 +11,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from shop.middleware import JWTAuthMiddleware
 from shop.models import ChatMessage, Customer, Driver, Order, ShopDriver
 from shop.routing import websocket_urlpatterns
-from shop.views import driver_order_chat_view
+from shop.views import customer_order_chat_view, driver_order_chat_view
 from user.models import ShopCategory, ShopOwner
 
 
@@ -148,3 +148,25 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
             self.assertFalse(connected)
 
         async_to_sync(scenario)()
+
+    def test_customer_chat_get_returns_json_payload(self):
+        order = self._create_order(accepted=True)
+
+        request = self.factory.get(f'/api/customer/orders/{order.id}/chat/')
+        force_authenticate(request, user=self.customer)
+
+        response = customer_order_chat_view(request, order.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data']['order_id'], order.id)
+        self.assertEqual(response.data['data']['chat_type'], 'driver_customer')
+        self.assertTrue(response.data['data']['can_open'])
+
+    def test_customer_chat_get_returns_json_404_for_missing_order(self):
+        request = self.factory.get('/api/customer/orders/999999/chat/')
+        force_authenticate(request, user=self.customer)
+
+        response = customer_order_chat_view(request, 999999)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data['message'], 'Chat not found')
