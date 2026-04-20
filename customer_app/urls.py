@@ -25,6 +25,7 @@ urlpatterns = [
     path('customer/profile/phone/verify-otp/', views.customer_profile_phone_verify_otp_view, name='customer_profile_phone_verify_otp'),
     path('customer/select-shop/', views.customer_select_shop_view, name='customer_select_shop'),
     path('customer/orders/', views.customer_orders_list_create_view, name='customer_orders_list_create'),
+    path('customer/orders/<int:order_id>/chat/', views.customer_order_chat_view, name='customer_order_chat'),
     path('customer/orders/<int:order_id>/confirm/', views.customer_order_confirm_view, name='customer_order_confirm'),
     path('customer/orders/<int:order_id>/reject/', views.customer_order_reject_view, name='customer_order_reject'),
     path('customer/addresses/', views.customer_address_list_view, name='customer_address_list'),
@@ -38,4 +39,3 @@ urlpatterns = [
     path('reports/reasons/', views.abuse_report_reasons_view, name='abuse_report_reasons'),
     path('reports/', views.abuse_reports_view, name='abuse_reports'),
 ]
-
