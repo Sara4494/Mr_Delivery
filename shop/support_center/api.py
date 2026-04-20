@@ -301,6 +301,10 @@ def shop_support_conversations_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def support_ticket_media_upload_view(request, ticket_id):
+    return _perform_support_ticket_media_upload(request, ticket_id)
+
+
+def _perform_support_ticket_media_upload(request, ticket_id):
     ticket = get_ticket_by_public_id(ticket_id)
     if not isinstance(ticket, ShopSupportTicket):
         return error_response(
@@ -357,7 +361,7 @@ def support_ticket_media_upload_view(request, ticket_id):
 def support_chat_media_upload_view(request, conversation_id):
     ticket_hint = str(request.data.get('ticket_id') or request.data.get('conversation_id') or '').strip()
     if ticket_hint.startswith('ticket_') or str(conversation_id).strip().startswith('ticket_'):
-        return support_ticket_media_upload_view(request, ticket_hint or conversation_id)
+        return _perform_support_ticket_media_upload(request, ticket_hint or conversation_id)
 
     try:
         conversation = (
