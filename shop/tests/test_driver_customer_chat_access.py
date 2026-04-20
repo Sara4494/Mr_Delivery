@@ -5,13 +5,14 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.testing import WebsocketCommunicator
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.middleware import JWTAuthMiddleware
 from shop.models import ChatMessage, Customer, Driver, Order, ShopDriver
 from shop.routing import websocket_urlpatterns
-from shop.views import customer_order_chat_view, driver_order_chat_view
+from shop.views import chat_order_media_upload_view, customer_order_chat_view, driver_order_chat_view
 from user.models import ShopCategory, ShopOwner
 
 
@@ -170,3 +171,43 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.data['message'], 'Chat not found')
+
+    def test_customer_can_upload_driver_chat_image_after_accept(self):
+        order = self._create_order(accepted=True)
+        image_file = SimpleUploadedFile('chat.jpg', b'fake-image-content', content_type='image/jpeg')
+
+        request = self.factory.post(
+            f'/api/chat/order/{order.id}/send-media/',
+            {
+                'chat_type': 'driver_customer',
+                'message_type': 'image',
+                'image_file': image_file,
+            },
+            format='multipart',
+        )
+        force_authenticate(request, user=self.customer)
+
+        response = chat_order_media_upload_view(request, order.id)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['data']['chat_type'], 'driver_customer')
+        self.assertEqual(response.data['data']['message_type'], 'image')
+
+    def test_customer_cannot_upload_driver_chat_image_before_accept(self):
+        order = self._create_order(accepted=False)
+        image_file = SimpleUploadedFile('chat.jpg', b'fake-image-content', content_type='image/jpeg')
+
+        request = self.factory.post(
+            f'/api/chat/order/{order.id}/send-media/',
+            {
+                'chat_type': 'driver_customer',
+                'message_type': 'image',
+                'image_file': image_file,
+            },
+            format='multipart',
+        )
+        force_authenticate(request, user=self.customer)
+
+        response = chat_order_media_upload_view(request, order.id)
+
+        self.assertEqual(response.status_code, 403)

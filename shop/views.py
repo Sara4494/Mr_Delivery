@@ -4673,6 +4673,23 @@ def _can_user_access_order(order, user, user_type):
     return False
 
 
+def _can_user_access_chat(order, user, user_type, chat_type):
+    if chat_type == 'shop_customer':
+        return (
+            user_type in {'shop_owner', 'employee', 'customer'}
+            and _can_user_access_order(order, user, user_type)
+        )
+
+    if chat_type == 'driver_customer':
+        return (
+            user_type in {'driver', 'customer'}
+            and _can_user_access_order(order, user, user_type)
+            and has_driver_accepted(order)
+        )
+
+    return False
+
+
 def _sender_kwargs_for_user(user, user_type):
     sender_kwargs = {'sender_type': user_type}
     if user_type == 'customer':
