@@ -453,9 +453,11 @@ Used for the customer on-way tab.
         "driver_image_url": "/media/drivers/driver.jpg",
         "driver_role_label": "مندوب التوصيل",
         "chat": {
+          "thread_id": "delivery_15",
           "order_id": 15,
           "chat_type": "driver_customer",
-          "driver_id": 12
+          "driver_id": 12,
+          "can_open": true
         }
       }
     ]
