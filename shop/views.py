@@ -119,6 +119,7 @@ from .driver_realtime import (
     emit_order_rejected,
     emit_order_transferred,
     get_available_order_for_driver,
+    has_driver_accepted,
     record_driver_rejection,
     sync_driver_order_state,
     sync_unavailable_order_for_driver,
@@ -2529,9 +2530,8 @@ def driver_order_chat_open_view(request, order_id):
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    if order.driver_chat_opened_at is None:
-        order.driver_chat_opened_at = timezone.now()
-        order.save(update_fields=['driver_chat_opened_at', 'updated_at'])
+    if has_driver_accepted(order):
+        _mark_driver_customer_chat_opened(order)
 
     conversation_id = f'order_{order.id}_driver_customer'
     has_messages = ChatMessage.objects.filter(order=order, chat_type='driver_customer').exists()
@@ -2571,6 +2571,14 @@ def _normalize_driver_customer_chat_message_payload(item):
         'delivery_status': 'read' if item.get('is_read') else 'sent',
         'is_read': item.get('is_read'),
     }
+
+
+def _mark_driver_customer_chat_opened(order):
+    if order.driver_chat_opened_at is not None:
+        return
+
+    order.driver_chat_opened_at = timezone.now()
+    order.save(update_fields=['driver_chat_opened_at', 'updated_at'])
 
 
 AUTH_SUSPENDED_ERROR_CODES = {
@@ -2626,15 +2634,18 @@ def driver_order_chat_view(request, order_id):
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    can_open = bool(order.driver_chat_opened_at)
+    can_open = has_driver_accepted(order)
     conversation_id = f'order_{order.id}_driver_customer'
     ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
 
     if request.method == 'POST':
         if not can_open:
-            order.driver_chat_opened_at = timezone.now()
-            order.save(update_fields=['driver_chat_opened_at', 'updated_at'])
-            can_open = True
+            return error_response(
+                message='هذه المحادثة غير متاحة الآن',
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        _mark_driver_customer_chat_opened(order)
 
         chat_type = str(request.data.get('chat_type') or 'driver_customer').strip()
         if chat_type != 'driver_customer':
@@ -2724,6 +2735,9 @@ def driver_order_chat_view(request, order_id):
     )
     messages = [_chat_message_payload(message, request=request) for message in reversed(list(messages_qs))]
     normalized_messages = [_normalize_driver_customer_chat_message_payload(item) for item in messages]
+
+    if can_open:
+        _mark_driver_customer_chat_opened(order)
 
     data = {
         'conversation_id': conversation_id,

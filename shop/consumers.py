@@ -39,7 +39,7 @@ from .customer_app_realtime import (
     build_order_delta_events,
     build_support_delta_events,
 )
-from .driver_realtime import build_driver_snapshot_events
+from .driver_realtime import build_driver_snapshot_events, has_driver_accepted
 from .fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
 
@@ -832,6 +832,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """Check whether the current user can access the order."""
         try:
             order = Order.objects.get(id=self.order_id)
+
+            if self.chat_type == 'driver_customer':
+                if user_type == 'driver':
+                    return order.driver_id == user.id and has_driver_accepted(order)
+                if user_type == 'customer':
+                    return order.customer_id == user.id and has_driver_accepted(order)
+                return False
             
             if user_type == 'shop_owner':
                 return order.shop_owner_id == user.id
@@ -840,10 +847,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             elif user_type == 'driver':
                 return order.driver_id == user.id
             elif user_type == 'customer':
-                has_access = order.customer_id == user.id
-                if has_access and self.chat_type == 'driver_customer':
-                    has_access = order.driver_chat_opened_at is not None
-                return has_access
+                return order.customer_id == user.id
             
             return False
         except Order.DoesNotExist:
