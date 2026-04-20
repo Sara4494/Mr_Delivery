@@ -598,6 +598,7 @@ class CustomerAppRealtimeOnWaySerializer(serializers.ModelSerializer):
             'thread_id': f'delivery_{obj.id}',
             'order_id': obj.id,
             'chat_type': CUSTOMER_DRIVER_CHAT_TYPE,
+            'can_open': bool(getattr(obj, 'driver_accepted_at', None)),
         }
 
 

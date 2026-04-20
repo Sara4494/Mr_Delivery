@@ -220,7 +220,8 @@ Example:
         "chat": {
           "thread_id": "delivery_135",
           "order_id": 135,
-          "chat_type": "driver_customer"
+          "chat_type": "driver_customer",
+          "can_open": true
         }
       }
     ]

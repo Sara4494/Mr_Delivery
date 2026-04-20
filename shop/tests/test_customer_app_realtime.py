@@ -311,6 +311,8 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                 driver=self.driver,
                 created_at=base_time + timedelta(minutes=2),
             )
+            on_way_order.driver_accepted_at = base_time + timedelta(minutes=2, seconds=30)
+            on_way_order.save(update_fields=['driver_accepted_at', 'updated_at'])
             self._create_order_message(
                 on_way_order,
                 sender_type='shop_owner',
@@ -373,6 +375,11 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                 on_way_snapshot = initial_messages[3]
                 self.assertEqual(on_way_snapshot['data']['count'], 1)
                 self.assertEqual(on_way_snapshot['data']['results'][0]['order_id'], on_way_order.id)
+                self.assertTrue(on_way_snapshot['data']['results'][0]['chat']['can_open'])
+                self.assertEqual(
+                    on_way_snapshot['data']['results'][0]['chat']['thread_id'],
+                    f'delivery_{on_way_order.id}',
+                )
 
                 history_snapshot = initial_messages[4]
                 self.assertEqual(history_snapshot['data']['count'], 4)
@@ -555,6 +562,40 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                 on_way_event = next(event for event in events if event['type'] == 'on_way_upsert')
                 self.assertEqual(on_way_event['data']['order_id'], order.id)
                 self.assertEqual(on_way_event['data']['driver_id'], self.driver.id)
+                self.assertFalse(on_way_event['data']['chat']['can_open'])
+                self.assertEqual(on_way_event['data']['chat']['thread_id'], f'delivery_{order.id}')
+            finally:
+                await customer_socket.disconnect()
+
+        async_to_sync(run)()
+
+    def test_accepted_order_on_way_upsert_explicitly_opens_driver_chat(self):
+        async def run():
+            order = self._create_order(status='confirmed', driver=self.driver)
+            order.driver_accepted_at = timezone.now()
+            order.save(update_fields=['driver_accepted_at', 'updated_at'])
+
+            customer_socket, _ = await self._connect_customer_socket()
+            try:
+                response = self._call_view(
+                    lambda request: order_detail_view(request, order.id),
+                    'PUT',
+                    f'/api/shop/orders/{order.id}/',
+                    {
+                        'status': 'on_way',
+                    },
+                    self.shop,
+                )
+                self.assertEqual(response.status_code, 200)
+
+                events = await self._receive_until_types(
+                    customer_socket,
+                    {'order_upsert', 'on_way_upsert', 'order_history_entry_upsert'},
+                )
+                on_way_event = next(event for event in events if event['type'] == 'on_way_upsert')
+                self.assertTrue(on_way_event['data']['chat']['can_open'])
+                self.assertEqual(on_way_event['data']['chat']['chat_type'], 'driver_customer')
+                self.assertEqual(on_way_event['data']['chat']['thread_id'], f'delivery_{order.id}')
             finally:
                 await customer_socket.disconnect()
 
