@@ -2453,6 +2453,77 @@ def driver_order_detail_view(request, order_id):
 
 @api_view(['POST'])
 @permission_classes([IsDriver])
+def driver_order_deliver_view(request, order_id):
+    """
+    Confirm successful delivery for an assigned driver order.
+    POST /api/driver/orders/{id}/deliver/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
+    if not order:
+        return error_response(
+            message=t(request, 'driver_order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    if order.status != 'on_way' or not has_driver_accepted(order):
+        return error_response(
+            message=t(request, 'driver_order_cannot_be_delivered_in_current_status'),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    delivered_at = timezone.now()
+    previous_status = order.status
+    previous_driver_id = order.driver_id
+    previous_driver_accepted_at = order.driver_accepted_at
+
+    order.status = 'delivered'
+    order.delivered_at = delivered_at
+    order.save(update_fields=['status', 'delivered_at', 'updated_at'])
+
+    driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
+    driver.save(update_fields=['current_orders_count'])
+
+    try:
+        order_data = OrderSerializer(order, context={'request': request}).data
+        notify_order_update(
+            shop_owner_id=order.shop_owner_id,
+            customer_id=order.customer_id,
+            driver_id=order.driver_id,
+            order_data=order_data,
+        )
+        notify_driver_status_updated(driver)
+    except Exception as e:
+        print(f"driver_order_deliver websocket sync error: {e}")
+
+    sync_driver_order_state(
+        order,
+        previous_status=previous_status,
+        previous_driver_id=previous_driver_id,
+        previous_driver_accepted_at=previous_driver_accepted_at,
+        request=request,
+    )
+
+    order_payload = build_driver_order_payload(order, request=request)
+    return success_response(
+        data={
+            'success': True,
+            'message': t(request, 'driver_order_delivered_successfully'),
+            'order_id': order.id,
+            'status': order.status,
+            'delivered_at': format_utc_iso8601(order.delivered_at),
+            'order': order_payload,
+        },
+        message=t(request, 'driver_order_delivered_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsDriver])
 def driver_order_transfer_view(request, order_id):
     """
     Driver transfers an assigned order back for reassignment.

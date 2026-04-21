@@ -276,6 +276,7 @@ def build_driver_order_payload(order, *, request=None, scope=None, base_url=None
             'updated_at': format_utc_iso8601(order.updated_at),
             'accepted_at': format_utc_iso8601(getattr(order, 'driver_accepted_at', None)),
             'assigned_at': format_utc_iso8601(getattr(order, 'driver_assigned_at', None)),
+            'delivered_at': format_utc_iso8601(getattr(order, 'delivered_at', None)),
         },
     }
 

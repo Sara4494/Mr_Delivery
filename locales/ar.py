@@ -59,6 +59,8 @@ MESSAGES = {
     'driver_invitations_retrieved_successfully': 'تم جلب دعوات العمل بنجاح',
     'driver_order_cannot_be_transferred_in_current_status': 'لا يمكن تحويل هذا الطلب في حالته الحالية.',
     'driver_order_accepted_successfully': 'تم قبول الطلب بنجاح',
+    'driver_order_cannot_be_delivered_in_current_status': 'لا يمكن تأكيد تسليم هذا الطلب في حالته الحالية.',
+    'driver_order_delivered_successfully': 'تم تأكيد تسليم الطلب بنجاح',
     'driver_order_details_retrieved_successfully': 'تم جلب تفاصيل الطلب بنجاح',
     'driver_order_not_available': 'الطلب غير متاح لهذا السائق أو تم أخذه بالفعل',
     'driver_order_not_found': 'الطلب غير موجود أو غير مسند لهذا السائق',

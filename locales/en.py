@@ -59,6 +59,8 @@ MESSAGES = {
     'driver_invitations_retrieved_successfully': 'Driver invitations retrieved successfully',
     'driver_order_cannot_be_transferred_in_current_status': 'This order cannot be transferred in its current status.',
     'driver_order_accepted_successfully': 'Order accepted successfully',
+    'driver_order_cannot_be_delivered_in_current_status': 'This order cannot be marked as delivered in its current status.',
+    'driver_order_delivered_successfully': 'Order delivered successfully',
     'driver_order_details_retrieved_successfully': 'Driver order details retrieved successfully',
     'driver_order_not_available': 'Order is not available for this driver or was already taken',
     'driver_order_not_found': 'Order not found or not assigned to this driver',
