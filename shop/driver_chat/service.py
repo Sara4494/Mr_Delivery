@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+from datetime import timedelta
 from datetime import timezone as dt_timezone
 from typing import Optional
 
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 DRIVER_CHAT_MESSAGE_PAGE_SIZE = 20
 CALL_TIMEOUT_SECONDS = 30
+DRIVER_PRESENCE_TIMEOUT_SECONDS = 75
 
 
 def shop_driver_chats_group(shop_owner_id):
@@ -95,7 +97,7 @@ def _message_preview(message: DriverChatMessage):
 
 def _driver_presence_status(driver: Driver):
     has_trip = driver.orders.filter(status__in=['preparing', 'on_way']).exists()
-    if driver.status == 'offline':
+    if not bool(getattr(driver, 'is_online', False)):
         return 'offline'
     if has_trip:
         return 'on_trip'
@@ -105,7 +107,7 @@ def _driver_presence_status(driver: Driver):
 
 
 def _driver_is_online(driver: Driver):
-    return _driver_presence_status(driver) != 'offline'
+    return bool(getattr(driver, 'is_online', False))
 
 
 def serialize_driver_chat_driver(driver: Driver, *, request=None, scope=None, base_url=None):
@@ -991,39 +993,103 @@ def _driver_presence_payload(driver: Driver):
         'is_online': _driver_is_online(driver),
         'presence_status': _driver_presence_status(driver),
         'last_seen_at': format_utc_iso8601(driver.last_seen_at),
+        'active_connections_count': int(getattr(driver, 'active_connections_count', 0) or 0),
         'driver': serialize_driver_chat_driver(driver),
     }
 
 
 def _apply_driver_presence_state(driver: Driver, has_connections: bool):
+    now = timezone.now()
     update_fields = []
-    previous_status = driver.status
-    new_status = driver.status
-    if has_connections and driver.status == 'offline':
-        new_status = 'available'
-    if not has_connections:
-        new_status = 'offline'
-    if previous_status != new_status:
-        driver.status = new_status
-        update_fields.append('status')
-    driver.last_seen_at = timezone.now()
-    update_fields.append('last_seen_at')
-    update_fields.append('updated_at')
-    driver.save(update_fields=update_fields)
-    return previous_status != new_status
+    changed = bool(driver.is_online) != bool(has_connections)
+
+    if changed:
+        driver.is_online = bool(has_connections)
+        update_fields.append('is_online')
+
+    if has_connections:
+        if driver.last_seen_at is None:
+            driver.last_seen_at = now
+            update_fields.append('last_seen_at')
+    else:
+        driver.last_seen_at = now
+        update_fields.append('last_seen_at')
+
+    if update_fields:
+        update_fields.append('updated_at')
+        driver.save(update_fields=update_fields)
+
+    return changed
+
+
+def _stale_driver_presence_cutoff(timeout_seconds=DRIVER_PRESENCE_TIMEOUT_SECONDS):
+    return timezone.now() - timedelta(seconds=int(timeout_seconds))
+
+
+def _cleanup_stale_driver_connections(*, driver_id=None, timeout_seconds=DRIVER_PRESENCE_TIMEOUT_SECONDS):
+    stale_qs = DriverPresenceConnection.objects.filter(
+        last_heartbeat_at__lt=_stale_driver_presence_cutoff(timeout_seconds)
+    )
+    if driver_id is not None:
+        stale_qs = stale_qs.filter(driver_id=driver_id)
+    stale_qs.delete()
+
+
+def _driver_presence_group_batches(driver: Driver, payload):
+    order_rows = list(
+        Order.objects
+        .filter(driver_id=driver.id)
+        .values('id', 'customer_id', 'shop_owner_id')
+    )
+
+    standard_groups = {f'driver_{driver.id}'}
+    driver_chat_groups = {driver_driver_chats_group(driver.id)}
+
+    active_shop_ids = list(
+        ShopDriver.objects
+        .filter(driver=driver, status='active')
+        .values_list('shop_owner_id', flat=True)
+        .distinct()
+    )
+    for shop_id in active_shop_ids:
+        standard_groups.add(f'shop_orders_{shop_id}')
+        driver_chat_groups.add(shop_driver_chats_group(shop_id))
+
+    for order in order_rows:
+        standard_groups.add(f'chat_order_{order["id"]}_driver_customer')
+        if order['customer_id']:
+            standard_groups.add(f'customer_orders_{order["customer_id"]}')
+        if order['shop_owner_id']:
+            standard_groups.add(f'shop_orders_{order["shop_owner_id"]}')
+            driver_chat_groups.add(shop_driver_chats_group(order['shop_owner_id']))
+
+    return {
+        'standard_groups': sorted(standard_groups),
+        'driver_chat_groups': sorted(driver_chat_groups),
+        'data': payload,
+    }
 
 
 def mark_driver_connected(driver_id, channel_name, connection_type='driver_chat'):
     with transaction.atomic():
         driver = Driver.objects.select_for_update().get(id=driver_id)
-        DriverPresenceConnection.objects.get_or_create(
+        _cleanup_stale_driver_connections(driver_id=driver.id)
+        connection, _ = DriverPresenceConnection.objects.get_or_create(
             channel_name=channel_name,
             defaults={
                 'driver': driver,
                 'connection_type': connection_type,
+                'last_heartbeat_at': timezone.now(),
             },
         )
-        has_connections = DriverPresenceConnection.objects.filter(driver_id=driver.id).exists()
+        if connection.driver_id != driver.id:
+            connection.driver = driver
+            connection.connection_type = connection_type
+        connection.last_heartbeat_at = timezone.now()
+        connection.save(update_fields=['driver', 'connection_type', 'last_heartbeat_at'])
+        active_connections_count = DriverPresenceConnection.objects.filter(driver_id=driver.id).count()
+        driver.active_connections_count = active_connections_count
+        has_connections = active_connections_count > 0
         changed = _apply_driver_presence_state(driver, has_connections)
         return {
             **_driver_presence_payload(driver),
@@ -1043,7 +1109,10 @@ def mark_driver_disconnected(channel_name):
             return None
         driver = Driver.objects.select_for_update().get(id=connection.driver_id)
         connection.delete()
-        has_connections = DriverPresenceConnection.objects.filter(driver_id=driver.id).exists()
+        _cleanup_stale_driver_connections(driver_id=driver.id)
+        active_connections_count = DriverPresenceConnection.objects.filter(driver_id=driver.id).count()
+        driver.active_connections_count = active_connections_count
+        has_connections = active_connections_count > 0
         changed = _apply_driver_presence_state(driver, has_connections)
         return {
             **_driver_presence_payload(driver),
@@ -1051,27 +1120,82 @@ def mark_driver_disconnected(channel_name):
         }
 
 
+def touch_driver_presence(channel_name, driver_id=None):
+    with transaction.atomic():
+        connection = (
+            DriverPresenceConnection.objects
+            .select_related('driver')
+            .filter(channel_name=channel_name)
+            .first()
+        )
+        if not connection:
+            return None
+        if driver_id is not None and int(connection.driver_id) != int(driver_id):
+            return None
+        connection.last_heartbeat_at = timezone.now()
+        connection.save(update_fields=['last_heartbeat_at'])
+        driver = connection.driver
+        _cleanup_stale_driver_connections(driver_id=driver.id)
+        driver.active_connections_count = DriverPresenceConnection.objects.filter(driver_id=driver.id).count()
+        return _driver_presence_payload(driver)
+
+
+def mark_driver_connection_timed_out(channel_name, timeout_seconds=DRIVER_PRESENCE_TIMEOUT_SECONDS):
+    with transaction.atomic():
+        connection = (
+            DriverPresenceConnection.objects
+            .select_related('driver')
+            .filter(channel_name=channel_name)
+            .first()
+        )
+        if not connection:
+            return None
+        last_heartbeat_at = connection.last_heartbeat_at or connection.created_at
+        if last_heartbeat_at and last_heartbeat_at >= _stale_driver_presence_cutoff(timeout_seconds):
+            return None
+
+        driver = Driver.objects.select_for_update().get(id=connection.driver_id)
+        connection.delete()
+        _cleanup_stale_driver_connections(driver_id=driver.id, timeout_seconds=timeout_seconds)
+        active_connections_count = DriverPresenceConnection.objects.filter(driver_id=driver.id).count()
+        driver.active_connections_count = active_connections_count
+        changed = _apply_driver_presence_state(driver, active_connections_count > 0)
+        return {
+            **_driver_presence_payload(driver),
+            'changed': changed,
+            'timed_out': True,
+        }
+
+
+def get_driver_presence_snapshot(driver_or_id):
+    driver = driver_or_id if isinstance(driver_or_id, Driver) else Driver.objects.filter(id=driver_or_id).first()
+    if not driver:
+        return None
+    _cleanup_stale_driver_connections(driver_id=driver.id)
+    driver.active_connections_count = DriverPresenceConnection.objects.filter(driver_id=driver.id).count()
+    if driver.is_online and driver.active_connections_count == 0:
+        _apply_driver_presence_state(driver, False)
+        driver.refresh_from_db(fields=['is_online', 'last_seen_at', 'status'])
+        driver.active_connections_count = 0
+    return _driver_presence_payload(driver)
+
+
 def broadcast_driver_presence_update(driver_or_id):
     driver = driver_or_id if isinstance(driver_or_id, Driver) else Driver.objects.filter(id=driver_or_id).first()
     if not driver:
         return None
+    _cleanup_stale_driver_connections(driver_id=driver.id)
+    driver.active_connections_count = DriverPresenceConnection.objects.filter(driver_id=driver.id).count()
+    if driver.is_online and driver.active_connections_count == 0:
+        _apply_driver_presence_state(driver, False)
     payload = _driver_presence_payload(driver)
-    shop_ids = list(
-        ShopDriver.objects
-        .filter(driver=driver, status='active')
-        .values_list('shop_owner_id', flat=True)
-        .distinct()
-    )
-    for shop_id in shop_ids:
-        publish_driver_chat_event(
-            shop_owner_id=shop_id,
-            event_type='driver_chat.driver_presence_updated',
-            data=payload,
-            driver=driver,
-            conversation=None,
-            send_to_driver=False,
-        )
-    _group_send(driver_driver_chats_group(driver.id), _event_envelope('driver_chat.driver_presence_updated', data=payload))
+    batches = _driver_presence_group_batches(driver, payload)
+
+    for group_name in batches['standard_groups']:
+        _group_send(group_name, {'type': 'presence_update', 'data': payload})
+
+    for group_name in batches['driver_chat_groups']:
+        _group_send(group_name, _event_envelope('driver_chat.driver_presence_updated', data=payload))
     return payload
 
 

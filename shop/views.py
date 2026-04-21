@@ -20,7 +20,7 @@ from .models import (
     AbuseReport, AccountModerationStatus,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, ShopReview, PaymentMethod,
-    Notification, Cart, CartItem, ShopDriver
+    Notification, Cart, CartItem, ShopDriver, DriverPresenceConnection
 )
 from gallery.models import WorkSchedule, GalleryImage, ImageLike
 from user.approval_requests import create_or_update_offer_request
@@ -108,7 +108,11 @@ from .websocket_utils import (
 )
 from .customer_app_realtime import broadcast_customer_order_removed
 from .presence import format_utc_iso8601
-from .driver_chat_service import request_transfer_for_order, sync_order_assignment_change
+from .driver_chat_service import (
+    get_driver_presence_snapshot,
+    request_transfer_for_order,
+    sync_order_assignment_change,
+)
 from .driver_realtime import (
     build_driver_order_payload,
     clear_all_driver_rejections,
@@ -1063,6 +1067,34 @@ def _build_driver_status_panel(driver, active_orders_count):
     }
 
 
+def _serialize_driver_presence_response(driver):
+    snapshot = get_driver_presence_snapshot(driver)
+    if not snapshot:
+        return None
+    return {
+        'driver_id': int(driver.id),
+        'is_online': bool(snapshot.get('is_online')),
+        'last_seen_at': snapshot.get('last_seen_at'),
+    }
+
+
+def _can_access_driver_presence(user, driver):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+
+    user_type = _resolve_user_type(user)
+    if user_type == 'driver':
+        return int(getattr(user, 'id', 0) or 0) == int(driver.id)
+    if user_type == 'shop_owner':
+        return driver.shops.filter(id=user.id, shop_drivers__status='active').exists()
+    if user_type == 'employee':
+        shop_owner_id = getattr(user, 'shop_owner_id', None)
+        return bool(shop_owner_id) and driver.shops.filter(id=shop_owner_id, shop_drivers__status='active').exists()
+    if user_type == 'customer':
+        return Order.objects.filter(customer_id=user.id, driver_id=driver.id).exists()
+    return False
+
+
 def _build_driver_invitation_item(shop_driver, request):
     shop_owner = shop_driver.shop_owner
     category = getattr(shop_owner, 'shop_category', None)
@@ -1887,10 +1919,41 @@ def driver_status_view(request):
             'driver_id': driver.id,
             'status': driver.status,
             'status_display': driver.get_status_display(),
-            'is_online': driver.status != 'offline',
+            'is_online': bool(driver.is_online),
             'can_receive_orders': driver.status == 'available',
         },
         message=t(request, 'driver_status_updated_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def driver_presence_view(request, driver_id):
+    """Return websocket-derived delivery presence for chat headers and driver cards."""
+    driver = Driver.objects.filter(id=driver_id).first()
+    if not driver:
+        return error_response(
+            message=t(request, 'driver_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not _can_access_driver_presence(request.user, driver):
+        return error_response(
+            message=t(request, 'permission_only_shop_staff'),
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    presence_data = _serialize_driver_presence_response(driver)
+    if not presence_data:
+        return error_response(
+            message=t(request, 'driver_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    return success_response(
+        data=presence_data,
+        message='Driver presence retrieved successfully.',
         status_code=status.HTTP_200_OK,
     )
 
@@ -2228,7 +2291,10 @@ def driver_logout_view(request):
         except Exception:
             pass
 
-    update_fields = ['last_seen_at', 'updated_at']
+    DriverPresenceConnection.objects.filter(driver=driver).delete()
+
+    update_fields = ['is_online', 'last_seen_at', 'updated_at']
+    driver.is_online = False
     driver.last_seen_at = timezone.now()
 
     active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
@@ -2238,11 +2304,10 @@ def driver_logout_view(request):
 
     driver.save(update_fields=update_fields)
 
-    if 'status' in update_fields:
-        try:
-            notify_driver_status_updated(driver)
-        except Exception as e:
-            print(f"driver_status_updated WebSocket error: {e}")
+    try:
+        notify_driver_status_updated(driver)
+    except Exception as e:
+        print(f"driver_status_updated WebSocket error: {e}")
 
     return success_response(
         data={},
@@ -2544,6 +2609,7 @@ def driver_order_chat_open_view(request, order_id):
             'chat_type': 'driver_customer',
             'is_existing': has_messages,
             'is_new': not has_messages,
+            'driver_presence': _serialize_driver_presence_response(order.driver) if order.driver_id else None,
             'ws_url': ws_path,
         },
         message=t(request, 'driver_chat_opened_successfully'),
@@ -2585,6 +2651,7 @@ def _build_driver_customer_chat_bootstrap_response(request, order, *, mark_as_op
     can_open = has_driver_accepted(order)
     conversation_id = f'order_{order.id}_driver_customer'
     ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
+    driver_presence = _serialize_driver_presence_response(order.driver) if order.driver_id else None
 
     messages_qs = (
         ChatMessage.objects
@@ -2604,6 +2671,7 @@ def _build_driver_customer_chat_bootstrap_response(request, order, *, mark_as_op
         'chat_type': 'driver_customer',
         'can_open': can_open,
         'ws_path': ws_path,
+        'driver_presence': driver_presence,
         'messages': normalized_messages,
     }
 

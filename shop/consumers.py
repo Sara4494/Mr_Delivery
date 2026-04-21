@@ -1,4 +1,5 @@
-﻿import json
+﻿import asyncio
+import json
 import uuid
 import logging
 from asgiref.sync import sync_to_async
@@ -17,6 +18,7 @@ from .models import (
 )
 from .presence import (
     build_customer_presence_broadcast_batches,
+    format_utc_iso8601,
     get_order_customer_presence_snapshot,
     mark_customer_websocket_connected,
     mark_customer_websocket_disconnected,
@@ -29,9 +31,13 @@ from .serializers import (
     CustomerSupportMessageSerializer,
 )
 from .driver_chat_service import (
+    DRIVER_PRESENCE_TIMEOUT_SECONDS,
     broadcast_driver_presence_update,
+    get_driver_presence_snapshot,
     mark_driver_connected,
+    mark_driver_connection_timed_out,
     mark_driver_disconnected,
+    touch_driver_presence,
 )
 from .customer_app_realtime import (
     CUSTOMER_APP_REALTIME_SCOPE,
@@ -421,6 +427,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.user = user
             self.user_type = user_type
             self.customer_presence_registered = False
+            self.driver_presence_registered = False
+            self.driver_presence_timeout_task = None
             
             # Join the chat group.
             await self.channel_layer.group_add(self.room_group_name, self.channel_name)
@@ -430,6 +438,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             if self.user_type == 'customer':
                 presence_state = await self.register_customer_presence('chat')
                 self.customer_presence_registered = bool(presence_state)
+            elif self.user_type == 'driver':
+                presence_state = await self.register_driver_presence('order_chat')
+                self.driver_presence_registered = bool(presence_state)
+                self.driver_presence_timeout_task = asyncio.create_task(self.watch_driver_presence_timeout())
             
             # Send connection confirmation.
             await self.send(text_data=_json_dumps(_with_localized_message(
@@ -473,10 +485,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             presence_state = await self.unregister_customer_presence()
             if presence_state and presence_state.get('changed'):
                 await self.broadcast_presence_updates(presence_state)
+        elif getattr(self, 'driver_presence_registered', False):
+            self.cancel_driver_presence_timeout_task()
+            presence_state = await self.unregister_driver_presence()
+            if presence_state and presence_state.get('changed'):
+                await self.broadcast_driver_presence()
     
     async def receive(self, text_data):
         """Receive an inbound WebSocket event."""
         try:
+            await self.touch_driver_presence_if_needed()
             data = json.loads(text_data)
             event_type = data.get('type', 'chat_message')
             request_id = data.get('request_id')
@@ -514,6 +532,30 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 message='حدث خطأ غير متوقع',
                 details={'error_detail': str(e)},
             )
+
+    async def touch_driver_presence_if_needed(self):
+        if getattr(self, 'user_type', None) != 'driver':
+            return
+        await self._touch_driver_presence()
+
+    def cancel_driver_presence_timeout_task(self):
+        task = getattr(self, 'driver_presence_timeout_task', None)
+        if task:
+            task.cancel()
+            self.driver_presence_timeout_task = None
+
+    async def watch_driver_presence_timeout(self):
+        try:
+            while True:
+                await asyncio.sleep(15)
+                timed_out_state = await self.mark_driver_presence_timed_out()
+                if timed_out_state:
+                    if timed_out_state.get('changed'):
+                        await self.broadcast_driver_presence()
+                    await self.close(code=4001)
+                    return
+        except asyncio.CancelledError:
+            return
     
     async def handle_chat_message(self, data, request_id=None, action='chat_message'):
         """Handle a chat message event."""
@@ -809,6 +851,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def get_presence_snapshot(self):
+        if self.chat_type == 'driver_customer' and self.user_type == 'customer':
+            order = Order.objects.select_related('driver').filter(id=self.order_id).first()
+            if not order or not order.driver_id:
+                return None
+            snapshot = get_driver_presence_snapshot(order.driver_id)
+            if snapshot:
+                snapshot['order_id'] = order.id
+            return snapshot
         return get_order_customer_presence_snapshot(self.order_id)
 
     @database_sync_to_async
@@ -822,6 +872,33 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def unregister_customer_presence(self):
         return mark_customer_websocket_disconnected(self.channel_name)
+
+    @database_sync_to_async
+    def register_driver_presence(self, connection_type):
+        return mark_driver_connected(
+            self.user.id,
+            self.channel_name,
+            connection_type=connection_type,
+        )
+
+    @database_sync_to_async
+    def unregister_driver_presence(self):
+        return mark_driver_disconnected(self.channel_name)
+
+    @database_sync_to_async
+    def mark_driver_presence_timed_out(self):
+        return mark_driver_connection_timed_out(
+            self.channel_name,
+            timeout_seconds=DRIVER_PRESENCE_TIMEOUT_SECONDS,
+        )
+
+    @database_sync_to_async
+    def _touch_driver_presence(self):
+        return touch_driver_presence(self.channel_name, self.user.id)
+
+    @database_sync_to_async
+    def broadcast_driver_presence(self):
+        return broadcast_driver_presence_update(self.user.id)
 
     @database_sync_to_async
     def get_customer_presence_broadcast_batches(self, customer_id, is_online, last_seen):
@@ -1206,6 +1283,12 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_typing(data)
             elif event_type == 'location':
                 await self.handle_location(data, request_id=request_id, action=event_type)
+            elif event_type in {'ping', 'presence_ping'}:
+                await self.send(text_data=_json_dumps({
+                    'type': 'pong',
+                    'request_id': request_id,
+                    'sent_at': format_utc_iso8601(timezone.now()),
+                }))
             else:
                 await self.send_error_event(
                     code='UNKNOWN_EVENT',
@@ -2364,12 +2447,14 @@ class DriverConsumer(AsyncWebsocketConsumer):
         self.user = user
         self.user_type = user_type
         self.driver_presence_registered = False
+        self.driver_presence_timeout_task = None
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
         presence_state = await self.register_driver_presence()
         self.driver_presence_registered = bool(presence_state)
+        self.driver_presence_timeout_task = asyncio.create_task(self.watch_driver_presence_timeout())
 
         await self.send(text_data=_json_dumps(_with_localized_message(
             {'type': 'connection'},
@@ -2389,6 +2474,7 @@ class DriverConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
         if getattr(self, 'driver_presence_registered', False):
+            self.cancel_driver_presence_timeout_task()
             presence_state = await self.unregister_driver_presence()
             if presence_state and presence_state.get('changed'):
                 await self.broadcast_driver_presence()
@@ -2406,11 +2492,23 @@ class DriverConsumer(AsyncWebsocketConsumer):
         return broadcast_driver_presence_update(self.driver_id)
 
     @database_sync_to_async
+    def touch_driver_presence(self):
+        return touch_driver_presence(self.channel_name, self.driver_id)
+
+    @database_sync_to_async
+    def mark_driver_presence_timed_out(self):
+        return mark_driver_connection_timed_out(
+            self.channel_name,
+            timeout_seconds=DRIVER_PRESENCE_TIMEOUT_SECONDS,
+        )
+
+    @database_sync_to_async
     def get_driver_snapshots(self):
         return build_driver_snapshot_events(self.user, scope=self.scope, base_url=self.base_url)
 
     async def receive(self, text_data):
         try:
+            await self.touch_driver_presence()
             data = json.loads(text_data)
             msg_type = data.get('type')
             request_id = data.get('request_id')
@@ -2419,6 +2517,12 @@ class DriverConsumer(AsyncWebsocketConsumer):
                 await self.handle_location_update(data)
             elif msg_type == 'ring':
                 await _handle_ring_request(self, data, request_id=request_id)
+            elif msg_type in {'ping', 'presence_ping'}:
+                await self.send(text_data=_json_dumps({
+                    'type': 'pong',
+                    'request_id': request_id,
+                    'sent_at': format_utc_iso8601(timezone.now()),
+                }))
             else:
                 await _send_error_event(
                     self,
@@ -2441,6 +2545,25 @@ class DriverConsumer(AsyncWebsocketConsumer):
                 message='حدث خطأ غير متوقع',
                 details={'error_detail': str(e)},
             )
+
+    def cancel_driver_presence_timeout_task(self):
+        task = getattr(self, 'driver_presence_timeout_task', None)
+        if task:
+            task.cancel()
+            self.driver_presence_timeout_task = None
+
+    async def watch_driver_presence_timeout(self):
+        try:
+            while True:
+                await asyncio.sleep(15)
+                timed_out_state = await self.mark_driver_presence_timed_out()
+                if timed_out_state:
+                    if timed_out_state.get('changed'):
+                        await self.broadcast_driver_presence()
+                    await self.close(code=4001)
+                    return
+        except asyncio.CancelledError:
+            return
 
     async def handle_location_update(self, data):
         latitude = data.get('latitude')

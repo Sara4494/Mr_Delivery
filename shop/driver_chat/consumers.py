@@ -11,6 +11,7 @@ from user.utils import resolve_base_url
 from ..models import Driver
 from .service import (
     CALL_TIMEOUT_SECONDS,
+    DRIVER_PRESENCE_TIMEOUT_SECONDS,
     broadcast_driver_presence_update,
     driver_accept_order,
     driver_driver_chats_group,
@@ -27,6 +28,7 @@ from .service import (
     get_shop_snapshot,
     mark_conversation_read,
     mark_driver_connected,
+    mark_driver_connection_timed_out,
     mark_driver_disconnected,
     relay_typing_event,
     relay_webrtc_event,
@@ -35,6 +37,7 @@ from .service import (
     store_send_text,
     store_send_voice,
     store_send_image,
+    touch_driver_presence,
     transfer_order_between_drivers,
     update_call_status,
 )
@@ -94,6 +97,7 @@ class BaseDriverChatConsumer(AsyncWebsocketConsumer):
         await self.send_payload(event['payload'])
 
     async def receive(self, text_data):
+        await self._touch_presence_if_needed()
         try:
             data = json.loads(text_data)
         except json.JSONDecodeError:
@@ -124,6 +128,15 @@ class BaseDriverChatConsumer(AsyncWebsocketConsumer):
             await handler(data, request_id=request_id)
         except Exception as exc:
             await self.send_error('UNEXPECTED_ERROR', str(exc), request_id=request_id)
+
+    async def _touch_presence_if_needed(self):
+        if getattr(self, 'actor', None) != 'driver' or not getattr(self, 'driver_id', None):
+            return
+        await self._touch_driver_presence()
+
+    @database_sync_to_async
+    def _touch_driver_presence(self):
+        return touch_driver_presence(self.channel_name, self.driver_id)
 
     @database_sync_to_async
     def _get_conversation(self, conversation_id):
@@ -467,9 +480,11 @@ class DriverChatsDriverConsumer(BaseDriverChatConsumer):
         self.user = user
         self.driver = user
         self.room_group_name = driver_driver_chats_group(self.driver_id)
+        self._presence_timeout_task = None
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         presence_state = await self._mark_driver_connected()
+        self._presence_timeout_task = asyncio.create_task(self._watch_presence_timeout())
         if presence_state and presence_state.get('changed'):
             await self._broadcast_driver_presence()
         await self.send_payload({
@@ -483,6 +498,7 @@ class DriverChatsDriverConsumer(BaseDriverChatConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        self._cancel_presence_timeout_task()
         presence_state = await self._mark_driver_disconnected()
         if presence_state and presence_state.get('changed'):
             await self._broadcast_driver_presence()
@@ -511,6 +527,32 @@ class DriverChatsDriverConsumer(BaseDriverChatConsumer):
     @database_sync_to_async
     def _broadcast_driver_presence(self):
         return broadcast_driver_presence_update(self.driver_id)
+
+    def _cancel_presence_timeout_task(self):
+        task = getattr(self, '_presence_timeout_task', None)
+        if task:
+            task.cancel()
+            self._presence_timeout_task = None
+
+    async def _watch_presence_timeout(self):
+        try:
+            while True:
+                await asyncio.sleep(15)
+                timed_out_state = await self._mark_driver_timed_out()
+                if timed_out_state:
+                    if timed_out_state.get('changed'):
+                        await self._broadcast_driver_presence()
+                    await self.close(code=4001)
+                    return
+        except asyncio.CancelledError:
+            return
+
+    @database_sync_to_async
+    def _mark_driver_timed_out(self):
+        return mark_driver_connection_timed_out(
+            self.channel_name,
+            timeout_seconds=DRIVER_PRESENCE_TIMEOUT_SECONDS,
+        )
 
     async def handle_driver_chat_send_text(self, data, request_id=None):
         conversation = await self._require_conversation(data.get('conversation_id'), request_id=request_id)

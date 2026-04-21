@@ -93,6 +93,7 @@ urlpatterns = [
     path('driver/orders/<int:order_id>/transfer/', views.driver_order_transfer_view, name='driver_order_transfer'),
     path('driver/orders/<int:order_id>/chat/', views.driver_order_chat_view, name='driver_order_chat'),
     path('driver/orders/<int:order_id>/chat/open/', views.driver_order_chat_open_view, name='driver_order_chat_open'),
+    path('drivers/<int:driver_id>/presence/', views.driver_presence_view, name='driver_presence'),
     path('driver/status/', views.driver_status_view, name='driver_status'),
     path('user/profile/', views.driver_profile_view, name='driver_profile'),
     path('user/profile/phone/send-otp/', views.driver_profile_phone_send_otp_view, name='driver_profile_phone_send_otp'),

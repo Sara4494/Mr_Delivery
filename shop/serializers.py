@@ -403,11 +403,12 @@ class DriverSerializer(serializers.ModelSerializer):
     profile_image_url = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     vehicle_type_display = serializers.CharField(source='get_vehicle_type_display', read_only=True)
+    last_seen_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Driver
         fields = ['id', 'name', 'phone_number', 'profile_image', 'profile_image_url',
-                  'vehicle_type', 'vehicle_type_display', 'is_verified',
+                  'vehicle_type', 'vehicle_type_display', 'is_verified', 'is_online', 'last_seen_at',
                   'status', 'status_display', 'current_orders_count', 'rating', 'total_rides', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -416,6 +417,9 @@ class DriverSerializer(serializers.ModelSerializer):
         if obj.profile_image:
             return _context_file_url(self, obj.profile_image)
         return None
+
+    def get_last_seen_at(self, obj):
+        return format_utc_iso8601(obj.last_seen_at)
 
 
 class DriverCreateSerializer(serializers.ModelSerializer):
@@ -451,6 +455,7 @@ class DriverAppSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     vehicle_type_display = serializers.CharField(source='get_vehicle_type_display', read_only=True)
     active_shops = serializers.SerializerMethodField()
+    last_seen_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Driver
@@ -463,6 +468,8 @@ class DriverAppSerializer(serializers.ModelSerializer):
             'vehicle_type',
             'vehicle_type_display',
             'is_verified',
+            'is_online',
+            'last_seen_at',
             'status',
             'status_display',
             'active_shops',
@@ -478,11 +485,15 @@ class DriverAppSerializer(serializers.ModelSerializer):
         shops = obj.shops.filter(shop_drivers__status='active').values('id', 'shop_name', 'shop_number')
         return list(shops)
 
+    def get_last_seen_at(self, obj):
+        return format_utc_iso8601(obj.last_seen_at)
+
 
 class DriverProfileResponseSerializer(serializers.ModelSerializer):
     """Driver profile payload for the profile and personal-info screens."""
 
     profile_image_url = serializers.SerializerMethodField()
+    last_seen_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Driver
@@ -492,6 +503,8 @@ class DriverProfileResponseSerializer(serializers.ModelSerializer):
             'phone_number',
             'profile_image_url',
             'vehicle_type',
+            'is_online',
+            'last_seen_at',
         ]
         read_only_fields = fields
 
@@ -499,6 +512,9 @@ class DriverProfileResponseSerializer(serializers.ModelSerializer):
         if obj.profile_image:
             return _context_file_url(self, obj.profile_image)
         return None
+
+    def get_last_seen_at(self, obj):
+        return format_utc_iso8601(obj.last_seen_at)
 
 
 class DriverProfileSerializer(DriverProfileResponseSerializer):

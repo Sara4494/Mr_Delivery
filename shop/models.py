@@ -238,6 +238,7 @@ class Driver(models.Model):
         verbose_name="نوع المركبة",
     )
     is_verified = models.BooleanField(default=True, verbose_name="تم التحقق")
+    is_online = models.BooleanField(default=False, verbose_name="متصل الآن")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='offline', verbose_name="الحالة التشغيلية")
     current_orders_count = models.IntegerField(default=0, verbose_name="عدد الطلبات الحالية")
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0, verbose_name="التقييم")
@@ -409,6 +410,7 @@ class DriverPresenceConnection(models.Model):
     )
     channel_name = models.CharField(max_length=255, unique=True, verbose_name="اسم القناة")
     connection_type = models.CharField(max_length=50, default='websocket', verbose_name="نوع الاتصال")
+    last_heartbeat_at = models.DateTimeField(blank=True, null=True, verbose_name="آخر heartbeat")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
 
     class Meta:
@@ -417,6 +419,7 @@ class DriverPresenceConnection(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['driver', '-created_at'], name='drvprs_driver_created_idx'),
+            models.Index(fields=['driver', '-last_heartbeat_at'], name='drvprs_driver_heartbeat_idx'),
         ]
 
     def __str__(self):
