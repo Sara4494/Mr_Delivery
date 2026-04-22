@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.urls import resolve
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
@@ -53,6 +54,12 @@ class DriverOrderDeliverViewTests(TestCase):
             driver_assigned_at=timezone.now(),
             driver_accepted_at=accepted_at,
         )
+
+    def test_deliver_route_is_registered(self):
+        match = resolve('/api/driver/orders/172/deliver/')
+
+        self.assertEqual(match.func, driver_order_deliver_view)
+        self.assertEqual(match.kwargs['order_id'], 172)
 
     @patch('shop.views.notify_driver_status_updated')
     @patch('shop.views.notify_order_update')

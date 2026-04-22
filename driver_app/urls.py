@@ -17,6 +17,7 @@ urlpatterns = [
     path('driver/invitations/<int:invitation_id>/respond/', views.driver_invitation_action_view, name='driver_invitation_action'),
     path('driver/orders/<int:order_id>/accept/', views.driver_order_accept_view, name='driver_order_accept'),
     path('driver/orders/<int:order_id>/reject/', views.driver_order_reject_view, name='driver_order_reject'),
+    path('driver/orders/<int:order_id>/deliver/', views.driver_order_deliver_view, name='driver_order_deliver'),
     path('driver/orders/<int:order_id>/', views.driver_order_detail_view, name='driver_order_detail'),
     path('driver/orders/<int:order_id>/transfer/', views.driver_order_transfer_view, name='driver_order_transfer'),
     path('driver/orders/<int:order_id>/chat/', views.driver_order_chat_view, name='driver_order_chat'),
@@ -32,4 +33,3 @@ urlpatterns = [
     path('driver/driver-chats/voice/upload/', driver_chat_views.driver_chat_driver_voice_upload_view, name='driver_chat_driver_voice_upload'),
     path('driver/driver-chats/image/upload/', driver_chat_views.driver_chat_driver_image_upload_view, name='driver_chat_driver_image_upload'),
 ]
-
