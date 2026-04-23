@@ -14,8 +14,12 @@ from .serializers import (
     ShopProfileUpdateSerializer,
     ImageLikeSerializer
 )
-from user.models import ShopOwner
-from user.approval_requests import create_image_publish_request, create_or_update_shop_edit_request
+from user.models import ShopOwner, AdminApprovalRequest
+from user.approval_requests import (
+    create_image_publish_request,
+    create_or_update_shop_edit_request,
+    serialize_shop_approval_request_summary,
+)
 from shop.models import Employee
 from user.utils import success_response, error_response, build_message_fields, t
 
@@ -83,6 +87,57 @@ def _build_file_url(request, file_field):
     if request:
         return request.build_absolute_uri(file_field.url)
     return file_field.url
+
+
+def _latest_approval_request_map(*, shop_owner=None, request_type=None, image_ids=None):
+    queryset = AdminApprovalRequest.objects.all()
+    if shop_owner is not None:
+        queryset = queryset.filter(shop_owner=shop_owner)
+    if request_type:
+        queryset = queryset.filter(request_type=request_type)
+    if image_ids is not None:
+        queryset = queryset.filter(gallery_image_id__in=list(image_ids))
+
+    latest_map = {}
+    for approval_request in queryset.order_by('-created_at'):
+        key = approval_request.gallery_image_id if approval_request.gallery_image_id else approval_request.request_type
+        if key not in latest_map:
+            latest_map[key] = approval_request
+    return latest_map
+
+
+def _effective_image_review_payload(image, approval_request, request=None):
+    if image.status == 'published':
+        status_value = 'published'
+        status_display = 'منشورة'
+    elif approval_request:
+        status_value = approval_request.status
+        status_display = approval_request.get_status_display()
+    else:
+        status_value = 'draft'
+        status_display = 'مسودة'
+
+    return {
+        'review_status': status_value,
+        'review_status_display': status_display,
+        'approval_request': serialize_shop_approval_request_summary(approval_request, request=request),
+        'rejection_reason': getattr(approval_request, 'rejection_reason', None),
+    }
+
+
+def _augment_gallery_image_payloads(payloads, images, request=None):
+    images = list(images)
+    approval_map = _latest_approval_request_map(
+        image_ids=[image.id for image in images],
+        request_type='image_publish',
+    )
+
+    enriched = []
+    for payload, image in zip(payloads, images):
+        item = dict(payload)
+        item.update(_effective_image_review_payload(image, approval_map.get(image.id), request=request))
+        enriched.append(item)
+    return enriched
 
 
 def _build_viewer_profile_payload(request, shop_owner):
@@ -164,8 +219,17 @@ def shop_profile_view(request):
             return _forbidden(request, 'permission_only_shop_owner_or_cashier')
 
         serializer = ShopProfileSerializer(shop_owner, context={'request': request})
+        latest_edit_request = _latest_approval_request_map(
+            shop_owner=shop_owner,
+            request_type='shop_edit',
+        ).get('shop_edit')
+        data = dict(serializer.data)
+        data['latest_edit_request'] = serialize_shop_approval_request_summary(
+            latest_edit_request,
+            request=request,
+        )
         return success_response(
-            data=serializer.data,
+            data=data,
             message=t(request, 'profile_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
@@ -175,7 +239,7 @@ def shop_profile_view(request):
             return _forbidden(request, 'permission_only_shop_owner_edit_content')
 
         data = {}
-        for field in ('owner_name', 'shop_name'):
+        for field in ('owner_name', 'shop_name', 'phone_number', 'description'):
             if field in request.data:
                 data[field] = request.data.get(field)
         if request.FILES.get('profile_image'):
@@ -307,11 +371,13 @@ def gallery_list_view(request):
         
         if page is not None:
             serializer = GalleryImageSerializer(page, many=True, context={'request': request})
-            return paginator.get_paginated_response(serializer.data)
-        
+            return paginator.get_paginated_response(
+                _augment_gallery_image_payloads(serializer.data, page, request=request)
+            )
+
         serializer = GalleryImageSerializer(queryset, many=True, context={'request': request})
         return success_response(
-            data=serializer.data,
+            data=_augment_gallery_image_payloads(serializer.data, queryset, request=request),
             message=t(request, 'images_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
@@ -329,10 +395,12 @@ def gallery_list_view(request):
             if image.status != 'draft':
                 image.status = 'draft'
                 image.save(update_fields=['status', 'updated_at'])
-            create_image_publish_request(image, request=request)
+            approval_request = create_image_publish_request(image, request=request)
             response_serializer = GalleryImageSerializer(image, context={'request': request})
+            data = dict(response_serializer.data)
+            data.update(_effective_image_review_payload(image, approval_request=approval_request, request=request))
             return success_response(
-                data=response_serializer.data,
+                data=data,
                 message=t(request, 'image_publish_request_submitted_successfully'),
                 status_code=status.HTTP_201_CREATED
             )
@@ -370,8 +438,14 @@ def gallery_detail_view(request, image_id):
             return _forbidden(request, 'permission_only_shop_owner_or_cashier')
 
         serializer = GalleryImageSerializer(image, context={'request': request})
+        approval_request = _latest_approval_request_map(
+            image_ids=[image.id],
+            request_type='image_publish',
+        ).get(image.id)
+        data = dict(serializer.data)
+        data.update(_effective_image_review_payload(image, approval_request, request=request))
         return success_response(
-            data=serializer.data,
+            data=data,
             message=t(request, 'image_retrieved_successfully'),
             status_code=status.HTTP_200_OK
         )
@@ -389,8 +463,10 @@ def gallery_detail_view(request, image_id):
             image.status = 'published'
             image.save()
             response_serializer = GalleryImageSerializer(image, context={'request': request})
+            data = dict(response_serializer.data)
+            data.update(_effective_image_review_payload(image, approval_request=None, request=request))
             return success_response(
-                data=response_serializer.data,
+                data=data,
                 message=t(request, 'image_updated_successfully'),
                 status_code=status.HTTP_200_OK
             )
@@ -402,8 +478,14 @@ def gallery_detail_view(request, image_id):
         if serializer.is_valid():
             serializer.save()
             response_serializer = GalleryImageSerializer(image, context={'request': request})
+            approval_request = _latest_approval_request_map(
+                image_ids=[image.id],
+                request_type='image_publish',
+            ).get(image.id)
+            data = dict(response_serializer.data)
+            data.update(_effective_image_review_payload(image, approval_request, request=request))
             return success_response(
-                data=response_serializer.data,
+                data=data,
                 message=t(request, 'image_updated_successfully'),
                 status_code=status.HTTP_200_OK
             )

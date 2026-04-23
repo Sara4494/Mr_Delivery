@@ -2375,6 +2375,7 @@ def driver_order_accept_view(request, order_id):
         )
     emit_assigned_order_upsert(driver.id, order_payload)
     emit_order_accepted(driver.id, order_payload)
+    _notify_shop_about_driver_order_action(order, driver, 'accepted', request=request)
 
     return success_response(
         data={'order': order_payload},
@@ -2414,6 +2415,13 @@ def driver_order_reject_view(request, order_id):
 
     emit_available_order_remove(driver.id, order.id, 'rejected_by_you')
     emit_order_rejected(driver.id, order.id)
+    _notify_shop_about_driver_order_action(
+        order,
+        driver,
+        'rejected',
+        request=request,
+        reason=reject_reason,
+    )
 
     return success_response(
         data={
@@ -4543,6 +4551,47 @@ def _chat_message_payload(message, request=None):
         'longitude': serialized.get('longitude'),
         'invoice': serialized.get('invoice'),
     }
+
+
+def _notify_shop_about_driver_order_action(order, driver, action, request=None, reason=None):
+    if not order or not order.shop_owner_id or not driver:
+        return
+
+    action_label = 'قبل' if action == 'accepted' else 'رفض'
+    content = f'السائق {driver.name} {action_label} الطلب #{order.order_number}.'
+    if reason and action == 'rejected':
+        content = f'{content} السبب: {reason}'
+
+    try:
+        _attach_notification_to_user(
+            'shop_owner',
+            order.shop_owner,
+            title='تحديث حالة السائق',
+            message=content,
+            data={
+                'order_id': order.id,
+                'order_number': order.order_number,
+                'driver_id': driver.id,
+                'driver_name': driver.name,
+                'driver_action': action,
+                'reason': reason or None,
+            },
+        )
+    except Exception as exc:
+        print(f"driver action notification error: {exc}")
+
+    try:
+        msg = ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='driver',
+            sender_driver=driver,
+            message_type='text',
+            content=content,
+        )
+        broadcast_chat_message_to_order(order.id, _chat_message_payload(msg, request=request), request=request)
+    except Exception as exc:
+        print(f"driver action chat message error: {exc}")
 
 
 def _get_prefetched_latest_message(order):
