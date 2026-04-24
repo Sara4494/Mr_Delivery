@@ -17,7 +17,7 @@ from .support_center.serializers import (
     ShopSupportTicketMessageSerializer,
     ShopSupportTicketSerializer,
 )
-from user.models import ShopOwner, ShopCategory
+from user.models import ShopOwner, ShopCategory, AdminApprovalRequest
 from user.utils import t, build_absolute_file_url
 from user.otp_service import normalize_phone
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -1323,13 +1323,58 @@ class OfferManagementSerializer(OfferBaseSerializer):
     shop_owner_id = serializers.IntegerField(source='shop_owner.id', read_only=True)
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
     likes_count = serializers.IntegerField(read_only=True)
+    review_status = serializers.SerializerMethodField()
+    review_status_display = serializers.SerializerMethodField()
+    rejection_reason = serializers.SerializerMethodField()
+
+    REVIEW_STATUS_LABELS = {
+        'published': 'اتنشرت',
+        'pending_review': 'قيد المراجعة',
+        'rejected': 'مرفوضة',
+    }
+
+    def _get_latest_offer_approval_request(self, obj):
+        prefetched_requests = getattr(obj, 'prefetched_offer_approval_requests', None)
+        if prefetched_requests is not None:
+            return prefetched_requests[0] if prefetched_requests else None
+
+        return (
+            AdminApprovalRequest.objects
+            .filter(offer=obj, request_type='offer')
+            .order_by('-created_at')
+            .first()
+        )
+
+    def _get_review_status(self, obj):
+        approval_request = self._get_latest_offer_approval_request(obj)
+        if approval_request:
+            if approval_request.status == 'approved':
+                return 'published'
+            if approval_request.status == 'rejected':
+                return 'rejected'
+            return 'pending_review'
+
+        return 'published' if obj.is_active else 'pending_review'
+
+    def get_review_status(self, obj):
+        return self._get_review_status(obj)
+
+    def get_review_status_display(self, obj):
+        return self.REVIEW_STATUS_LABELS.get(self._get_review_status(obj), self._get_review_status(obj))
+
+    def get_rejection_reason(self, obj):
+        approval_request = self._get_latest_offer_approval_request(obj)
+        if not approval_request:
+            return None
+        return approval_request.rejection_reason
 
     class Meta(OfferBaseSerializer.Meta):
         fields = [
             'id', 'shop_owner_id', 'shop_name', 'title', 'description',
             'image', 'image_url', 'discount_percentage', 'offer_percentage',
             'start_date', 'end_date', 'status', 'views_count', 'likes_count',
-            'is_active', 'created_at', 'updated_at'
+            'is_active', 'review_status', 'review_status_display', 'rejection_reason',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'status', 'views_count', 'created_at', 'updated_at']
 

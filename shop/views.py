@@ -88,6 +88,7 @@ from .support_center.api import (
     support_ticket_media_upload_view,
 )
 from user.models import (
+    AdminApprovalRequest,
     ShopCategory,
     ShopOwner,
     WORK_SCHEDULE_DAYS,
@@ -3343,7 +3344,18 @@ def offer_list_view(request):
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 
-        queryset = Offer.objects.filter(shop_owner=shop_owner).select_related('shop_owner')
+        queryset = (
+            Offer.objects
+            .filter(shop_owner=shop_owner)
+            .select_related('shop_owner')
+            .prefetch_related(
+                Prefetch(
+                    'approval_requests',
+                    queryset=AdminApprovalRequest.objects.filter(request_type='offer').order_by('-created_at'),
+                    to_attr='prefetched_offer_approval_requests',
+                )
+            )
+        )
         queryset = _apply_offer_status_filter(queryset, status_filter)
         queryset = queryset if queryset is not None else Offer.objects.none()
 
@@ -3414,7 +3426,18 @@ def offer_detail_view(request, offer_id):
         return _owner_or_employee_forbidden(request)
 
     try:
-        offer = Offer.objects.select_related('shop_owner').get(id=offer_id, shop_owner=shop_owner)
+        offer = (
+            Offer.objects
+            .select_related('shop_owner')
+            .prefetch_related(
+                Prefetch(
+                    'approval_requests',
+                    queryset=AdminApprovalRequest.objects.filter(request_type='offer').order_by('-created_at'),
+                    to_attr='prefetched_offer_approval_requests',
+                )
+            )
+            .get(id=offer_id, shop_owner=shop_owner)
+        )
     except Offer.DoesNotExist:
         return error_response(
             message=t(request, 'offer_not_found'),
