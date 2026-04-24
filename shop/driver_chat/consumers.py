@@ -26,6 +26,7 @@ from .service import (
     get_driver_snapshot,
     get_order_for_conversation,
     get_shop_snapshot,
+    localize_driver_chat_payload,
     mark_conversation_read,
     mark_driver_connected,
     mark_driver_connection_timed_out,
@@ -63,6 +64,7 @@ class BaseDriverChatConsumer(AsyncWebsocketConsumer):
     actor = None
 
     async def send_payload(self, payload):
+        payload = localize_driver_chat_payload(payload, lang=getattr(self, 'lang', None))
         await self.send(text_data=_json_dumps(payload))
 
     async def send_ack(self, request_id, data=None, success=True, error=None):

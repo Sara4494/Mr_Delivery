@@ -110,6 +110,7 @@ from .customer_app_realtime import broadcast_customer_order_removed
 from .presence import format_utc_iso8601
 from .driver_chat_service import (
     get_driver_presence_snapshot,
+    notify_store_about_driver_order_action,
     request_transfer_for_order,
     sync_order_assignment_change,
 )
@@ -4579,6 +4580,17 @@ def _notify_shop_about_driver_order_action(order, driver, action, request=None, 
         )
     except Exception as exc:
         print(f"driver action notification error: {exc}")
+
+    try:
+        notify_store_about_driver_order_action(
+            order=order,
+            driver=driver,
+            action=action,
+            reason=reason,
+            request=request,
+        )
+    except Exception as exc:
+        print(f"driver action driver chat error: {exc}")
 
     try:
         msg = ChatMessage.objects.create(

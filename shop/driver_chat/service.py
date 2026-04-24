@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+from copy import deepcopy
 from datetime import timedelta
 from datetime import timezone as dt_timezone
 from typing import Optional
@@ -12,7 +13,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from user.models import ShopOwner
-from user.utils import build_absolute_file_url
+from user.utils import build_absolute_file_url, localize_message
 
 from ..models import (
     Driver,
@@ -95,6 +96,82 @@ def _message_preview(message: DriverChatMessage):
     return 'رسالة جديدة'
 
 
+def _driver_chat_text(text=None, metadata=None, *, request=None, lang=None):
+    metadata = metadata or {}
+    message_key = metadata.get('message_key')
+    message_params = metadata.get('message_params') or {}
+    if message_key and isinstance(message_params, dict):
+        return localize_message(request, message_key, lang=lang, **message_params)
+    return localize_message(request, text, lang=lang)
+
+
+def _driver_chat_preview_from_payload(message_payload, *, request=None, lang=None, fallback=None):
+    if not isinstance(message_payload, dict):
+        return fallback
+
+    text_value = _driver_chat_text(
+        message_payload.get('text'),
+        message_payload.get('metadata'),
+        request=request,
+        lang=lang,
+    )
+    if text_value:
+        return str(text_value)[:120]
+    return fallback
+
+
+def localize_driver_chat_payload(payload, *, request=None, lang=None):
+    localized = deepcopy(payload)
+    payload_type = localized.get('type')
+    data = localized.get('data')
+
+    def _localize_message_item(item):
+        if not isinstance(item, dict):
+            return item
+        item = dict(item)
+        item['text'] = _driver_chat_text(
+            item.get('text'),
+            item.get('metadata'),
+            request=request,
+            lang=lang,
+        )
+        return item
+
+    def _localize_conversation_item(item):
+        if not isinstance(item, dict):
+            return item
+        item = dict(item)
+        messages = item.get('messages')
+        if isinstance(messages, list):
+            item['messages'] = [_localize_message_item(message) for message in messages]
+            if item['messages']:
+                item['last_message_preview'] = _driver_chat_preview_from_payload(
+                    item['messages'][-1],
+                    request=request,
+                    lang=lang,
+                    fallback=item.get('last_message_preview'),
+                )
+        return item
+
+    if payload_type == 'driver_chats.snapshot' and isinstance(data, dict):
+        conversations = data.get('conversations')
+        if isinstance(conversations, list):
+            data['conversations'] = [_localize_conversation_item(item) for item in conversations]
+    elif payload_type in {'driver_chat.conversation_created', 'driver_chat.conversation_updated'} and isinstance(data, dict):
+        if isinstance(data.get('conversation'), dict):
+            data['conversation'] = _localize_conversation_item(data['conversation'])
+    elif payload_type == 'driver_chat.message_created' and isinstance(data, dict):
+        if isinstance(data.get('message'), dict):
+            data['message'] = _localize_message_item(data['message'])
+    elif payload_type == 'driver_chat.ack' and isinstance(data, dict):
+        messages = data.get('messages')
+        if isinstance(messages, list):
+            data['messages'] = [_localize_message_item(message) for message in messages]
+
+    localized['data'] = data
+    return localized
+
+
 def _driver_presence_status(driver: Driver):
     has_trip = driver.orders.filter(status__in=['preparing', 'on_way']).exists()
     if not bool(getattr(driver, 'is_online', False)):
@@ -173,7 +250,7 @@ def serialize_driver_chat_message(message: DriverChatMessage, *, request=None, s
         'type': message.message_type,
         'sender': message.sender_type,
         'sent_at': format_utc_iso8601(message.created_at),
-        'text': message.text,
+        'text': _driver_chat_text(message.text, message.metadata, request=request),
         'audio_url': build_absolute_file_url(message.audio_url, request=request, scope=scope, base_url=base_url),
         'image_url': (message.metadata or {}).get('image_url'),
         'voice_duration_seconds': message.voice_duration_seconds,
@@ -217,6 +294,13 @@ def serialize_driver_chat_conversation(conversation: DriverChatConversation, *, 
         messages_page = get_conversation_messages_page(conversation, base_url=base_url, request=request, scope=scope)
         messages = messages_page['messages']
         next_cursor = messages_page['next_cursor']
+    last_message_preview = conversation.last_message_preview
+    if messages:
+        last_message_preview = _driver_chat_preview_from_payload(
+            messages[-1],
+            request=request,
+            fallback=last_message_preview,
+        )
 
     return {
         'id': conversation.public_id or f'conv_{conversation.pk}',
@@ -226,7 +310,7 @@ def serialize_driver_chat_conversation(conversation: DriverChatConversation, *, 
         'status': conversation.status,
         'updated_at': format_utc_iso8601(conversation.updated_at),
         'unread_count': conversation.unread_count,
-        'last_message_preview': conversation.last_message_preview,
+        'last_message_preview': last_message_preview,
         'messages': messages,
         'messages_next_cursor': next_cursor,
     }
@@ -840,12 +924,102 @@ def driver_accept_order(*, conversation: DriverChatConversation, conversation_or
         message_type='system',
         text='تم قبول الأوردر من السائق',
         conversation_order=conversation_order,
+        metadata={
+            'message_key': 'driver_chat_order_accepted_by_driver',
+            'message_params': {
+                'order_number': order.order_number,
+                'driver_name': conversation.driver.name,
+            },
+        },
     )
     broadcast_order_updated(conversation_order)
     broadcast_message_created(system_message, request=request, scope=scope, base_url=base_url)
     broadcast_conversation_snapshot(conversation, request=request, scope=scope, base_url=base_url)
     broadcast_driver_presence_update(conversation.driver_id)
     _log_sensitive('accept_order', order_id=order.id, conversation_id=conversation.public_id, driver_id=conversation.driver_id)
+    return conversation_order
+
+
+def notify_store_about_driver_order_action(
+    *,
+    order: Order,
+    driver: Driver,
+    action,
+    reason=None,
+    request=None,
+    scope=None,
+    base_url=None,
+):
+    if not order or not getattr(order, 'shop_owner_id', None) or not driver:
+        return None
+
+    normalized_action = str(action or '').strip().lower()
+    if normalized_action not in {'accepted', 'rejected'}:
+        return None
+
+    conversation, created = ensure_conversation(order.shop_owner, driver)
+    conversation_order, _ = ensure_conversation_order(
+        conversation,
+        order,
+        status='driver_on_way' if normalized_action == 'accepted' else 'rejected',
+        transfer_reason=str(reason or '').strip() or None,
+        is_active=True,
+    )
+
+    message_key = 'driver_chat_order_accepted_by_driver'
+    message_params = {
+        'order_number': order.order_number,
+        'driver_name': driver.name,
+    }
+
+    if normalized_action == 'accepted':
+        message_text = (
+            f'تم قبول الأوردر #{order.order_number} من السائق {driver.name}. '
+            f'The driver {driver.name} accepted order #{order.order_number}.'
+        )
+    else:
+        message_key = 'driver_chat_order_rejected_by_driver'
+        message_text = (
+            f'رفض السائق {driver.name} الأوردر #{order.order_number}. '
+            f'The driver {driver.name} rejected order #{order.order_number}.'
+        )
+        if reason:
+            message_key = 'driver_chat_order_rejected_by_driver_with_reason'
+            message_params['reason'] = str(reason).strip()
+            message_text = f'{message_text} السبب: {reason}. Reason: {reason}'
+
+    system_message = create_message(
+        conversation=conversation,
+        sender_type='system',
+        message_type='system',
+        text=message_text,
+        conversation_order=conversation_order,
+        metadata={
+            'message_key': message_key,
+            'message_params': message_params,
+            'driver_action': normalized_action,
+            'driver_id': driver.id,
+            'driver_name': driver.name,
+            'reason': str(reason or '').strip() or None,
+        },
+    )
+    broadcast_order_updated(conversation_order)
+    broadcast_message_created(system_message, request=request, scope=scope, base_url=base_url)
+    broadcast_conversation_snapshot(
+        conversation,
+        request=request,
+        scope=scope,
+        base_url=base_url,
+        created=created,
+    )
+    broadcast_driver_presence_update(driver.id)
+    _log_sensitive(
+        f'notify_store_{normalized_action}',
+        order_id=order.id,
+        conversation_id=conversation.public_id,
+        driver_id=driver.id,
+        reason=reason,
+    )
     return conversation_order
 
 
