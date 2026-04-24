@@ -76,6 +76,7 @@ class DriverOrderDeliverViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['data']['order_id'], order.id)
         self.assertEqual(response.data['data']['status'], 'delivered')
+        self.assertEqual(response.data['data']['driver_status'], 'delivered')
         self.assertIsNotNone(response.data['data']['delivered_at'])
         self.assertEqual(order.status, 'delivered')
         self.assertIsNotNone(order.delivered_at)
@@ -83,7 +84,29 @@ class DriverOrderDeliverViewTests(TestCase):
         notify_order_update_mock.assert_called_once()
         notify_driver_status_updated_mock.assert_called_once()
 
-    def test_driver_cannot_deliver_order_in_wrong_status(self):
+    @patch('shop.views.notify_driver_status_updated')
+    @patch('shop.views.notify_order_update')
+    def test_driver_can_mark_preparing_order_as_delivered(self, notify_order_update_mock, notify_driver_status_updated_mock):
+        order = self._create_order(status='preparing', accepted=True)
+
+        request = self.factory.post(f'/api/driver/orders/{order.id}/deliver/', {'order_id': order.id}, format='json')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_order_deliver_view(request, order.id)
+
+        order.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data']['status'], 'delivered')
+        self.assertEqual(response.data['data']['driver_status'], 'delivered')
+        self.assertEqual(response.data['data']['order']['status'], 'delivered')
+        self.assertEqual(response.data['data']['order']['driver_status'], 'delivered')
+        self.assertIsNotNone(order.delivered_at)
+        notify_order_update_mock.assert_called_once()
+        notify_driver_status_updated_mock.assert_called_once()
+
+    @patch('shop.views.notify_driver_status_updated')
+    @patch('shop.views.notify_order_update')
+    def test_driver_can_mark_confirmed_order_as_delivered(self, notify_order_update_mock, notify_driver_status_updated_mock):
         order = self._create_order(status='confirmed', accepted=True)
 
         request = self.factory.post(f'/api/driver/orders/{order.id}/deliver/', {'order_id': order.id}, format='json')
@@ -92,8 +115,26 @@ class DriverOrderDeliverViewTests(TestCase):
         response = driver_order_deliver_view(request, order.id)
 
         order.refresh_from_db()
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(order.status, 'confirmed')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data']['status'], 'delivered')
+        self.assertEqual(response.data['data']['driver_status'], 'delivered')
+        self.assertEqual(response.data['data']['order']['status'], 'delivered')
+        self.assertEqual(response.data['data']['order']['driver_status'], 'delivered')
+        self.assertIsNotNone(order.delivered_at)
+        notify_order_update_mock.assert_called_once()
+        notify_driver_status_updated_mock.assert_called_once()
+
+    def test_driver_cannot_deliver_order_in_wrong_status(self):
+        order = self._create_order(status='pending_customer_confirm', accepted=True)
+
+        request = self.factory.post(f'/api/driver/orders/{order.id}/deliver/', {'order_id': order.id}, format='json')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_order_deliver_view(request, order.id)
+
+        order.refresh_from_db()
+        self.assertIn(response.status_code, (400, 404))
+        self.assertEqual(order.status, 'pending_customer_confirm')
         self.assertIsNone(order.delivered_at)
 
     def test_driver_cannot_deliver_unaccepted_order(self):

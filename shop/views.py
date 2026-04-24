@@ -2483,7 +2483,7 @@ def driver_order_deliver_view(request, order_id):
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    if order.status != 'on_way' or not has_driver_accepted(order):
+    if order.status not in DRIVER_APP_ORDER_STATUSES or not has_driver_accepted(order):
         return error_response(
             message=t(request, 'driver_order_cannot_be_delivered_in_current_status'),
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2528,6 +2528,7 @@ def driver_order_deliver_view(request, order_id):
             'message': t(request, 'driver_order_delivered_successfully'),
             'order_id': order.id,
             'status': order.status,
+            'driver_status': order_payload.get('driver_status'),
             'delivered_at': format_utc_iso8601(order.delivered_at),
             'order': order_payload,
         },
