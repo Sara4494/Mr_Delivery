@@ -506,7 +506,7 @@ def _group_send(group_name, payload):
     async_to_sync(channel_layer.group_send)(
         group_name,
         {
-            'type': 'driver_chat_event',
+            'type': 'driver_chat_message',
             'payload': payload,
         }
     )

@@ -98,6 +98,9 @@ class BaseDriverChatConsumer(AsyncWebsocketConsumer):
     async def driver_chat_event(self, event):
         await self.send_payload(event['payload'])
 
+    async def driver_chat_message(self, event):
+        await self.send_payload(event['payload'])
+
     async def receive(self, text_data):
         await self._touch_presence_if_needed()
         try:
@@ -279,6 +282,12 @@ class BaseDriverChatConsumer(AsyncWebsocketConsumer):
 
 class DriverChatsShopConsumer(BaseDriverChatConsumer):
     actor = 'store'
+
+    async def driver_chat_event(self, event):
+        await super().driver_chat_event(event)
+
+    async def driver_chat_message(self, event):
+        await super().driver_chat_message(event)
 
     async def connect(self):
         self.shop_owner_id = int(self.scope['url_route']['kwargs']['shop_owner_id'])
@@ -466,6 +475,12 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
 
 class DriverChatsDriverConsumer(BaseDriverChatConsumer):
     actor = 'driver'
+
+    async def driver_chat_event(self, event):
+        await super().driver_chat_event(event)
+
+    async def driver_chat_message(self, event):
+        await super().driver_chat_message(event)
 
     async def connect(self):
         self.driver_id = int(self.scope['url_route']['kwargs']['driver_id'])
