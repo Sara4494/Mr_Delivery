@@ -159,6 +159,21 @@ def _build_flat_ring_shop_fields(shop_payload):
     }
 
 
+def _build_ring_driver_fields(user, user_type, scope=None, base_url=None):
+    if user_type != 'driver':
+        return {
+            'driver_image_url': None,
+        }
+
+    return {
+        'driver_image_url': build_absolute_file_url(
+            getattr(user, 'profile_image', None),
+            scope=scope,
+            base_url=base_url,
+        ),
+    }
+
+
 @database_sync_to_async
 def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_type=None, scope=None, base_url=None):
     try:
@@ -259,6 +274,7 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
         'notification_kind': 'ring',
         'play_sound_on_frontend': True,
         **_build_flat_ring_shop_fields(shop_payload),
+        **_build_ring_driver_fields(user, user_type, scope=scope, base_url=base_url),
     }
 
     if len(delivered_targets) == 1:

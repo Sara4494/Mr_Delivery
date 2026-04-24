@@ -1,16 +1,19 @@
 from unittest.mock import patch
 
+from asgiref.sync import async_to_sync
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.fcm_service import (
     _stringify_payload,
+    build_incoming_ring_payload,
     send_order_chat_push_fallback,
     send_push_to_token_record,
     send_push_to_user,
     send_ring_push_fallback,
 )
+from shop.consumers import _build_ring_dispatch_context
 from shop.fcm_views import (
     fcm_refresh_device_view,
     fcm_register_device_view,
@@ -329,6 +332,7 @@ class FCMFallbackDispatchTests(TestCase):
             name='محمود',
             phone_number='01030000002',
             password='secret123',
+            profile_image='drivers/driver_2.jpg',
         )
         self.employee = Employee.objects.create(
             shop_owner=self.shop,
@@ -426,6 +430,40 @@ class FCMFallbackDispatchTests(TestCase):
         for call in mock_send.call_args_list:
             self.assertEqual(call.kwargs['channel_id'], 'incoming_ring_channel')
             self.assertTrue(call.kwargs['high_priority'])
+
+    def test_incoming_ring_payload_includes_driver_image_url_for_driver_sender(self):
+        payload = build_incoming_ring_payload(
+            order=self.order,
+            ring_payload={
+                'ring_id': 'ring-driver-1',
+                'sender_type': 'driver',
+                'sender_id': self.driver.id,
+                'sender_name': self.driver.name,
+                'chat_type': 'driver_customer',
+            },
+            target='customer',
+            shop_name=self.shop.shop_name,
+            shop_profile_image_url='https://example.com/media/shop_profiles/shop.jpg',
+        )
+
+        self.assertEqual(payload['sender_type'], 'driver')
+        self.assertIn('driver_image_url', payload)
+        self.assertTrue(str(payload['driver_image_url'] or '').endswith('/media/drivers/driver_2.jpg'))
+
+    def test_ring_dispatch_context_includes_driver_image_url_for_driver_sender(self):
+        context = async_to_sync(_build_ring_dispatch_context)(
+            self.driver,
+            'driver',
+            self.order.id,
+            ['customer'],
+            chat_type='driver_customer',
+        )
+
+        self.assertNotIn('error', context)
+        self.assertEqual(context['payload']['sender_type'], 'driver')
+        self.assertEqual(context['payload']['chat_type'], 'driver_customer')
+        self.assertIn('driver_image_url', context['payload'])
+        self.assertTrue(str(context['payload']['driver_image_url'] or '').endswith('/media/drivers/driver_2.jpg'))
 
 
 class FCMServiceTests(TestCase):

@@ -1135,6 +1135,10 @@ def build_chat_message_payload(*, order, chat_type, message_payload, shop_name=N
 
 def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, shop_profile_image_url=None):
     ring_payload = ring_payload or {}
+    driver_image_url = ring_payload.get('driver_image_url')
+    if driver_image_url is None and ring_payload.get('sender_type') == 'driver':
+        driver_image_url = build_absolute_file_url(getattr(order.driver, 'profile_image', None))
+
     return {
         'type': 'incoming_ring',
         'ring_id': ring_payload.get('ring_id') or '',
@@ -1149,6 +1153,7 @@ def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, 
         'sender_id': ring_payload.get('sender_id') or '',
         'sender_type': ring_payload.get('sender_type') or '',
         'sender_name': ring_payload.get('sender_name') or '',
+        'driver_image_url': driver_image_url,
         'caller_name': ring_payload.get('caller_name') or ring_payload.get('sender_name') or '',
         'route': '/incoming-ring',
         'click_action': 'OPEN_CHAT',
