@@ -48,6 +48,14 @@ from .customer_app_realtime import (
 from .driver_realtime import build_driver_snapshot_events, has_driver_accepted
 from .fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
+from gallery.serializers import GalleryImageSerializer, ShopProfileSerializer, WorkScheduleSerializer
+from gallery.views import (
+    _augment_gallery_image_payloads,
+    _latest_approval_request_map,
+    build_shop_portfolio_snapshot,
+    _build_viewer_profile_payload,
+)
+from gallery.models import GalleryImage, WorkSchedule
 
 
 logger = logging.getLogger(__name__)
@@ -1898,6 +1906,14 @@ class OrderConsumer(AsyncWebsocketConsumer):
                     request_id=request_id,
                     message='تمت مزامنة بيانات المحل بنجاح',
                 )
+            elif event_type in {'sync_portfolio', 'refresh_portfolio'}:
+                await self.send_shop_portfolio_snapshot()
+                await _send_ack(
+                    self,
+                    'sync_portfolio',
+                    request_id=request_id,
+                    message='تمت مزامنة معرض الأعمال بنجاح',
+                )
             else:
                 await _send_error_event(
                     self,
@@ -1989,6 +2005,12 @@ class OrderConsumer(AsyncWebsocketConsumer):
             'data': event['data'],
         }))
 
+    async def shop_portfolio_snapshot(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'shop_portfolio_snapshot',
+            'data': event['data'],
+        }))
+
     async def send_shop_dashboard_snapshots(self):
         orders_snapshot = await self.get_orders_snapshot()
         await self.send(text_data=_json_dumps(_with_localized_message(
@@ -2008,6 +2030,19 @@ class OrderConsumer(AsyncWebsocketConsumer):
                 'type': 'support_conversation_update',
                 'data': conversation,
             }))
+
+        await self.send_shop_portfolio_snapshot()
+
+    async def send_shop_portfolio_snapshot(self):
+        portfolio_snapshot = await self.get_shop_portfolio_snapshot()
+        await self.send(text_data=_json_dumps(_with_localized_message(
+            {
+                'type': 'shop_portfolio_snapshot',
+                'data': portfolio_snapshot,
+            },
+            'تمت مزامنة معرض الأعمال بنجاح',
+            lang=self.lang,
+        )))
 
     @database_sync_to_async
     def get_orders_snapshot(self):
@@ -2040,6 +2075,16 @@ class OrderConsumer(AsyncWebsocketConsumer):
                 base_url=getattr(self, 'base_url', None),
             ),
         ).data
+
+    @database_sync_to_async
+    def get_shop_portfolio_snapshot(self):
+        shop_owner = ShopOwner.objects.filter(id=self.shop_owner_id).first()
+        if not shop_owner:
+            return {}
+        return build_shop_portfolio_snapshot(
+            shop_owner,
+            viewer_user=getattr(self, 'user', None),
+        )
 
 
 class CustomerOrderConsumer(AsyncWebsocketConsumer):

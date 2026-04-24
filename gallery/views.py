@@ -3,6 +3,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db.models import Q, Count, Sum
 from django.shortcuts import get_object_or_404
 from .models import GalleryImage, WorkSchedule, ImageLike
@@ -168,6 +170,89 @@ def _build_viewer_profile_payload(request, shop_owner):
     return None
 
 
+def build_shop_portfolio_snapshot(shop_owner, request=None, viewer_user=None):
+    schedule, _ = WorkSchedule.objects.get_or_create(shop_owner=shop_owner)
+    profile_serializer = ShopProfileSerializer(shop_owner, context={'request': request})
+    latest_edit_request = _latest_approval_request_map(
+        shop_owner=shop_owner,
+        request_type='shop_edit',
+    ).get('shop_edit')
+    profile_data = dict(profile_serializer.data)
+    profile_data['latest_edit_request'] = serialize_shop_approval_request_summary(
+        latest_edit_request,
+        request=request,
+    )
+
+    viewer_profile = None
+    if request is not None:
+        viewer_profile = _build_viewer_profile_payload(request, shop_owner)
+    elif viewer_user is not None:
+        viewer_type = getattr(viewer_user, 'user_type', None)
+        if _is_employee(viewer_user):
+            viewer_profile = {
+                'type': 'cashier' if getattr(viewer_user, 'role', None) == 'cashier' else 'employee',
+                'id': viewer_user.id,
+                'name': viewer_user.name,
+                'role': viewer_user.role,
+                'role_display': viewer_user.get_role_display(),
+                'profile_image_url': _build_file_url(None, getattr(viewer_user, 'profile_image', None)),
+            }
+        elif _is_shop_owner(viewer_user) or viewer_type == 'shop_owner':
+            viewer_profile = {
+                'type': 'shop_owner',
+                'id': shop_owner.id,
+                'name': shop_owner.owner_name,
+                'role': 'shop_owner',
+                'role_display': 'المدير',
+                'profile_image_url': _build_file_url(request, getattr(shop_owner, 'profile_image', None)),
+            }
+
+    images = list(
+        GalleryImage.objects
+        .filter(shop_owner=shop_owner)
+        .order_by('-uploaded_at', '-id')
+    )
+    image_serializer = GalleryImageSerializer(images, many=True, context={'request': request})
+    images_payload = _augment_gallery_image_payloads(image_serializer.data, images, request=request)
+
+    return {
+        'profile': profile_data,
+        'viewer_profile': viewer_profile,
+        'schedule': WorkScheduleSerializer(schedule).data,
+        'gallery': {
+            'images': images_payload,
+            'summary': {
+                'total_images': len(images),
+                'published_images': sum(1 for image in images if image.status == 'published'),
+                'draft_images': sum(1 for image in images if image.status == 'draft'),
+                'total_likes': sum(int(image.likes_count or 0) for image in images),
+            },
+        },
+    }
+
+
+def broadcast_shop_portfolio_snapshot(shop_owner, request=None, viewer_user=None):
+    if not shop_owner:
+        return
+
+    channel_layer = get_channel_layer()
+    if not channel_layer:
+        return
+
+    payload = build_shop_portfolio_snapshot(
+        shop_owner,
+        request=request,
+        viewer_user=viewer_user,
+    )
+    async_to_sync(channel_layer.group_send)(
+        f'shop_orders_{shop_owner.id}',
+        {
+            'type': 'shop_portfolio_snapshot',
+            'data': payload,
+        },
+    )
+
+
 def _token_user_type(request):
     token = getattr(request, 'auth', None)
     if token is None:
@@ -247,14 +332,16 @@ def shop_profile_view(request):
 
         serializer = ShopProfileUpdateSerializer(shop_owner, data=data, partial=True)
         if serializer.is_valid():
+            approval_request = create_or_update_shop_edit_request(
+                shop_owner,
+                serializer.validated_data,
+                request=request,
+            )
+            broadcast_shop_portfolio_snapshot(shop_owner, request=request, viewer_user=user)
             return success_response(
                 data={
                     'request': {
-                        'id': create_or_update_shop_edit_request(
-                            shop_owner,
-                            serializer.validated_data,
-                            request=request,
-                        ).id
+                        'id': approval_request.id
                     }
                 },
                 message=t(request, 'shop_profile_edit_request_submitted_successfully'),
@@ -319,6 +406,7 @@ def work_schedule_view(request):
         serializer = WorkScheduleSerializer(schedule, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            broadcast_shop_portfolio_snapshot(shop_owner, request=request, viewer_user=user)
             return success_response(
                 data=serializer.data,
                 message=t(request, 'work_schedule_updated_successfully'),
@@ -399,6 +487,7 @@ def gallery_list_view(request):
             response_serializer = GalleryImageSerializer(image, context={'request': request})
             data = dict(response_serializer.data)
             data.update(_effective_image_review_payload(image, approval_request=approval_request, request=request))
+            broadcast_shop_portfolio_snapshot(shop_owner, request=request, viewer_user=user)
             return success_response(
                 data=data,
                 message=t(request, 'image_publish_request_submitted_successfully'),
@@ -465,6 +554,7 @@ def gallery_detail_view(request, image_id):
             response_serializer = GalleryImageSerializer(image, context={'request': request})
             data = dict(response_serializer.data)
             data.update(_effective_image_review_payload(image, approval_request=None, request=request))
+            broadcast_shop_portfolio_snapshot(shop_owner, request=request, viewer_user=user)
             return success_response(
                 data=data,
                 message=t(request, 'image_updated_successfully'),
@@ -484,6 +574,7 @@ def gallery_detail_view(request, image_id):
             ).get(image.id)
             data = dict(response_serializer.data)
             data.update(_effective_image_review_payload(image, approval_request, request=request))
+            broadcast_shop_portfolio_snapshot(shop_owner, request=request, viewer_user=user)
             return success_response(
                 data=data,
                 message=t(request, 'image_updated_successfully'),
@@ -500,6 +591,7 @@ def gallery_detail_view(request, image_id):
             return _forbidden(request, 'permission_only_shop_owner')
 
         image.delete()
+        broadcast_shop_portfolio_snapshot(shop_owner, request=request, viewer_user=user)
         return success_response(
             message=t(request, 'image_deleted_successfully'),
             status_code=status.HTTP_200_OK

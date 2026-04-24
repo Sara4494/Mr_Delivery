@@ -8,6 +8,7 @@ app_name = 'shop'
 
 urlpatterns = [
     path('shop/dashboard-ui/', views.shop_dashboard_ui_view, name='shop_dashboard_ui'),
+    path('shop/portfolio-ui/', views.shop_portfolio_ui_view, name='shop_portfolio_ui'),
     path('shop/driver-chats/ui/', views.driver_chats_ui_view, name='shop_driver_chats_ui'),
     path('driver/dashboard-ui/', views.driver_dashboard_ui_view, name='driver_dashboard_ui'),
     path('driver/store-chats-ui/', views.driver_store_chats_ui_view, name='driver_store_chats_ui'),

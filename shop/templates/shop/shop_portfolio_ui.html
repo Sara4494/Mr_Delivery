@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>معرض الأعمال - Mr Delivery</title>
+    <style>
+        :root{
+            --bg:#f6f7f9;--panel:#ffffff;--line:#e7eaee;--text:#16202a;--muted:#6b7280;--green:#22c55e;--green-soft:#e8f8ee;--amber:#f59e0b;--amber-soft:#fff7df;--red:#ef4444;--red-soft:#fdecec;--shadow:0 18px 60px rgba(15,23,42,.08);--radius:26px;--radius-sm:18px;
+            --font:"IBM Plex Sans Arabic","Noto Sans Arabic","Segoe UI",Tahoma,sans-serif;
+        }
+        *{box-sizing:border-box} html,body{margin:0;min-height:100%;background:linear-gradient(180deg,#fbfcfd,#f3f5f7);color:var(--text);font-family:var(--font)}
+        button,input,textarea{font:inherit} button{cursor:pointer;border:0}
+        .page{min-height:100vh;padding:18px}
+        .shell{max-width:1560px;margin:0 auto;display:grid;grid-template-columns:280px minmax(0,1fr);gap:18px}
+        .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+        .sidebar{padding:22px;display:grid;gap:18px;align-content:start;position:sticky;top:18px}
+        .brand{display:flex;align-items:center;justify-content:center;min-height:88px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(180deg,#fff,#f8fafb);font-size:42px;font-weight:900;letter-spacing:1px}
+        .nav{display:grid;gap:8px}
+        .nav-item{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:18px;background:#fff;color:var(--muted);border:1px solid transparent;font-weight:800}
+        .nav-item.active{background:var(--green-soft);color:#137a39;border-color:#c9edd7}
+        .profile-mini{padding-top:8px;border-top:1px solid var(--line);display:grid;gap:10px}
+        .profile-mini-row{display:flex;align-items:center;gap:12px}
+        .mini-avatar{width:54px;height:54px;border-radius:50%;object-fit:cover;background:#eef2f7}
+        .status-pills{display:grid;gap:8px}
+        .status-pill{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:15px;border:1px solid var(--line)}
+        .status-pill.open{background:var(--green-soft);border-color:#bde5cb}
+        .status-pill.busy{background:var(--amber-soft);border-color:#f6df9b}
+        .status-pill.closed{background:#fff;border-color:var(--line)}
+        .main{display:grid;gap:18px}
+        .hero{padding:18px 20px;display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:center}
+        .hero-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}
+        .hero-title h1{margin:0 0 8px;font-size:34px}
+        .hero-title p{margin:0;color:var(--muted)}
+        .hero-user{display:flex;align-items:center;gap:14px}
+        .hero-user img{width:92px;height:92px;border-radius:50%;object-fit:cover;background:#eef2f7;border:4px solid #fff;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+        .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+        .stat{padding:16px;border-radius:22px;border:1px solid var(--line);display:grid;gap:8px}
+        .stat:nth-child(1){background:#ebf8f1}.stat:nth-child(2){background:#fff7df}.stat:nth-child(3){background:#eef8f5}
+        .stat b{font-size:22px}
+        .subgrid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px}
+        .section-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
+        .section-head h2{margin:0;font-size:20px}
+        .gallery-panel{overflow:hidden}
+        .gallery-wrap{padding:18px}
+        .gallery-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+        .card{border:1px solid var(--line);border-radius:24px;overflow:hidden;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.05)}
+        .thumb{position:relative;aspect-ratio:16/9;background:#edf2f7}
+        .thumb img{width:100%;height:100%;object-fit:cover}
+        .danger-btn{position:absolute;top:12px;left:12px;width:40px;height:40px;border-radius:14px;background:rgba(239,68,68,.92);color:#fff;font-size:18px}
+        .card-body{padding:16px;display:grid;gap:10px}
+        .card-body h3{margin:0;font-size:28px;line-height:1.3}
+        .meta{display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13px}
+        .badge{display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:800}
+        .badge.published{background:var(--green-soft);color:#137a39}
+        .badge.pending{background:var(--amber-soft);color:#9a6700}
+        .badge.rejected{background:var(--red-soft);color:#b42318}
+        .composer{padding:18px;display:grid;gap:14px}
+        .upload-box{border:2px dashed #d4dbe3;border-radius:22px;background:#fafbfc;padding:26px;text-align:center;color:var(--muted)}
+        .field{display:grid;gap:8px}
+        .field label{font-size:13px;color:var(--muted);font-weight:700}
+        .field input,.field textarea{width:100%;padding:14px 16px;border-radius:18px;border:1px solid #dbe2ea;background:#fff;outline:none}
+        .field textarea{min-height:110px;resize:vertical}
+        .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+        .btn{min-height:48px;padding:0 18px;border-radius:18px;font-weight:800}
+        .btn-primary{background:linear-gradient(135deg,var(--green),#16a34a);color:#fff}
+        .btn-soft{background:#fff;border:1px solid var(--line);color:var(--text)}
+        .btn-danger{background:var(--red-soft);color:#b42318}
+        .empty{padding:34px;text-align:center;color:var(--muted)}
+        .footer-note{padding:0 20px 18px;color:var(--muted);font-size:13px}
+        .top-actions{display:flex;gap:10px;flex-wrap:wrap}
+        .login{position:fixed;inset:0;background:rgba(248,250,252,.96);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:100;padding:24px}
+        .login-card{width:min(460px,100%);background:#fff;border:1px solid var(--line);border-radius:32px;box-shadow:var(--shadow);padding:28px;display:grid;gap:16px}
+        .login-card h2{margin:0;font-size:30px}
+        .login-card p{margin:0;color:var(--muted)}
+        .hidden{display:none!important}
+        .dot{width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block}
+        @media (max-width:1200px){.shell{grid-template-columns:1fr}.sidebar{position:static}.hero,.subgrid{grid-template-columns:1fr}.gallery-grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="shell">
+        <aside class="panel sidebar">
+            <div class="brand">ZAYGO</div>
+            <div class="nav">
+                <div class="nav-item"><span>الطلبات والمحادثات</span><span>💬</span></div>
+                <div class="nav-item"><span>محادثات السائقين</span><span>🚚</span></div>
+                <div class="nav-item active"><span>معرض الأعمال</span><span>🖼️</span></div>
+                <div class="nav-item"><span>العروض</span><span>🏷️</span></div>
+                <div class="nav-item"><span>الفواتير</span><span>🧾</span></div>
+            </div>
+            <div class="profile-mini">
+                <div class="profile-mini-row">
+                    <img id="miniAvatar" class="mini-avatar" alt="">
+                    <div>
+                        <div id="miniName" style="font-weight:800">-</div>
+                        <div id="miniRole" style="color:var(--muted);font-size:13px">-</div>
+                    </div>
+                </div>
+                <div class="status-pills">
+                    <div class="status-pill open"><span>مفتوح</span><span class="dot"></span></div>
+                    <div class="status-pill busy"><span>مشغول</span><span style="width:10px;height:10px;border-radius:50%;background:#d9a100;display:inline-block"></span></div>
+                    <div class="status-pill closed"><span>مغلق</span><span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block"></span></div>
+                </div>
+            </div>
+        </aside>
+        <main class="main">
+            <section class="panel hero">
+                <div>
+                    <div class="hero-head">
+                        <div class="hero-title">
+                            <h1 id="shopName">معرض الأعمال</h1>
+                            <p id="shopMeta">بانتظار تحميل بيانات المحل...</p>
+                        </div>
+                        <div class="top-actions">
+                            <button id="refreshBtn" class="btn btn-soft">تحديث</button>
+                            <button id="scheduleBtn" class="btn btn-soft">تعديل ساعات العمل</button>
+                        </div>
+                    </div>
+                    <div class="stats" style="margin-top:18px">
+                        <div class="stat"><span>جدول العمل</span><b id="statDays">-</b><small id="statHours" style="color:var(--muted)">-</small></div>
+                        <div class="stat"><span>إجمالي الصور</span><b id="statTotal">0</b><small id="statDrafts" style="color:var(--muted)">مسودات 0</small></div>
+                        <div class="stat"><span>الصور المنشورة</span><b id="statPublished">0</b><small id="statLikes" style="color:var(--muted)">إعجابات 0</small></div>
+                    </div>
+                </div>
+                <div class="hero-user">
+                    <div style="flex:1;text-align:left">
+                        <div id="ownerName" style="font-weight:900;font-size:22px">-</div>
+                        <div id="ownerPhone" style="color:var(--muted);margin-top:6px">-</div>
+                        <div id="viewerType" style="margin-top:8px;color:#137a39;font-weight:800">-</div>
+                    </div>
+                    <img id="heroAvatar" alt="">
+                </div>
+            </section>
+
+            <section class="subgrid">
+                <section class="panel gallery-panel">
+                    <div class="section-head">
+                        <h2>سجل الصور</h2>
+                        <div id="syncNote" style="color:var(--muted);font-size:13px">غير متصل</div>
+                    </div>
+                    <div class="gallery-wrap">
+                        <div id="galleryGrid" class="gallery-grid"></div>
+                    </div>
+                    <div class="footer-note" id="galleryFooter">سيتم تحديث القائمة لحظيًا عبر WebSocket.</div>
+                </section>
+
+                <section class="panel">
+                    <div class="section-head">
+                        <h2>إضافة منشور جديد</h2>
+                        <button class="btn btn-soft" id="pickImageBtn">اختيار صورة</button>
+                    </div>
+                    <div class="composer">
+                        <div class="upload-box" id="uploadBox">اضغط لاختيار الصورة<br><small>PNG, JPG حتى 10MB</small></div>
+                        <input id="imageInput" type="file" accept="image/*" class="hidden">
+                        <div class="field">
+                            <label for="descInput">وصف الصورة</label>
+                            <textarea id="descInput" placeholder="أضف وصفًا تفصيليًا للصورة..."></textarea>
+                        </div>
+                        <div class="row">
+                            <button id="publishBtn" class="btn btn-primary" style="flex:1">نشر الآن</button>
+                        </div>
+                        <div id="actionNote" style="color:var(--muted);font-size:13px"></div>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+</div>
+
+<div id="loginOverlay" class="login">
+    <div class="login-card">
+        <h2>معرض أعمال المحل</h2>
+        <p>سجّل دخول المحل، وسيتم تحميل البيانات وربطها بالسوكِت مباشرة.</p>
+        <div class="field">
+            <label for="shopNumberInput">رقم المحل</label>
+            <input id="shopNumberInput" placeholder="مثال: 101">
+        </div>
+        <div class="field">
+            <label for="passwordInput">كلمة المرور</label>
+            <input id="passwordInput" type="password" placeholder="••••••">
+        </div>
+        <div class="row">
+            <button id="loginBtn" class="btn btn-primary" style="flex:1">تسجيل الدخول</button>
+        </div>
+        <div id="loginNote" style="color:var(--muted);font-size:13px">بانتظار تسجيل الدخول...</div>
+    </div>
+</div>
+
+<script>
+(() => {
+    const $ = (id) => document.getElementById(id);
+    const state = {
+        access: '',
+        refresh: '',
+        shopOwner: null,
+        socket: null,
+        snapshot: null,
+    };
+
+    const EL = {
+        loginOverlay: $('loginOverlay'),
+        shopNumberInput: $('shopNumberInput'),
+        passwordInput: $('passwordInput'),
+        loginBtn: $('loginBtn'),
+        loginNote: $('loginNote'),
+        heroAvatar: $('heroAvatar'),
+        miniAvatar: $('miniAvatar'),
+        miniName: $('miniName'),
+        miniRole: $('miniRole'),
+        shopName: $('shopName'),
+        shopMeta: $('shopMeta'),
+        ownerName: $('ownerName'),
+        ownerPhone: $('ownerPhone'),
+        viewerType: $('viewerType'),
+        statDays: $('statDays'),
+        statHours: $('statHours'),
+        statTotal: $('statTotal'),
+        statDrafts: $('statDrafts'),
+        statPublished: $('statPublished'),
+        statLikes: $('statLikes'),
+        galleryGrid: $('galleryGrid'),
+        syncNote: $('syncNote'),
+        galleryFooter: $('galleryFooter'),
+        refreshBtn: $('refreshBtn'),
+        scheduleBtn: $('scheduleBtn'),
+        pickImageBtn: $('pickImageBtn'),
+        imageInput: $('imageInput'),
+        uploadBox: $('uploadBox'),
+        descInput: $('descInput'),
+        publishBtn: $('publishBtn'),
+        actionNote: $('actionNote'),
+    };
+
+    function esc(v){return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));}
+    function wsBase(){const proto=location.protocol==='https:'?'wss':'ws';return `${proto}://${location.host}`;}
+    function media(url){return url || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect width="100%25" height="100%25" fill="%23eef2f7"/%3E%3C/svg%3E';}
+    function relative(ts){if(!ts)return ''; const d = new Date(ts); const diff = Math.max(0, Date.now()-d.getTime()); const m = Math.floor(diff/60000); if(m < 1) return 'الآن'; if(m < 60) return `منذ ${m} دقيقة`; const h = Math.floor(m/60); if(h < 24) return `منذ ${h} ساعة`; return `منذ ${Math.floor(h/24)} يوم`; }
+    function setNote(text, ok=false){EL.actionNote.textContent=text||''; EL.actionNote.style.color=ok?'#137a39':'var(--muted)';}
+    function setLogin(text){EL.loginNote.textContent=text||'';}
+    function authHeaders(){return {'Authorization': `Bearer ${state.access}`};}
+
+    async function api(url, options={}){
+        const opts = {...options, headers: {...(options.headers||{}), ...authHeaders()}};
+        if (options.body && !(options.body instanceof FormData) && !opts.headers['Content-Type']) {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(options.body);
+        }
+        const res = await fetch(url, opts);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || 'تعذّر تنفيذ الطلب');
+        return data;
+    }
+
+    function applySnapshot(snapshot){
+        state.snapshot = snapshot || {};
+        const profile = snapshot.profile || {};
+        const viewer = snapshot.viewer_profile || {};
+        const schedule = profile.work_schedule || snapshot.schedule || {};
+        const gallery = (snapshot.gallery || {}).images || [];
+        const summary = (snapshot.gallery || {}).summary || {};
+
+        EL.shopName.textContent = profile.shop_name || 'معرض الأعمال';
+        EL.shopMeta.textContent = `${profile.shop_number || '-'} • ${profile.description || 'إدارة صور المحل وجدول العمل لحظيًا'}`;
+        EL.ownerName.textContent = profile.owner_name || '-';
+        EL.ownerPhone.textContent = profile.phone_number || '-';
+        EL.viewerType.textContent = viewer.role_display || 'صاحب المحل';
+        EL.heroAvatar.src = media((viewer.profile_image_url || profile.profile_image_url));
+        EL.miniAvatar.src = media((viewer.profile_image_url || profile.profile_image_url));
+        EL.miniName.textContent = viewer.name || profile.owner_name || '-';
+        EL.miniRole.textContent = viewer.role_display || 'المدير';
+        EL.statDays.textContent = schedule.work_days || '-';
+        EL.statHours.textContent = schedule.work_hours || '-';
+        EL.statTotal.textContent = summary.total_images ?? 0;
+        EL.statDrafts.textContent = `مسودات ${summary.draft_images ?? 0}`;
+        EL.statPublished.textContent = summary.published_images ?? 0;
+        EL.statLikes.textContent = `إعجابات ${summary.total_likes ?? 0}`;
+
+        if (!gallery.length) {
+            EL.galleryGrid.innerHTML = '<div class="empty" style="grid-column:1/-1">لا توجد صور بعد. ارفعي أول منشور ليظهر هنا فورًا.</div>';
+            return;
+        }
+
+        EL.galleryGrid.innerHTML = gallery.map(item => {
+            const cls = item.review_status === 'published' ? 'published' : (item.rejection_reason ? 'rejected' : 'pending');
+            const statusText = item.review_status_display || item.status || '-';
+            const reason = item.rejection_reason ? `<div style="color:#b42318;font-size:13px">سبب الرفض: ${esc(item.rejection_reason)}</div>` : '';
+            return `
+                <article class="card">
+                    <div class="thumb">
+                        <img src="${media(item.image_url)}" alt="">
+                        <button class="danger-btn" data-delete="${item.id}">🗑</button>
+                    </div>
+                    <div class="card-body">
+                        <h3>${esc(item.description || 'بدون وصف')}</h3>
+                        <div class="row">
+                            <span class="badge ${cls}">${esc(statusText)}</span>
+                            <span style="color:var(--muted);font-size:13px">❤️ ${Number(item.likes_count || 0)}</span>
+                        </div>
+                        ${reason}
+                        <div class="meta">
+                            <span>${esc(relative(item.updated_at || item.uploaded_at))}</span>
+                            <span>#${item.id}</span>
+                        </div>
+                    </div>
+                </article>
+            `;
+        }).join('');
+    }
+
+    function connectSocket(){
+        if (!state.access || !state.shopOwner?.id) return;
+        if (state.socket) { try { state.socket.close(); } catch {} }
+        EL.syncNote.textContent = 'جارٍ الاتصال...';
+        const socket = new WebSocket(`${wsBase()}/ws/orders/shop/${state.shopOwner.id}/?token=${encodeURIComponent(state.access)}&lang=ar`);
+        state.socket = socket;
+        socket.onopen = () => {
+            EL.syncNote.textContent = 'متصل لحظيًا';
+            socket.send(JSON.stringify({type:'sync_portfolio', request_id:`portfolio-${Date.now()}`}));
+        };
+        socket.onmessage = (event) => {
+            try {
+                const payload = JSON.parse(event.data);
+                if (payload.type === 'shop_portfolio_snapshot') {
+                    applySnapshot(payload.data || {});
+                    EL.galleryFooter.textContent = `آخر مزامنة: ${new Date().toLocaleTimeString('ar-EG')}`;
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        };
+        socket.onclose = () => {
+            EL.syncNote.textContent = 'انقطع الاتصال';
+            state.socket = null;
+            if (state.access) setTimeout(connectSocket, 2500);
+        };
+    }
+
+    async function login(){
+        const shop_number = String(EL.shopNumberInput.value || '').trim();
+        const password = String(EL.passwordInput.value || '').trim();
+        if (!shop_number || !password) { setLogin('رقم المحل وكلمة المرور مطلوبان'); return; }
+        EL.loginBtn.disabled = true;
+        setLogin('جارٍ تسجيل الدخول...');
+        try{
+            const data = await fetch('/api/shop/login/', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({shop_number, password})
+            }).then(async r => {
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(j.message || 'تعذّر تسجيل الدخول');
+                return j;
+            });
+            state.access = data.data?.access || data.access || '';
+            state.refresh = data.data?.refresh || data.refresh || '';
+            state.shopOwner = data.data?.shop_owner || data.shop_owner || null;
+            EL.loginOverlay.classList.add('hidden');
+            setLogin('تم تسجيل الدخول بنجاح');
+            connectSocket();
+        } catch (err) {
+            setLogin(err.message || 'تعذّر تسجيل الدخول');
+        } finally {
+            EL.loginBtn.disabled = false;
+        }
+    }
+
+    async function uploadImage(){
+        const file = EL.imageInput.files?.[0];
+        if (!file) { setNote('اختاري صورة أولًا'); return; }
+        EL.publishBtn.disabled = true;
+        setNote('جارٍ رفع الصورة...');
+        try{
+            const form = new FormData();
+            form.append('image', file, file.name || `gallery-${Date.now()}.jpg`);
+            form.append('description', String(EL.descInput.value || '').trim());
+            const data = await api('/api/shop/gallery/', {method:'POST', body:form});
+            EL.imageInput.value = '';
+            EL.descInput.value = '';
+            EL.uploadBox.textContent = 'اضغط لاختيار الصورة';
+            setNote(data.message || 'تم إرسال الصورة للمراجعة', true);
+            if (!(state.socket && state.socket.readyState === WebSocket.OPEN)) await refreshPortfolio();
+        } catch(err){
+            setNote(err.message || 'تعذّر رفع الصورة');
+        } finally {
+            EL.publishBtn.disabled = false;
+        }
+    }
+
+    async function deleteImage(id){
+        if (!confirm('هل تريد حذف هذه الصورة؟')) return;
+        try{
+            await api(`/api/shop/gallery/${id}/`, {method:'DELETE'});
+            setNote('تم حذف الصورة', true);
+            if (!(state.socket && state.socket.readyState === WebSocket.OPEN)) await refreshPortfolio();
+        } catch(err){
+            setNote(err.message || 'تعذّر حذف الصورة');
+        }
+    }
+
+    async function editSchedule(){
+        const current = state.snapshot?.schedule || state.snapshot?.profile?.work_schedule || {};
+        const work_days = prompt('أيام العمل', current.work_days || '');
+        if (work_days === null) return;
+        const work_hours = prompt('ساعات العمل', current.work_hours || '');
+        if (work_hours === null) return;
+        try{
+            await api('/api/shop/schedule/', {method:'PUT', body:{work_days, work_hours}});
+            setNote('تم تحديث جدول العمل', true);
+            if (!(state.socket && state.socket.readyState === WebSocket.OPEN)) await refreshPortfolio();
+        } catch(err){
+            setNote(err.message || 'تعذّر تحديث الجدول');
+        }
+    }
+
+    async function refreshPortfolio(){
+        if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+            state.socket.send(JSON.stringify({type:'sync_portfolio', request_id:`portfolio-${Date.now()}`}));
+            return;
+        }
+        const [profileRes, viewerRes, scheduleRes, galleryRes] = await Promise.all([
+            api('/api/shop/profile/'),
+            api('/api/shop/profile/viewer-profile/'),
+            api('/api/shop/schedule/'),
+            api('/api/shop/gallery/')
+        ]);
+        applySnapshot({
+            profile: profileRes.data || {},
+            viewer_profile: viewerRes.data || {},
+            schedule: scheduleRes.data || {},
+            gallery: {
+                images: galleryRes.data?.results || galleryRes.data || [],
+                summary: {
+                    total_images: profileRes.data?.total_images || 0,
+                    published_images: profileRes.data?.published_images || 0,
+                    draft_images: Math.max(0, (profileRes.data?.total_images || 0) - (profileRes.data?.published_images || 0)),
+                    total_likes: profileRes.data?.total_likes || 0,
+                }
+            }
+        });
+    }
+
+    EL.loginBtn.addEventListener('click', login);
+    EL.passwordInput.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+    EL.pickImageBtn.addEventListener('click', () => EL.imageInput.click());
+    EL.uploadBox.addEventListener('click', () => EL.imageInput.click());
+    EL.imageInput.addEventListener('change', () => {
+        const file = EL.imageInput.files?.[0];
+        EL.uploadBox.textContent = file ? file.name : 'اضغط لاختيار الصورة';
+    });
+    EL.publishBtn.addEventListener('click', uploadImage);
+    EL.refreshBtn.addEventListener('click', refreshPortfolio);
+    EL.scheduleBtn.addEventListener('click', editSchedule);
+    EL.galleryGrid.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-delete]');
+        if (btn) deleteImage(btn.dataset.delete);
+    });
+})();
+</script>
+</body>
+</html>

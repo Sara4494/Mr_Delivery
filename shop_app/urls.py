@@ -10,6 +10,7 @@ urlpatterns = [
     path('shop/login/', user_views.ShopOwnerTokenObtainPairView.as_view(), name='shop_login'),
     path('shop/token/refresh/', user_views.ShopOwnerTokenRefreshView.as_view(), name='token_refresh'),
     path('shop/dashboard-ui/', shop_views.shop_dashboard_ui_view, name='shop_dashboard_ui'),
+    path('shop/portfolio-ui/', shop_views.shop_portfolio_ui_view, name='shop_portfolio_ui'),
     path('shop/driver-chats/ui/', shop_views.driver_chats_ui_view, name='shop_driver_chats_ui'),
     path('shop/status/', shop_views.shop_status_view, name='shop_status'),
     path('shop/schedule/', shop_views.shop_work_schedule_view, name='shop_work_schedule'),
@@ -44,4 +45,3 @@ urlpatterns = [
     path('shop/dashboard/summary/', shop_views.shop_dashboard_summary_view, name='dashboard_summary'),
     path('employee/login/', shop_views.employee_login_view, name='employee_login'),
 ]
-

@@ -156,6 +156,11 @@ def driver_chats_ui_view(request):
     return render(request, 'shop/driver_chats_ui.html')
 
 
+def shop_portfolio_ui_view(request):
+    """Operational UI for shop-side portfolio/gallery management."""
+    return render(request, 'shop/shop_portfolio_ui.html')
+
+
 def _app_status_bool(value):
     if isinstance(value, bool):
         return value
