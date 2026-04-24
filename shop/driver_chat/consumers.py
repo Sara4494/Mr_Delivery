@@ -63,6 +63,13 @@ def _query_param(scope, key, default=None):
 class BaseDriverChatConsumer(AsyncWebsocketConsumer):
     actor = None
 
+    async def dispatch(self, message):
+        message_type = str(message.get('type') or '')
+        if message_type in {'driver_chat_event', 'driver_chat_message'} and 'payload' in message:
+            await self.send_payload(message['payload'])
+            return
+        await super().dispatch(message)
+
     async def send_payload(self, payload):
         payload = localize_driver_chat_payload(payload, lang=getattr(self, 'lang', None))
         await self.send(text_data=_json_dumps(payload))
