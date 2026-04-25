@@ -4,6 +4,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.exceptions import InvalidToken
 
+from user.account_status import ensure_account_is_active
 from user.utils import error_response, success_response
 from user.authentication import ShopOwnerJWTAuthentication
 
@@ -37,13 +38,13 @@ def _resolve_authenticated_user(request, *, access_token=''):
     if header_user and body_user:
         if resolve_user_identity(header_user) != resolve_user_identity(body_user):
             raise AuthenticationFailed('Authorization header does not match access_token in request body.')
-        return header_user
+        return ensure_account_is_active(header_user, request=request)
 
     if header_user:
-        return header_user
+        return ensure_account_is_active(header_user, request=request)
 
     if body_user:
-        return body_user
+        return ensure_account_is_active(body_user, request=request)
 
     raise AuthenticationFailed('Provide Authorization header or access_token in request body.')
 

@@ -298,6 +298,7 @@ REST_FRAMEWORK = {
         'user.authentication.ShopOwnerJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
+        'shop.core.permissions.EnsureActiveAccountPermission',
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_RENDERER_CLASSES': [

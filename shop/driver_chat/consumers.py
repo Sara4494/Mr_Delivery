@@ -44,6 +44,7 @@ from .service import (
 )
 from ..realtime.driver import sync_driver_order_state
 from ..realtime.presence import format_utc_iso8601
+from ..websocket_auth import ensure_socket_account_active
 
 
 CALL_TIMEOUT_TASKS = {}
@@ -109,6 +110,8 @@ class BaseDriverChatConsumer(AsyncWebsocketConsumer):
         await self.send_payload(event['payload'])
 
     async def receive(self, text_data):
+        if not await ensure_socket_account_active(self, refresh=True):
+            return
         await self._touch_presence_if_needed()
         try:
             data = json.loads(text_data)
@@ -307,13 +310,15 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
         if not user or user_type not in {'shop_owner', 'employee'}:
             await self.close(code=4401)
             return
+        self.user = user
+        if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+            return
 
         owner = user if user_type == 'shop_owner' else getattr(user, 'shop_owner', None)
         if not owner or owner.id != self.shop_owner_id:
             await self.close(code=4403)
             return
 
-        self.user = user
         self.shop_owner = owner
         self.room_group_name = shop_driver_chats_group(self.shop_owner_id)
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
@@ -500,8 +505,10 @@ class DriverChatsDriverConsumer(BaseDriverChatConsumer):
         if not user or user_type != 'driver' or int(user.id) != self.driver_id:
             await self.close(code=4401)
             return
-
         self.user = user
+        if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+            return
+
         self.driver = user
         self.room_group_name = driver_driver_chats_group(self.driver_id)
         self._presence_timeout_task = None

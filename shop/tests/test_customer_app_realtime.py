@@ -12,6 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.middleware import JWTAuthMiddleware
 from shop.models import (
+    AccountModerationStatus,
     ChatMessage,
     Customer,
     CustomerSupportConversation,
@@ -776,5 +777,29 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                 )
             finally:
                 await communicator.disconnect()
+
+        async_to_sync(run)()
+
+    def test_suspended_customer_socket_emits_account_suspended_event(self):
+        AccountModerationStatus.objects.create(
+            customer=self.customer,
+            is_suspended=True,
+            suspension_reason='Account suspended from dashboard',
+        )
+
+        async def run():
+            communicator = WebsocketCommunicator(
+                self.application,
+                f'/ws/orders/customer/{self.customer.id}/?token={self._customer_access_token()}&lang=ar',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            payload = await communicator.receive_json_from()
+            self.assertEqual(payload['type'], 'account_suspended')
+            self.assertEqual(payload['code'], 'account_suspended')
+            self.assertEqual(payload['message'], 'تم تعطيل حسابك مؤقتًا. يرجى التواصل مع الدعم.')
+            self.assertEqual(payload['reason'], 'Account suspended from dashboard')
+            closed = await communicator.wait_closed()
+            self.assertTrue(closed)
 
         async_to_sync(run)()

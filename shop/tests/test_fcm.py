@@ -19,7 +19,7 @@ from shop.fcm_views import (
     fcm_register_device_view,
     fcm_unregister_device_view,
 )
-from shop.models import Customer, Driver, Employee, FCMDeviceToken, Order
+from shop.models import AccountModerationStatus, Customer, Driver, Employee, FCMDeviceToken, Order
 from user.models import ShopCategory, ShopOwner
 
 
@@ -111,6 +111,30 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(token.user_type, 'customer')
         self.assertEqual(token.user_id, self.customer.id)
         self.assertEqual(token.fcm_token, 'token-body-123')
+
+    def test_register_endpoint_rejects_suspended_account(self):
+        AccountModerationStatus.objects.create(
+            customer=self.customer,
+            is_suspended=True,
+            suspension_reason='Suspended by admin',
+        )
+
+        response = self._request(
+            fcm_register_device_view,
+            'POST',
+            '/api/devices/fcm/register',
+            self.customer,
+            {
+                'device_id': 'device-suspended',
+                'platform': 'android',
+                'fcm_token': 'token-suspended',
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data['code'], 'account_suspended')
+        self.assertEqual(response.data['reason'], 'Suspended by admin')
+        self.assertFalse(FCMDeviceToken.objects.filter(device_id='device-suspended').exists())
 
     def test_refresh_endpoint_updates_existing_device_token(self):
         token = FCMDeviceToken.objects.create(

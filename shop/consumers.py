@@ -49,6 +49,7 @@ from .driver_realtime import build_driver_snapshot_events, has_driver_accepted
 from .fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
 from gallery.serializers import GalleryImageSerializer, ShopProfileSerializer, WorkScheduleSerializer
+from .websocket_auth import ensure_socket_account_active
 from gallery.views import (
     _augment_gallery_image_payloads,
     _latest_approval_request_map,
@@ -432,6 +433,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             if not user or not user_type:
                 await self.close(code=4401)  # unauthorized
                 return
+            self.user = user
+            self.user_type = user_type
+            if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+                return
             
             # Validate access to the order.
             has_access = await self.check_order_access(user, user_type)
@@ -448,8 +453,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.close(code=4403)
                 return
             
-            self.user = user
-            self.user_type = user_type
             self.customer_presence_registered = False
             self.driver_presence_registered = False
             self.driver_presence_timeout_task = None
@@ -518,6 +521,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         """Receive an inbound WebSocket event."""
         try:
+            if not await ensure_socket_account_active(self, refresh=True):
+                return
             await self.touch_driver_presence_if_needed()
             data = json.loads(text_data)
             event_type = data.get('type', 'chat_message')
@@ -1236,6 +1241,10 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             if not user or not user_type:
                 await self.close(code=4401)
                 return
+            self.user = user
+            self.user_type = user_type
+            if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+                return
 
             has_access = await self.check_conversation_access(user, user_type)
             if not has_access:
@@ -1246,8 +1255,6 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
                 await self.close(code=4403)
                 return
 
-            self.user = user
-            self.user_type = user_type
             self.customer_presence_registered = False
 
             await self.channel_layer.group_add(self.room_group_name, self.channel_name)
@@ -1292,6 +1299,8 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         try:
+            if not await ensure_socket_account_active(self, refresh=True):
+                return
             data = json.loads(text_data)
             event_type = data.get('type', 'chat_message')
             request_id = data.get('request_id')
@@ -1872,6 +1881,10 @@ class OrderConsumer(AsyncWebsocketConsumer):
         if not user:
             await self.close(code=4401)
             return
+        self.user = user
+        self.user_type = user_type
+        if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+            return
 
         if user_type == 'shop_owner' and user.id != int(self.shop_owner_id):
             await self.close(code=4403)
@@ -1884,9 +1897,6 @@ class OrderConsumer(AsyncWebsocketConsumer):
         if user_type not in ['shop_owner', 'employee']:
             await self.close(code=4403)
             return
-
-        self.user = user
-        self.user_type = user_type
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
@@ -1908,6 +1918,8 @@ class OrderConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         try:
+            if not await ensure_socket_account_active(self, refresh=True):
+                return
             data = json.loads(text_data)
             event_type = data.get('type')
             request_id = data.get('request_id')
@@ -2128,6 +2140,10 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
                 message='Authentication failed for customer realtime channel.',
             )
             return
+        self.user = user
+        self.user_type = user_type
+        if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+            return
 
         if user.id != self.customer_id:
             await self.reject_connection(
@@ -2137,8 +2153,6 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             )
             return
 
-        self.user = user
-        self.user_type = user_type
         self.customer_presence_registered = False
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
@@ -2170,6 +2184,8 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         try:
+            if not await ensure_socket_account_active(self, refresh=True):
+                return
             data = json.loads(text_data)
             event_type = data.get('type')
             request_id = data.get('request_id')
@@ -2504,9 +2520,11 @@ class DriverConsumer(AsyncWebsocketConsumer):
         if not user or user_type != 'driver' or user.id != int(self.driver_id):
             await self.close(code=4401)
             return
-
         self.user = user
         self.user_type = user_type
+        if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+            return
+
         self.driver_presence_registered = False
         self.driver_presence_timeout_task = None
 
@@ -2569,6 +2587,8 @@ class DriverConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         try:
+            if not await ensure_socket_account_active(self, refresh=True):
+                return
             await self.touch_driver_presence()
             data = json.loads(text_data)
             msg_type = data.get('type')

@@ -9,6 +9,7 @@ from user.utils import resolve_base_url
 
 from ..models import ShopSupportTicket
 from ..realtime.presence import format_utc_iso8601
+from ..websocket_auth import ensure_socket_account_active
 from .service import (
     assign_ticket_admin,
     broadcast_ticket_created,
@@ -76,6 +77,8 @@ class BaseSupportCenterConsumer(AsyncWebsocketConsumer):
         await self.send_payload(event['payload'])
 
     async def receive(self, text_data):
+        if not await ensure_socket_account_active(self, refresh=True):
+            return
         try:
             payload = json.loads(text_data)
         except json.JSONDecodeError:
@@ -285,6 +288,9 @@ class ShopSupportCenterConsumer(BaseSupportCenterConsumer):
         if not user or user_type not in {'shop_owner', 'employee'}:
             await self.close(code=4403)
             return
+        self.scope['user_type'] = user_type
+        if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+            return
         if user_type == 'shop_owner' and user.id != self.shop_owner_id:
             await self.close(code=4403)
             return
@@ -292,6 +298,7 @@ class ShopSupportCenterConsumer(BaseSupportCenterConsumer):
             await self.close(code=4403)
             return
 
+        self.user = user
         self.actor_type = user_type
         self.overview_group = support_center_shop_group(self.shop_owner_id)
         self.joined_groups.add(self.overview_group)
@@ -384,10 +391,14 @@ class AdminSupportCenterConsumer(BaseSupportCenterConsumer):
         if not user or user_type != 'admin_desktop':
             await self.close(code=4403)
             return
+        self.scope['user_type'] = user_type
+        if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
+            return
         if user.id != self.admin_user_id or not user.has_permission('support_center'):
             await self.close(code=4403)
             return
 
+        self.user = user
         self.actor_type = 'admin_desktop'
         self.overview_group = support_center_admin_group()
         self.joined_groups.add(self.overview_group)

@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.middleware import JWTAuthMiddleware
 from shop.routing import websocket_urlpatterns
+from shop.models import AccountModerationStatus
 from user.models import AdminDesktopUser, ShopCategory, ShopOwner
 from shop.models import Employee
 
@@ -91,6 +92,34 @@ class SupportCenterWebSocketTests(TransactionTestCase):
             self.assertEqual(connection['type'], 'support.connection')
             self.assertEqual(snapshot['type'], 'support.snapshot')
             await communicator.disconnect()
+
+        asyncio.run(scenario())
+
+    def test_suspended_shop_owner_socket_emits_account_suspended_event(self):
+        self.shop.admin_status = 'suspended'
+        self.shop.is_active = False
+        self.shop.suspension_reason = 'Suspended by company dashboard'
+        self.shop.save(update_fields=['admin_status', 'is_active', 'suspension_reason'])
+        AccountModerationStatus.objects.create(
+            shop_owner=self.shop,
+            is_suspended=True,
+            suspension_reason='Suspended by company dashboard',
+        )
+
+        async def scenario():
+            communicator = WebsocketCommunicator(
+                self.application,
+                f'/ws/support-center/shop/{self.shop.id}/?token={self._shop_token()}&lang=en',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            payload = await communicator.receive_json_from()
+            self.assertEqual(payload['type'], 'account_suspended')
+            self.assertEqual(payload['code'], 'account_suspended')
+            self.assertEqual(payload['message'], 'Your account has been suspended. Please contact support.')
+            self.assertEqual(payload['reason'], 'Suspended by company dashboard')
+            closed = await communicator.wait_closed()
+            self.assertTrue(closed)
 
         asyncio.run(scenario())
 
