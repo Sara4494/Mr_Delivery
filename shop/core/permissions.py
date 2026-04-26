@@ -4,7 +4,7 @@ Custom permissions for role-based access control.
 
 from rest_framework.permissions import BasePermission
 
-from user.exceptions import MaintenanceModeError
+from user.maintenance_exceptions import MaintenanceModeError
 from user.account_status import ensure_account_is_active
 from user.models import AppMaintenanceSettings, ShopOwner
 from user.utils import t
