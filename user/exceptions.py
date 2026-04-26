@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.exceptions import APIException, AuthenticationFailed, NotAuthenticated
-from rest_framework.views import exception_handler as drf_exception_handler
+ 
 from rest_framework_simplejwt.exceptions import InvalidToken
 
 from .account_status import SuspendedAccountError
@@ -36,6 +36,8 @@ class MaintenanceModeError(APIException):
 
 
 def custom_exception_handler(exc, context):
+    from rest_framework.views import exception_handler as drf_exception_handler
+
     response = drf_exception_handler(exc, context)
     if response is None:
         return None
