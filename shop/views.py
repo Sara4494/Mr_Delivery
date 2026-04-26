@@ -12,7 +12,7 @@ from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
@@ -89,6 +89,8 @@ from .support_center.api import (
 )
 from user.models import (
     AdminApprovalRequest,
+    APP_MAINTENANCE_RESPONSE_CODE,
+    AppMaintenanceSettings,
     ShopCategory,
     ShopOwner,
     WORK_SCHEDULE_DAYS,
@@ -162,39 +164,26 @@ def shop_portfolio_ui_view(request):
     return render(request, 'shop/shop_portfolio_ui.html')
 
 
-def _app_status_bool(value):
-    if isinstance(value, bool):
-        return value
+def _serialize_app_status_datetime(value):
     if value is None:
-        return False
-    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
-
-
-def _app_status_text(value, default=''):
-    if value is None:
-        return default
-    text = str(value).strip()
-    return text if text else default
-
-
-def _app_status_int(value):
-    if value in (None, ''):
         return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    normalized = value
+    if timezone.is_naive(normalized):
+        normalized = timezone.make_aware(normalized, dt_timezone.utc)
+    return normalized.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
-def _build_app_status_payload():
-    current_version = _app_status_text(
-        getattr(settings, 'APP_STATUS_FORCE_UPDATE_CURRENT_VERSION', ''),
-        '',
+def _build_app_status_payload(request):
+    maintenance = AppMaintenanceSettings.get_solo()
+    lang = getattr(request, 'api_lang', None) or request.query_params.get('lang')
+    user_type = AppMaintenanceSettings.normalize_user_type(request.query_params.get('user_type')) or 'customer'
+    platform = AppMaintenanceSettings.normalize_platform(request.query_params.get('platform'))
+
+    enabled = maintenance.is_live() and maintenance.matches_target(
+        user_type=user_type,
+        platform=platform,
     )
-    required_version = _app_status_text(
-        getattr(settings, 'APP_STATUS_FORCE_UPDATE_REQUIRED_VERSION', current_version),
-        current_version,
-    )
+    localized_text = maintenance.get_localized_text(lang)
 
     return {
         'maintenance_mode': _app_status_bool(
@@ -246,14 +235,40 @@ def _build_app_status_payload():
     }
 
 
+def _build_public_maintenance_status_payload(request):
+    maintenance = AppMaintenanceSettings.get_solo()
+    lang = getattr(request, 'api_lang', None) or request.query_params.get('lang')
+    user_type = AppMaintenanceSettings.normalize_user_type(request.query_params.get('user_type')) or 'customer'
+    platform = AppMaintenanceSettings.normalize_platform(request.query_params.get('platform'))
+
+    enabled = maintenance.is_live() and maintenance.matches_target(
+        user_type=user_type,
+        platform=platform,
+    )
+    localized_text = maintenance.get_localized_text(lang)
+
+    return {
+        'maintenance': {
+            'enabled': enabled,
+            'code': APP_MAINTENANCE_RESPONSE_CODE if enabled else None,
+            'title': localized_text['title'] if enabled else None,
+            'message': localized_text['message'] if enabled else None,
+            'footnote': localized_text['footnote'] if enabled else None,
+            'retry_after_seconds': maintenance.retry_after_seconds if enabled else None,
+            'starts_at': _serialize_app_status_datetime(maintenance.starts_at) if enabled else None,
+            'ends_at': _serialize_app_status_datetime(maintenance.ends_at) if enabled else None,
+        }
+    }
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def app_status_view(request):
-    """Public splash endpoint for maintenance mode and optional force-update flags."""
-    serializer = AppStatusSerializer(instance=_build_app_status_payload())
+    """Public maintenance-status endpoint that remains reachable before and during maintenance."""
+    serializer = AppStatusSerializer(instance=_build_public_maintenance_status_payload(request))
     response = Response(
         {
-            'success': True,
+            'status': status.HTTP_200_OK,
             'data': serializer.data,
         },
         status=status.HTTP_200_OK,

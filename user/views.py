@@ -1,6 +1,6 @@
 import json
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 from io import StringIO
 from math import ceil
@@ -14,6 +14,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 from .token_serializers import ShopOwnerTokenObtainPairSerializer
@@ -25,6 +26,8 @@ from .models import (
     AdminApprovalRequest,
     AdminDesktopActivityLog,
     AdminDesktopUser,
+    APP_MAINTENANCE_RESPONSE_CODE,
+    AppMaintenanceSettings,
     ShopCategory,
     ShopOwner,
     get_admin_desktop_role_permissions,
@@ -1586,6 +1589,68 @@ def _require_admin_desktop_abuse_reports_permission(request):
     )
 
 
+def _require_admin_desktop_app_updates_permission(request):
+    if _has_admin_desktop_permission(request.user, "app_updates"):
+        return None
+    return error_response(
+        message="ليست لديك صلاحية لإدارة صيانة التطبيقات",
+        status_code=status.HTTP_403_FORBIDDEN,
+        request=request,
+    )
+
+
+def _serialize_maintenance_datetime(value):
+    if value is None:
+        return None
+    normalized = value
+    if timezone.is_naive(normalized):
+        normalized = timezone.make_aware(normalized, dt_timezone.utc)
+    return normalized.astimezone(dt_timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _serialize_app_maintenance_settings(instance):
+    return {
+        "enabled": instance.enabled,
+        "is_live": instance.is_live(),
+        "code": APP_MAINTENANCE_RESPONSE_CODE,
+        "target_user_type": "shop" if instance.target_user_type == "shop_owner" else instance.target_user_type,
+        "target_platform": instance.target_platform,
+        "title_ar": instance.title_ar,
+        "title_en": instance.title_en,
+        "message_ar": instance.message_ar,
+        "message_en": instance.message_en,
+        "footnote_ar": instance.footnote_ar,
+        "footnote_en": instance.footnote_en,
+        "starts_at": _serialize_maintenance_datetime(instance.starts_at),
+        "ends_at": _serialize_maintenance_datetime(instance.ends_at),
+        "retry_after_seconds": instance.retry_after_seconds,
+        "updated_at": _serialize_maintenance_datetime(instance.updated_at),
+    }
+
+
+def _parse_admin_maintenance_datetime(raw_value):
+    if raw_value in (None, ""):
+        return None, None
+    parsed = parse_datetime(str(raw_value).strip())
+    if parsed is None:
+        return None, "صيغة التاريخ غير صحيحة. استخدم ISO 8601."
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, dt_timezone.utc)
+    return parsed, None
+
+
+def _parse_admin_maintenance_retry_seconds(raw_value):
+    if raw_value in (None, ""):
+        return None, None
+    try:
+        parsed = int(raw_value)
+    except (TypeError, ValueError):
+        return None, "retry_after_seconds يجب أن يكون رقمًا صحيحًا موجبًا"
+    if parsed < 0:
+        return None, "retry_after_seconds يجب أن يكون رقمًا صحيحًا موجبًا"
+    return parsed, None
+
+
 def _log_admin_desktop_activity(
     actor,
     *,
@@ -1621,6 +1686,107 @@ def _require_admin_desktop_support_actions_permission(request):
     return error_response(
         message="ليست لديك صلاحية لإدارة الحسابات",
         status_code=status.HTTP_403_FORBIDDEN,
+        request=request,
+    )
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_app_maintenance_settings_view(request):
+    permission_error = _require_admin_desktop_app_updates_permission(request)
+    if permission_error:
+        return permission_error
+
+    settings_obj = AppMaintenanceSettings.get_solo()
+    if request.method == "GET":
+        return success_response(
+            data={"maintenance": _serialize_app_maintenance_settings(settings_obj)},
+            message="تم جلب إعدادات صيانة التطبيقات بنجاح",
+            request=request,
+        )
+
+    errors = {}
+    data = request.data
+
+    if "enabled" in data:
+        settings_obj.enabled = bool(data.get("enabled"))
+
+    if "target_user_type" in data:
+        normalized_user_type = AppMaintenanceSettings.normalize_user_type(data.get("target_user_type"))
+        if not normalized_user_type:
+            errors["target_user_type"] = ["القيمة المدخلة غير مدعومة"]
+        else:
+            settings_obj.target_user_type = normalized_user_type
+
+    if "target_platform" in data:
+        normalized_platform = AppMaintenanceSettings.normalize_platform(data.get("target_platform"))
+        if not normalized_platform:
+            errors["target_platform"] = ["القيمة المدخلة غير مدعومة"]
+        else:
+            settings_obj.target_platform = normalized_platform
+
+    for field in ("title_ar", "title_en", "message_ar", "message_en"):
+        if field in data:
+            value = str(data.get(field) or "").strip()
+            if not value:
+                errors[field] = ["هذا الحقل مطلوب"]
+            else:
+                setattr(settings_obj, field, value)
+
+    for field in ("footnote_ar", "footnote_en"):
+        if field in data:
+            setattr(settings_obj, field, str(data.get(field) or "").strip())
+
+    if "starts_at" in data:
+        starts_at, starts_error = _parse_admin_maintenance_datetime(data.get("starts_at"))
+        if starts_error:
+            errors["starts_at"] = [starts_error]
+        else:
+            settings_obj.starts_at = starts_at
+
+    if "ends_at" in data:
+        ends_at, ends_error = _parse_admin_maintenance_datetime(data.get("ends_at"))
+        if ends_error:
+            errors["ends_at"] = [ends_error]
+        else:
+            settings_obj.ends_at = ends_at
+
+    if "retry_after_seconds" in data:
+        retry_after_seconds, retry_error = _parse_admin_maintenance_retry_seconds(data.get("retry_after_seconds"))
+        if retry_error:
+            errors["retry_after_seconds"] = [retry_error]
+        else:
+            settings_obj.retry_after_seconds = retry_after_seconds
+
+    if not errors and settings_obj.starts_at and settings_obj.ends_at and settings_obj.starts_at >= settings_obj.ends_at:
+        errors["ends_at"] = ["يجب أن يكون وقت الانتهاء بعد وقت البدء"]
+
+    if errors:
+        return error_response(
+            message="تعذر حفظ إعدادات الصيانة",
+            errors=errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    settings_obj.save()
+    _log_admin_desktop_activity(
+        request.user,
+        section_key="app_updates",
+        section_label="تحديثات التطبيق",
+        action_key="maintenance_settings_updated",
+        action_label="تحديث إعدادات الصيانة",
+        action_category="data_operations",
+        target_name="صيانة التطبيقات",
+        details=(
+            f"تم تحديث الصيانة للتطبيق المستهدف {settings_obj.target_user_type}"
+            f" على المنصة {settings_obj.target_platform}"
+        ),
+        metadata=_serialize_app_maintenance_settings(settings_obj),
+    )
+    return success_response(
+        data={"maintenance": _serialize_app_maintenance_settings(settings_obj)},
+        message="تم تحديث إعدادات صيانة التطبيقات بنجاح",
         request=request,
     )
 

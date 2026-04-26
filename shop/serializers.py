@@ -2020,30 +2020,15 @@ class UpdateCartItemSerializer(serializers.Serializer):
 
 
 class AppStatusMaintenanceSerializer(serializers.Serializer):
-    """Public maintenance-mode payload for the splash screen."""
-
-    title_ar = serializers.CharField()
-    title_en = serializers.CharField()
-    message_ar = serializers.CharField()
-    message_en = serializers.CharField()
-    window_label_ar = serializers.CharField(allow_blank=True)
-    window_label_en = serializers.CharField(allow_blank=True)
-    show_contact_support = serializers.BooleanField()
-    support_whatsapp = serializers.CharField(allow_blank=True)
-    estimated_minutes = serializers.IntegerField(allow_null=True)
-
-
-class AppStatusForceUpdateSerializer(serializers.Serializer):
-    """Optional force-update payload returned with app status."""
-
     enabled = serializers.BooleanField()
-    current_version = serializers.CharField(allow_blank=True)
-    required_version = serializers.CharField(allow_blank=True)
+    code = serializers.CharField(allow_null=True)
+    title = serializers.CharField(allow_null=True)
+    message = serializers.CharField(allow_null=True)
+    footnote = serializers.CharField(allow_null=True)
+    retry_after_seconds = serializers.IntegerField(allow_null=True)
+    starts_at = serializers.CharField(allow_null=True)
+    ends_at = serializers.CharField(allow_null=True)
 
 
 class AppStatusSerializer(serializers.Serializer):
-    """Stable public app-status contract used before login."""
-
-    maintenance_mode = serializers.BooleanField()
     maintenance = AppStatusMaintenanceSerializer()
-    force_update = AppStatusForceUpdateSerializer()

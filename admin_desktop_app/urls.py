@@ -37,5 +37,5 @@ urlpatterns = [
     path('admin-desktop/abuse-reports/<int:report_id>/resolve/', views.admin_desktop_abuse_report_resolve_view, name='admin_desktop_abuse_report_resolve'),
     path('admin-desktop/support-actions/accounts/', views.admin_desktop_support_actions_accounts_view, name='admin_desktop_support_actions_accounts'),
     path('admin-desktop/support-actions/accounts/<str:account_type>/<int:account_id>/action/', views.admin_desktop_support_actions_account_action_view, name='admin_desktop_support_actions_account_action'),
+    path('admin-desktop/app-status/maintenance/', views.admin_desktop_app_maintenance_settings_view, name='admin_desktop_app_maintenance_settings'),
 ]
-

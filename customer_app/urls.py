@@ -7,6 +7,7 @@ app_name = 'customer_app'
 
 urlpatterns = [
     path('customer/dashboard-ui/', views.customer_dashboard_ui_view, name='customer_dashboard_ui'),
+    re_path(r'^app/status/?$', views.app_status_view, name='app_status'),
     path('shops/', views.public_shops_list_view, name='public_shops_list'),
     path('shops/shop-categories/', views.public_shop_categories_list_view, name='public_shop_categories_list'),
     path('shops/portfolio/', views.public_portfolio_feed_view, name='public_portfolio_feed'),

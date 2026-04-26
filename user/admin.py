@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AdminDesktopUser, ShopCategory, ShopOwner
+from .models import AdminDesktopUser, AppMaintenanceSettings, ShopCategory, ShopOwner
 
 
 @admin.register(ShopCategory)
@@ -65,3 +65,31 @@ class AdminDesktopUserAdmin(admin.ModelAdmin):
         if "role" in form.changed_data and "permissions" not in form.changed_data:
             obj.apply_role_permissions()
         super().save_model(request, obj, form, change)
+
+
+@admin.register(AppMaintenanceSettings)
+class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
+    list_display = ("enabled", "target_user_type", "target_platform", "starts_at", "ends_at", "updated_at")
+    list_filter = ("enabled", "target_user_type", "target_platform")
+    readonly_fields = ("created_at", "updated_at")
+    fieldsets = (
+        ("الاستهداف", {
+            "fields": ("enabled", "target_user_type", "target_platform")
+        }),
+        ("المحتوى", {
+            "fields": (
+                "title_ar",
+                "title_en",
+                "message_ar",
+                "message_en",
+                "footnote_ar",
+                "footnote_en",
+            )
+        }),
+        ("الجدولة", {
+            "fields": ("starts_at", "ends_at", "retry_after_seconds")
+        }),
+        ("معلومات إضافية", {
+            "fields": ("created_at", "updated_at")
+        }),
+    )

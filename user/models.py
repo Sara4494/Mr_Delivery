@@ -1,5 +1,6 @@
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
+from django.utils import timezone
 
 from .otp_service import normalize_phone
 
@@ -91,6 +92,129 @@ def default_work_schedule():
             "end_time": "17:00" if is_working else None,
         }
     return schedule
+
+
+APP_MAINTENANCE_USER_TYPE_CHOICES = (
+    ("all", "كل التطبيقات"),
+    ("customer", "تطبيق العميل"),
+    ("driver", "تطبيق المندوب"),
+    ("shop_owner", "تطبيق المتجر"),
+)
+
+APP_MAINTENANCE_PLATFORM_CHOICES = (
+    ("all", "كل المنصات"),
+    ("android", "Android"),
+    ("ios", "iOS"),
+)
+
+APP_MAINTENANCE_RESPONSE_CODE = "maintenance_mode"
+
+
+class AppMaintenanceSettings(models.Model):
+    enabled = models.BooleanField(default=False, verbose_name="تفعيل الصيانة")
+    target_user_type = models.CharField(
+        max_length=20,
+        choices=APP_MAINTENANCE_USER_TYPE_CHOICES,
+        default="customer",
+        verbose_name="نوع التطبيق المستهدف",
+    )
+    target_platform = models.CharField(
+        max_length=20,
+        choices=APP_MAINTENANCE_PLATFORM_CHOICES,
+        default="all",
+        verbose_name="المنصة المستهدفة",
+    )
+    title_ar = models.CharField(
+        max_length=200,
+        default="نقوم حاليًا بأعمال صيانة",
+        verbose_name="العنوان بالعربية",
+    )
+    title_en = models.CharField(
+        max_length=200,
+        default="We are currently performing maintenance",
+        verbose_name="العنوان بالإنجليزية",
+    )
+    message_ar = models.TextField(
+        default="نعمل الآن على تحسين الخدمة وتجهيز تحديثات مهمة للتطبيق. يرجى المحاولة مرة أخرى بعد قليل.",
+        verbose_name="الرسالة بالعربية",
+    )
+    message_en = models.TextField(
+        default="We are improving the service and preparing important app updates. Please try again shortly.",
+        verbose_name="الرسالة بالإنجليزية",
+    )
+    footnote_ar = models.CharField(max_length=255, blank=True, default="", verbose_name="ملاحظة ختامية بالعربية")
+    footnote_en = models.CharField(max_length=255, blank=True, default="", verbose_name="ملاحظة ختامية بالإنجليزية")
+    starts_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت بدء الصيانة")
+    ends_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت انتهاء الصيانة")
+    retry_after_seconds = models.PositiveIntegerField(blank=True, null=True, verbose_name="مدة إعادة المحاولة بالثواني")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "إعدادات صيانة التطبيقات"
+        verbose_name_plural = "إعدادات صيانة التطبيقات"
+
+    def __str__(self):
+        return "إعدادات صيانة التطبيقات"
+
+    @classmethod
+    def normalize_user_type(cls, value):
+        normalized = str(value or "").strip().lower()
+        aliases = {
+            "shop": "shop_owner",
+            "store": "shop_owner",
+            "merchant": "shop_owner",
+        }
+        normalized = aliases.get(normalized, normalized)
+        valid_values = {choice[0] for choice in APP_MAINTENANCE_USER_TYPE_CHOICES}
+        return normalized if normalized in valid_values else None
+
+    @classmethod
+    def normalize_platform(cls, value):
+        normalized = str(value or "").strip().lower()
+        valid_values = {choice[0] for choice in APP_MAINTENANCE_PLATFORM_CHOICES}
+        return normalized if normalized in valid_values else None
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def is_live(self, *, now=None):
+        if not self.enabled:
+            return False
+        current_time = now or timezone.now()
+        if self.starts_at and current_time < self.starts_at:
+            return False
+        if self.ends_at and current_time > self.ends_at:
+            return False
+        return True
+
+    def matches_target(self, *, user_type=None, platform=None):
+        normalized_user_type = self.normalize_user_type(user_type)
+        normalized_platform = self.normalize_platform(platform)
+
+        user_type_matches = (
+            self.target_user_type == "all"
+            or (normalized_user_type and normalized_user_type == self.target_user_type)
+        )
+        platform_matches = (
+            self.target_platform == "all"
+            or (normalized_platform and normalized_platform == self.target_platform)
+        )
+        return user_type_matches and platform_matches
+
+    def get_localized_text(self, lang):
+        language = "en" if str(lang or "").strip().lower() == "en" else "ar"
+        return {
+            "title": self.title_en if language == "en" else self.title_ar,
+            "message": self.message_en if language == "en" else self.message_ar,
+            "footnote": self.footnote_en if language == "en" else self.footnote_ar,
+        }
 
 
 class ShopCategory(models.Model):

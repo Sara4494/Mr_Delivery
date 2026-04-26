@@ -1,8 +1,10 @@
-from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
+from rest_framework import status
+from rest_framework.exceptions import APIException, AuthenticationFailed, NotAuthenticated
 from rest_framework.views import exception_handler as drf_exception_handler
 from rest_framework_simplejwt.exceptions import InvalidToken
 
 from .account_status import SuspendedAccountError
+from .models import APP_MAINTENANCE_RESPONSE_CODE
 from .utils import resolve_language, t
 
 
@@ -27,6 +29,12 @@ def _looks_like_token_error(exc, response):
     return any(marker in text for marker in token_markers)
 
 
+class MaintenanceModeError(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_code = APP_MAINTENANCE_RESPONSE_CODE
+    default_detail = "التطبيق تحت الصيانة حاليًا. يرجى المحاولة لاحقًا."
+
+
 def custom_exception_handler(exc, context):
     response = drf_exception_handler(exc, context)
     if response is None:
@@ -47,6 +55,16 @@ def custom_exception_handler(exc, context):
         reason = getattr(exc, 'reason', None)
         if reason:
             response.data['reason'] = reason
+        return response
+
+    if isinstance(exc, MaintenanceModeError):
+        response.data = {
+            "code": exc.default_code,
+            "detail": str(getattr(exc, "detail", exc.default_detail)),
+        }
+        retry_after_seconds = getattr(exc, "retry_after_seconds", None)
+        if retry_after_seconds is not None:
+            response.data["retry_after_seconds"] = retry_after_seconds
         return response
 
     is_auth_error = isinstance(exc, (InvalidToken, AuthenticationFailed, NotAuthenticated))

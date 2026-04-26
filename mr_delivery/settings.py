@@ -299,6 +299,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'shop.core.permissions.EnsureActiveAccountPermission',
+        'shop.core.permissions.MaintenanceModePermission',
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_RENDERER_CLASSES': [
