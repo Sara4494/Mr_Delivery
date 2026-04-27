@@ -7175,14 +7175,25 @@ def payment_method_delete_view(request, method_id):
 
 # ==================== Notification APIs ====================
 
-@api_view(['GET'])
+@api_view(['GET', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def notification_list_view(request):
     """
     Server-side notification inbox.
     GET /api/notifications/
+    DELETE /api/notifications/
     """
     notifications = _notification_queryset_for_user(request.user)
+    if request.method == 'DELETE':
+        notifications.delete()
+        return success_response(
+            message=t(
+                request,
+                'all_notifications_deleted_successfully',
+                default='All notifications deleted successfully',
+            )
+        )
+
     page = max(int(request.query_params.get('page', 1) or 1), 1)
     limit = max(min(int(request.query_params.get('limit', 20) or 20), 100), 1)
     start_offset = (page - 1) * limit
@@ -7218,7 +7229,17 @@ def notification_mark_read_view(request, notification_id):
     if not notification.is_read:
         notification.is_read = True
         notification.save(update_fields=['is_read'])
-    return success_response(message=t(request, 'notification_marked_as_read'))
+    return success_response(
+        data={
+            'id': notification.id,
+            'is_read': notification.is_read,
+        },
+        message=t(
+            request,
+            'notification_marked_as_read',
+            default='Notification marked as read',
+        ),
+    )
 
 
 @api_view(['PATCH', 'POST'])
@@ -7229,7 +7250,14 @@ def notification_mark_all_read_view(request):
     PATCH /api/notifications/read-all/
     """
     _notification_queryset_for_user(request.user).filter(is_read=False).update(is_read=True)
-    return success_response(message=t(request, 'all_notifications_marked_as_read'))
+    return success_response(
+        data={'unread_count': 0},
+        message=t(
+            request,
+            'all_notifications_marked_as_read',
+            default='All notifications marked as read',
+        ),
+    )
 
 
 @api_view(['DELETE'])
@@ -7243,7 +7271,13 @@ def notification_delete_view(request, notification_id):
     if not notification:
         return error_response(message=t(request, 'notification_not_found'), status_code=status.HTTP_404_NOT_FOUND)
     notification.delete()
-    return success_response(message=t(request, 'notification_deleted_successfully', default='Notification deleted successfully'))
+    return success_response(
+        message=t(
+            request,
+            'notification_deleted_successfully',
+            default='Notification deleted successfully',
+        )
+    )
 
 
 # ==================== Cart APIs ====================

@@ -62,6 +62,8 @@ class NotificationsApiTests(TestCase):
         response = self.client.patch(f"/api/notifications/{notification.id}/read/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["id"], notification.id)
+        self.assertTrue(response.data["data"]["is_read"])
         notification.refresh_from_db()
         self.assertTrue(notification.is_read)
 
@@ -75,6 +77,7 @@ class NotificationsApiTests(TestCase):
         response = self.client.patch("/api/notifications/read-all/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["unread_count"], 0)
         visible = Notification.objects.get(customer=self.customer, notification_type="system")
         hidden_chat = Notification.objects.get(customer=self.customer, notification_type="chat_message")
         self.assertTrue(visible.is_read)
@@ -86,3 +89,22 @@ class NotificationsApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Notification.objects.filter(id=notification.id).exists())
+
+    def test_delete_notification_rejects_foreign_notification(self):
+        foreign = Notification.objects.filter(customer=self.other_customer).first()
+        response = self.client.delete(f"/api/notifications/{foreign.id}/")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_delete_all_notifications_only_clears_current_users_inbox(self):
+        response = self.client.delete("/api/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "All notifications deleted successfully")
+        self.assertFalse(
+            Notification.objects.filter(customer=self.customer, notification_type="system").exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(customer=self.customer, notification_type="chat_message").exists()
+        )
+        self.assertTrue(Notification.objects.filter(customer=self.other_customer).exists())
