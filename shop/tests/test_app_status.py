@@ -14,6 +14,16 @@ class AppStatusEndpointTests(TestCase):
         self.client = APIClient()
         self.maintenance = AppMaintenanceSettings.get_solo()
 
+    def test_app_maintenance_singleton_sets_timestamps_when_created(self):
+        AppMaintenanceSettings.objects.all().delete()
+
+        maintenance = AppMaintenanceSettings()
+        maintenance.save()
+
+        self.assertEqual(maintenance.pk, 1)
+        self.assertIsNotNone(maintenance.created_at)
+        self.assertIsNotNone(maintenance.updated_at)
+
     def test_app_status_returns_disabled_payload_by_default(self):
         response = self.client.get(
             "/api/app/status/",
