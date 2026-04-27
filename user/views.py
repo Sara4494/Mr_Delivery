@@ -1614,12 +1614,19 @@ def _serialize_maintenance_datetime(value):
 
 
 def _serialize_app_maintenance_settings(instance):
+    target_user_types = [
+        "shop" if value == "shop_owner" else value
+        for value in instance.get_target_user_types()
+    ]
+    target_platforms = instance.get_target_platforms()
     return {
         "enabled": instance.enabled,
         "is_live": instance.is_live(),
         "code": APP_MAINTENANCE_RESPONSE_CODE,
-        "target_user_type": "shop" if instance.target_user_type == "shop_owner" else instance.target_user_type,
-        "target_platform": instance.target_platform,
+        "target_user_type": target_user_types[0] if len(target_user_types) == 1 else "all",
+        "target_platform": target_platforms[0] if len(target_platforms) == 1 else "all",
+        "target_user_types": target_user_types,
+        "target_platforms": target_platforms,
         "title_ar": instance.title_ar,
         "title_en": instance.title_en,
         "message_ar": instance.message_ar,
@@ -1654,6 +1661,14 @@ def _parse_admin_maintenance_retry_seconds(raw_value):
     if parsed < 0:
         return None, "retry_after_seconds يجب أن يكون رقمًا صحيحًا موجبًا"
     return parsed, None
+
+
+def _parse_admin_maintenance_targets(data, plural_key, singular_key, normalizer):
+    if plural_key in data:
+        return normalizer(data.get(plural_key)), plural_key
+    if singular_key in data:
+        return normalizer(data.get(singular_key)), singular_key
+    return None, None
 
 
 def _log_admin_desktop_activity(
@@ -1721,14 +1736,38 @@ def admin_desktop_app_maintenance_settings_view(request):
         if not normalized_user_type:
             errors["target_user_type"] = ["القيمة المدخلة غير مدعومة"]
         else:
-            settings_obj.target_user_type = normalized_user_type
+            settings_obj.set_target_user_types([normalized_user_type])
 
     if "target_platform" in data:
         normalized_platform = AppMaintenanceSettings.normalize_platform(data.get("target_platform"))
         if not normalized_platform:
             errors["target_platform"] = ["القيمة المدخلة غير مدعومة"]
         else:
-            settings_obj.target_platform = normalized_platform
+            settings_obj.set_target_platforms([normalized_platform])
+
+    normalized_user_types, user_types_key = _parse_admin_maintenance_targets(
+        data,
+        "target_user_types",
+        "__skip_legacy_target_user_type__",
+        AppMaintenanceSettings.normalize_user_types,
+    )
+    if user_types_key == "target_user_types":
+        if not normalized_user_types:
+            errors[user_types_key] = ["Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ù…Ø¯Ø®Ù„Ø© ØºÙŠØ± Ù…Ø¯Ø¹ÙˆÙ…Ø©"]
+        else:
+            settings_obj.set_target_user_types(normalized_user_types)
+
+    normalized_platforms, platforms_key = _parse_admin_maintenance_targets(
+        data,
+        "target_platforms",
+        "__skip_legacy_target_platform__",
+        AppMaintenanceSettings.normalize_platforms,
+    )
+    if platforms_key == "target_platforms":
+        if not normalized_platforms:
+            errors[platforms_key] = ["Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ù…Ø¯Ø®Ù„Ø© ØºÙŠØ± Ù…Ø¯Ø¹ÙˆÙ…Ø©"]
+        else:
+            settings_obj.set_target_platforms(normalized_platforms)
 
     for field in ("title_ar", "title_en", "message_ar", "message_en"):
         if field in data:

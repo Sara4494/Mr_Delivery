@@ -124,6 +124,8 @@ class AppMaintenanceSettings(models.Model):
         default="all",
         verbose_name="المنصة المستهدفة",
     )
+    target_user_types = models.JSONField(default=list, blank=True, verbose_name="Ø£Ù†ÙˆØ§Ø¹ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª Ø§Ù„Ù…Ø³ØªÙ‡Ø¯ÙØ©")
+    target_platforms = models.JSONField(default=list, blank=True, verbose_name="Ø§Ù„Ù…Ù†ØµØ§Øª Ø§Ù„Ù…Ø³ØªÙ‡Ø¯ÙØ©")
     title_ar = models.CharField(
         max_length=200,
         default="نقوم حاليًا بأعمال صيانة",
@@ -170,19 +172,87 @@ class AppMaintenanceSettings(models.Model):
         return normalized if normalized in valid_values else None
 
     @classmethod
+    def normalize_user_types(cls, values):
+        raw_values = values if isinstance(values, (list, tuple, set)) else [values]
+        normalized_values = []
+        seen = set()
+        for raw_value in raw_values:
+            normalized = cls.normalize_user_type(raw_value)
+            if not normalized:
+                return None
+            if normalized == "all":
+                return ["all"]
+            if normalized not in seen:
+                seen.add(normalized)
+                normalized_values.append(normalized)
+        return normalized_values or ["all"]
+
+    @classmethod
     def normalize_platform(cls, value):
         normalized = str(value or "").strip().lower()
         valid_values = {choice[0] for choice in APP_MAINTENANCE_PLATFORM_CHOICES}
         return normalized if normalized in valid_values else None
 
     @classmethod
+    def normalize_platforms(cls, values):
+        raw_values = values if isinstance(values, (list, tuple, set)) else [values]
+        normalized_values = []
+        seen = set()
+        for raw_value in raw_values:
+            normalized = cls.normalize_platform(raw_value)
+            if not normalized:
+                return None
+            if normalized == "all":
+                return ["all"]
+            if normalized not in seen:
+                seen.add(normalized)
+                normalized_values.append(normalized)
+        return normalized_values or ["all"]
+
+    @classmethod
     def get_solo(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
 
+    def get_target_user_types(self):
+        normalized = self.normalize_user_types(self.target_user_types or [])
+        if normalized:
+            return normalized
+        legacy = self.normalize_user_type(self.target_user_type)
+        return [legacy or "all"]
+
+    def get_target_platforms(self):
+        normalized = self.normalize_platforms(self.target_platforms or [])
+        if normalized:
+            return normalized
+        legacy = self.normalize_platform(self.target_platform)
+        return [legacy or "all"]
+
+    def set_target_user_types(self, values):
+        normalized_values = self.normalize_user_types(values)
+        if not normalized_values:
+            return False
+        self.target_user_types = normalized_values
+        self.target_user_type = normalized_values[0] if len(normalized_values) == 1 else "all"
+        return True
+
+    def set_target_platforms(self, values):
+        normalized_values = self.normalize_platforms(values)
+        if not normalized_values:
+            return False
+        self.target_platforms = normalized_values
+        self.target_platform = normalized_values[0] if len(normalized_values) == 1 else "all"
+        return True
+
     def save(self, *args, **kwargs):
         now = timezone.now()
         self.pk = 1
+        if not self.set_target_user_types(self.target_user_types or self.target_user_type):
+            self.target_user_types = ["all"]
+            self.target_user_type = "all"
+        if not self.set_target_platforms(self.target_platforms or self.target_platform):
+            self.target_platforms = ["all"]
+            self.target_platform = "all"
         if not self.created_at:
             self.created_at = now
         self.updated_at = now
@@ -201,14 +271,16 @@ class AppMaintenanceSettings(models.Model):
     def matches_target(self, *, user_type=None, platform=None):
         normalized_user_type = self.normalize_user_type(user_type)
         normalized_platform = self.normalize_platform(platform)
+        target_user_types = self.get_target_user_types()
+        target_platforms = self.get_target_platforms()
 
         user_type_matches = (
-            self.target_user_type == "all"
-            or (normalized_user_type and normalized_user_type == self.target_user_type)
+            "all" in target_user_types
+            or (normalized_user_type and normalized_user_type in target_user_types)
         )
         platform_matches = (
-            self.target_platform == "all"
-            or (normalized_platform and normalized_platform == self.target_platform)
+            "all" in target_platforms
+            or (normalized_platform and normalized_platform in target_platforms)
         )
         return user_type_matches and platform_matches
 

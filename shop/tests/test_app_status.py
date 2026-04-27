@@ -100,6 +100,26 @@ class AppStatusEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()["data"]["maintenance"]["enabled"])
 
+    def test_app_status_supports_multiple_targets(self):
+        self.maintenance.enabled = True
+        self.maintenance.set_target_user_types(["customer", "driver"])
+        self.maintenance.set_target_platforms(["android", "ios"])
+        self.maintenance.starts_at = timezone.now() - timedelta(minutes=5)
+        self.maintenance.ends_at = timezone.now() + timedelta(minutes=5)
+        self.maintenance.save()
+
+        customer_response = self.client.get(
+            "/api/app/status/",
+            {"platform": "ios", "user_type": "customer", "lang": "en"},
+        )
+        shop_response = self.client.get(
+            "/api/app/status/",
+            {"platform": "ios", "user_type": "shop", "lang": "en"},
+        )
+
+        self.assertTrue(customer_response.json()["data"]["maintenance"]["enabled"])
+        self.assertFalse(shop_response.json()["data"]["maintenance"]["enabled"])
+
 
 class CustomerMaintenanceBlockingTests(TestCase):
     def setUp(self):
@@ -169,8 +189,8 @@ class AdminDesktopMaintenanceSettingsTests(TestCase):
             "/api/admin-desktop/app-status/maintenance/",
             {
                 "enabled": True,
-                "target_user_type": "customer",
-                "target_platform": "android",
+                "target_user_types": ["customer", "driver"],
+                "target_platforms": ["android", "ios"],
                 "title_ar": "صيانة مجدولة",
                 "title_en": "Scheduled maintenance",
                 "message_ar": "يرجى الانتظار قليلًا.",
@@ -187,6 +207,6 @@ class AdminDesktopMaintenanceSettingsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         settings_obj = AppMaintenanceSettings.get_solo()
         self.assertTrue(settings_obj.enabled)
-        self.assertEqual(settings_obj.target_user_type, "customer")
-        self.assertEqual(settings_obj.target_platform, "android")
+        self.assertEqual(settings_obj.get_target_user_types(), ["customer", "driver"])
+        self.assertEqual(settings_obj.get_target_platforms(), ["android", "ios"])
         self.assertEqual(settings_obj.title_ar, "صيانة مجدولة")
