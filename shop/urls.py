@@ -88,6 +88,10 @@ urlpatterns = [
     path('driver/home/', views.driver_dashboard_view, name='driver_home'),
     path('driver/invitations/', views.driver_invitations_view, name='driver_invitations'),
     path('driver/invitations/<int:invitation_id>/respond/', views.driver_invitation_action_view, name='driver_invitation_action'),
+    path('driver/notifications/', views.notification_list_view, name='driver_notification_list'),
+    path('driver/notifications/unread-count/', views.notification_unread_count_view, name='driver_notification_unread_count'),
+    path('driver/notifications/<int:notification_id>/read/', views.notification_mark_read_view, name='driver_notification_mark_read'),
+    path('driver/notifications/read-all/', views.notification_mark_all_read_view, name='driver_notification_mark_all_read'),
     path('driver/orders/<int:order_id>/accept/', views.driver_order_accept_view, name='driver_order_accept'),
     path('driver/orders/<int:order_id>/reject/', views.driver_order_reject_view, name='driver_order_reject'),
     path('driver/orders/<int:order_id>/deliver/', views.driver_order_deliver_view, name='driver_order_deliver'),
@@ -138,6 +142,7 @@ urlpatterns = [
     
     # ==================== Notifications ====================
     path('notifications/', views.notification_list_view, name='notification_list'),
+    path('notifications/unread-count/', views.notification_unread_count_view, name='notification_unread_count'),
     path('notifications/<int:notification_id>/', views.notification_delete_view, name='notification_delete'),
     path('notifications/<int:notification_id>/read/', views.notification_mark_read_view, name='notification_mark_read'),
     path('notifications/read-all/', views.notification_mark_all_read_view, name='notification_mark_all_read'),

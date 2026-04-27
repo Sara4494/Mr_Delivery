@@ -1287,6 +1287,10 @@ class Notification(models.Model):
         ('order_status', 'Order Status'),
         ('order_assigned', 'Order Assigned'),
         ('order_cancelled', 'Order Cancelled'),
+        ('new_delivery_order', 'New Delivery Order'),
+        ('store_invite', 'Store Invite'),
+        ('general_notification', 'General Notification'),
+        ('order_update', 'Order Update'),
         ('promotion', 'Promotion'),
         ('system', 'System'),
         ('chat_message', 'Chat Message'),
@@ -1301,6 +1305,9 @@ class Notification(models.Model):
     notification_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='system', verbose_name="Notification Type")
     title = models.CharField(max_length=200, verbose_name="Title")
     message = models.TextField(verbose_name="Message")
+    order_id = models.PositiveBigIntegerField(null=True, blank=True, verbose_name="Order ID")
+    store_id = models.PositiveBigIntegerField(null=True, blank=True, verbose_name="Store ID")
+    image_url = models.TextField(blank=True, null=True, verbose_name="Image URL")
     reference_id = models.CharField(max_length=100, blank=True, null=True, verbose_name="Reference ID")
     idempotency_key = models.CharField(max_length=150, blank=True, null=True, verbose_name="Idempotency Key")
     data = models.JSONField(blank=True, null=True, verbose_name="Extra Data")
@@ -1319,6 +1326,8 @@ class Notification(models.Model):
             models.Index(fields=['notification_type', '-created_at']),
             models.Index(fields=['reference_id', 'notification_type']),
             models.Index(fields=['idempotency_key']),
+            models.Index(fields=['driver', 'order_id']),
+            models.Index(fields=['driver', 'store_id']),
         ]
 
     def __str__(self):

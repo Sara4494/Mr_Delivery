@@ -1,6 +1,8 @@
 import json
+import json
 import logging
 import threading
+from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings
@@ -10,7 +12,7 @@ from django.utils import timezone
 from user.models import ShopOwner
 from user.utils import build_absolute_file_url
 
-from ..models import Customer, Driver, Employee, FCMDeviceToken, Order
+from ..models import Customer, Driver, Employee, FCMDeviceToken, Notification, Order
 
 
 logger = logging.getLogger(__name__)
@@ -311,12 +313,86 @@ def _apns_priority(high_priority):
     return '10' if high_priority else '5'
 
 
-def _build_android_config(messaging, *, channel_id, sound, high_priority):
+def _coerce_ttl(ttl):
+    if ttl in (None, ''):
+        return None
+    if isinstance(ttl, timedelta):
+        return ttl
+    ttl_text = str(ttl).strip().lower()
+    if ttl_text.endswith('s'):
+        return timedelta(seconds=int(ttl_text[:-1] or 0))
+    if ttl_text.endswith('h'):
+        return timedelta(hours=int(ttl_text[:-1] or 0))
+    if ttl_text.endswith('m'):
+        return timedelta(minutes=int(ttl_text[:-1] or 0))
+    return None
+
+
+def _driver_notification_profile(notification_type):
+    normalized = str(notification_type or '').strip() or 'general_notification'
+    urgent_channel = getattr(settings, 'FCM_DRIVER_URGENT_CHANNEL_ID', 'delivery_orders_urgent')
+    general_channel = getattr(settings, 'FCM_DRIVER_GENERAL_CHANNEL_ID', 'delivery_general')
+    order_sound = getattr(settings, 'FCM_DRIVER_ORDER_SOUND', 'order_ring')
+    order_ios_sound = getattr(settings, 'FCM_DRIVER_ORDER_IOS_SOUND', 'order_ring.mp3')
+    default_sound = getattr(settings, 'FCM_DRIVER_DEFAULT_SOUND', 'default')
+
+    profiles = {
+        'new_delivery_order': {
+            'channel_id': urgent_channel,
+            'sound': order_sound,
+            'ios_sound': order_ios_sound,
+            'high_priority': True,
+            'ttl': '60s',
+            'notification_priority': 'PRIORITY_MAX',
+        },
+        'store_invite': {
+            'channel_id': general_channel,
+            'sound': default_sound,
+            'ios_sound': default_sound,
+            'high_priority': True,
+            'ttl': '3600s',
+            'notification_priority': 'PRIORITY_HIGH',
+        },
+        'general_notification': {
+            'channel_id': general_channel,
+            'sound': default_sound,
+            'ios_sound': default_sound,
+            'high_priority': False,
+            'ttl': '86400s',
+            'notification_priority': 'PRIORITY_DEFAULT',
+        },
+        'order_update': {
+            'channel_id': general_channel,
+            'sound': default_sound,
+            'ios_sound': default_sound,
+            'high_priority': True,
+            'ttl': '3600s',
+            'notification_priority': 'PRIORITY_HIGH',
+        },
+    }
+    return profiles.get(normalized, profiles['general_notification'])
+
+
+def _build_android_config(
+    messaging,
+    *,
+    channel_id,
+    sound,
+    high_priority,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
+):
     return messaging.AndroidConfig(
         priority=_android_priority(high_priority),
+        ttl=_coerce_ttl(ttl),
         notification=messaging.AndroidNotification(
             channel_id=channel_id,
             sound=sound,
+            click_action=click_action,
+            priority=notification_priority,
+            tag=tag,
         ),
     )
 
@@ -346,6 +422,10 @@ def _build_message_kwargs(
     sound,
     ios_sound=None,
     high_priority=False,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     return {
         'notification': messaging.Notification(
@@ -358,6 +438,10 @@ def _build_message_kwargs(
             channel_id=channel_id,
             sound=sound,
             high_priority=high_priority,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         ),
         'apns': _build_apns_config(
             messaging,
@@ -378,6 +462,10 @@ def _send_push_to_fcm_token(
     sound,
     ios_sound=None,
     high_priority=False,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     _, _, messaging = _firebase_modules()
     app = _firebase_app()
@@ -392,6 +480,10 @@ def _send_push_to_fcm_token(
             sound=sound,
             ios_sound=ios_sound,
             high_priority=high_priority,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         ),
     )
     return messaging.send(message, app=app)
@@ -459,6 +551,10 @@ def send_push_to_token_record(
     sound,
     ios_sound=None,
     high_priority=False,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     logger.info(
         'fcm.send.attempt token_id=%s user_type=%s user_id=%s platform=%s token=%s',
@@ -479,6 +575,10 @@ def send_push_to_token_record(
             sound=sound,
             ios_sound=ios_sound,
             high_priority=high_priority,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         )
     except FCMConfigurationError as exc:
         logger.warning('fcm.send.skipped reason=%s', exc)
@@ -541,6 +641,10 @@ def _send_push_to_token_records(
     sound,
     ios_sound=None,
     high_priority=False,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     token_records = list(token_records)
     summary = {
@@ -578,6 +682,10 @@ def _send_push_to_token_records(
                     sound=sound,
                     ios_sound=ios_sound,
                     high_priority=high_priority,
+                    ttl=ttl,
+                    click_action=click_action,
+                    notification_priority=notification_priority,
+                    tag=tag,
                 ),
             )
             try:
@@ -590,10 +698,14 @@ def _send_push_to_token_records(
                         body=body,
                         data=data,
                         channel_id=channel_id,
-                        sound=sound,
-                        ios_sound=ios_sound,
-                        high_priority=high_priority,
-                    )
+                    sound=sound,
+                    ios_sound=ios_sound,
+                    high_priority=high_priority,
+                    ttl=ttl,
+                    click_action=click_action,
+                    notification_priority=notification_priority,
+                    tag=tag,
+                )
                     if result.get('success'):
                         summary['tokens_sent'] += 1
                     else:
@@ -663,6 +775,10 @@ def _send_push_to_token_records(
             sound=sound,
             ios_sound=ios_sound,
             high_priority=high_priority,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         )
         if result.get('success'):
             summary['tokens_sent'] += 1
@@ -673,15 +789,6 @@ def _send_push_to_token_records(
 
     logger.info(
         'fcm.send.batch.complete tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
-        summary['tokens_total'],
-        summary['tokens_sent'],
-        summary['tokens_failed'],
-        summary['tokens_invalidated'],
-    )
-    logger.info(
-        'fcm.ring.result order_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
-        order.id,
-        summary['users_targeted'],
         summary['tokens_total'],
         summary['tokens_sent'],
         summary['tokens_failed'],
@@ -700,6 +807,10 @@ def send_to_token(
     channel_id=None,
     sound='default',
     ios_sound=None,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     return send_push_to_token(
         token,
@@ -710,6 +821,10 @@ def send_to_token(
         sound=sound,
         ios_sound=ios_sound,
         high_priority=high_priority,
+        ttl=ttl,
+        click_action=click_action,
+        notification_priority=notification_priority,
+        tag=tag,
     )
 
 
@@ -723,6 +838,10 @@ def send_push_to_token(
     sound,
     ios_sound=None,
     high_priority=False,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     token_record = FCMDeviceToken.objects.filter(fcm_token=fcm_token).order_by('-updated_at').first()
     if token_record:
@@ -735,6 +854,10 @@ def send_push_to_token(
             sound=sound,
             ios_sound=ios_sound,
             high_priority=high_priority,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         )
 
     try:
@@ -747,6 +870,10 @@ def send_push_to_token(
             sound=sound,
             ios_sound=ios_sound,
             high_priority=high_priority,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         )
     except Exception as exc:
         logger.exception('fcm.send.failed_raw token=%s', _mask_token(fcm_token))
@@ -776,6 +903,10 @@ def send_to_user(
     ios_sound=None,
     exclude_tokens=None,
     exclude_device_ids=None,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     user_type, user_id = resolve_user_identity(user)
     return send_push_to_user(
@@ -790,6 +921,10 @@ def send_to_user(
         high_priority=high_priority,
         exclude_tokens=exclude_tokens,
         exclude_device_ids=exclude_device_ids,
+        ttl=ttl,
+        click_action=click_action,
+        notification_priority=notification_priority,
+        tag=tag,
     )
 
 
@@ -806,6 +941,10 @@ def send_push_to_user(
     high_priority=False,
     exclude_tokens=None,
     exclude_device_ids=None,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     token_records = list(
         FCMDeviceToken.objects.filter(
@@ -828,6 +967,10 @@ def send_push_to_user(
         sound=sound,
         ios_sound=ios_sound,
         high_priority=high_priority,
+        ttl=ttl,
+        click_action=click_action,
+        notification_priority=notification_priority,
+        tag=tag,
     )
 
 
@@ -843,6 +986,10 @@ def send_to_users(
     ios_sound=None,
     exclude_tokens=None,
     exclude_device_ids=None,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     identities = [resolve_user_identity(user) for user in users]
     summary = send_push_to_identities(
@@ -856,6 +1003,10 @@ def send_to_users(
         high_priority=high_priority,
         exclude_tokens=exclude_tokens,
         exclude_device_ids=exclude_device_ids,
+        ttl=ttl,
+        click_action=click_action,
+        notification_priority=notification_priority,
+        tag=tag,
     )
 
 
@@ -871,6 +1022,10 @@ def send_push_to_identities(
     high_priority=False,
     exclude_tokens=None,
     exclude_device_ids=None,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     summary = {
         'users_targeted': 0,
@@ -894,6 +1049,10 @@ def send_push_to_identities(
             high_priority=high_priority,
             exclude_tokens=exclude_tokens,
             exclude_device_ids=exclude_device_ids,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         )
         summary['tokens_total'] += user_summary['tokens_total']
         summary['tokens_sent'] += user_summary['tokens_sent']
@@ -913,6 +1072,10 @@ def send_to_topic(
     channel_id=None,
     sound='default',
     ios_sound=None,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     _, _, messaging = _firebase_modules()
     app = _firebase_app()
@@ -927,6 +1090,10 @@ def send_to_topic(
             sound=sound,
             ios_sound=ios_sound,
             high_priority=high_priority,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         ),
     )
     response_id = messaging.send(message, app=app)
@@ -949,6 +1116,10 @@ def broadcast_to_all(
     ios_sound=None,
     topic=None,
     user_types=None,
+    ttl=None,
+    click_action=None,
+    notification_priority=None,
+    tag=None,
 ):
     if topic:
         topic_result = send_to_topic(
@@ -960,6 +1131,10 @@ def broadcast_to_all(
             channel_id=channel_id,
             sound=sound,
             ios_sound=ios_sound,
+            ttl=ttl,
+            click_action=click_action,
+            notification_priority=notification_priority,
+            tag=tag,
         )
         return {
             'users_targeted': None,
@@ -983,9 +1158,198 @@ def broadcast_to_all(
         sound=sound,
         ios_sound=ios_sound,
         high_priority=high_priority,
+        ttl=ttl,
+        click_action=click_action,
+        notification_priority=notification_priority,
+        tag=tag,
     )
     summary['users_targeted'] = queryset.values('user_type', 'user_id').distinct().count()
     return summary
+
+
+def _create_driver_notification_record(
+    driver,
+    *,
+    notification_type,
+    title,
+    body,
+    data,
+    order_id=None,
+    store_id=None,
+    image_url=None,
+    reference_id=None,
+    idempotency_key=None,
+):
+    payload = {
+        'driver': driver,
+        'notification_type': notification_type,
+        'title': _trim_text(title, max_length=200),
+        'message': _trim_text(body, max_length=400),
+        'order_id': order_id,
+        'store_id': store_id,
+        'image_url': image_url,
+        'reference_id': str(reference_id).strip() if reference_id not in (None, '') else None,
+        'idempotency_key': str(idempotency_key).strip() if idempotency_key not in (None, '') else None,
+        'data': data or {},
+    }
+
+    if payload['idempotency_key']:
+        existing = Notification.objects.filter(
+            driver=driver,
+            idempotency_key=payload['idempotency_key'],
+        ).first()
+        if existing:
+            updated_fields = []
+            for field in ('notification_type', 'title', 'message', 'order_id', 'store_id', 'image_url', 'data'):
+                if getattr(existing, field) != payload[field]:
+                    setattr(existing, field, payload[field])
+                    updated_fields.append(field)
+            if updated_fields:
+                existing.save(update_fields=updated_fields)
+            return existing
+
+    return Notification.objects.create(**payload)
+
+
+def send_driver_notification(
+    driver,
+    *,
+    notification_type,
+    title,
+    body,
+    data=None,
+    reference_id=None,
+    idempotency_key=None,
+    image_url=None,
+    order_id=None,
+    store_id=None,
+):
+    data = dict(data or {})
+    if image_url:
+        data.setdefault('image_url', image_url)
+
+    notification = _create_driver_notification_record(
+        driver,
+        notification_type=notification_type,
+        title=title,
+        body=body,
+        data=data,
+        order_id=order_id,
+        store_id=store_id,
+        image_url=image_url,
+        reference_id=reference_id,
+        idempotency_key=idempotency_key,
+    )
+
+    profile = _driver_notification_profile(notification_type)
+    payload = {
+        'type': notification_type,
+        'notification_id': notification.id,
+        **data,
+    }
+
+    return {
+        'notification': notification,
+        'push': send_to_user(
+            driver,
+            title=title,
+            body=body,
+            data=payload,
+            high_priority=profile['high_priority'],
+            channel_id=profile['channel_id'],
+            sound=profile['sound'],
+            ios_sound=profile['ios_sound'],
+            ttl=profile['ttl'],
+            click_action='FLUTTER_NOTIFICATION_CLICK',
+            notification_priority=profile['notification_priority'],
+            tag=str(data.get('tag') or f"{notification_type}_{notification.id}"),
+        ),
+    }
+
+
+def send_driver_new_order_notification(driver, order, *, request=None, scope=None, base_url=None):
+    shop_owner = getattr(order, 'shop_owner', None)
+    store_name = _trim_text(getattr(shop_owner, 'shop_name', None), default='Mr Delivery', max_length=120)
+    image_url = build_absolute_file_url(
+        getattr(shop_owner, 'profile_image', None),
+        request=request,
+        scope=scope,
+        base_url=base_url,
+    )
+    return send_driver_notification(
+        driver,
+        notification_type='new_delivery_order',
+        title='في طلب جديد جاهز للاستلام',
+        body=f'{store_name} أضافت طلب توصيل جديد ومتاح لك الآن.',
+        image_url=image_url,
+        reference_id=f'order:{order.id}:new_delivery_order',
+        idempotency_key=f'driver:{driver.id}:order:{order.id}:new_delivery_order',
+        order_id=order.id,
+        store_id=getattr(shop_owner, 'id', None),
+        data={
+            'order_id': order.id,
+            'store_id': getattr(shop_owner, 'id', None),
+            'store_name': getattr(shop_owner, 'shop_name', None),
+            'screen': 'order_details',
+            'sound': getattr(settings, 'FCM_DRIVER_ORDER_SOUND', 'order_ring'),
+            'tag': f'order_{order.id}',
+        },
+    )
+
+
+def send_driver_store_invite_notification(driver, shop_owner, invitation, *, request=None, scope=None, base_url=None):
+    image_url = build_absolute_file_url(
+        getattr(shop_owner, 'profile_image', None),
+        request=request,
+        scope=scope,
+        base_url=base_url,
+    )
+    return send_driver_notification(
+        driver,
+        notification_type='store_invite',
+        title='دعوة انضمام لمتجر',
+        body=f'لديك دعوة جديدة من {shop_owner.shop_name}.',
+        image_url=image_url,
+        reference_id=f'store_invite:{invitation.id}',
+        idempotency_key=f'driver:{driver.id}:invite:{invitation.id}',
+        store_id=shop_owner.id,
+        data={
+            'invitation_id': invitation.id,
+            'store_id': shop_owner.id,
+            'store_name': shop_owner.shop_name,
+            'screen': 'driver_invitations',
+        },
+    )
+
+
+def send_driver_order_update_notification(driver, order, *, update_kind='order_update', body=None, request=None, scope=None, base_url=None):
+    shop_owner = getattr(order, 'shop_owner', None)
+    store_name = _trim_text(getattr(shop_owner, 'shop_name', None), default='Mr Delivery', max_length=120)
+    image_url = build_absolute_file_url(
+        getattr(shop_owner, 'profile_image', None),
+        request=request,
+        scope=scope,
+        base_url=base_url,
+    )
+    order_number = getattr(order, 'order_number', order.id)
+    return send_driver_notification(
+        driver,
+        notification_type='order_update',
+        title='تحديث مهم على الطلب',
+        body=body or f'تم تحديث الطلب #{order_number} من {store_name}.',
+        image_url=image_url,
+        reference_id=f'order:{order.id}:{update_kind}',
+        idempotency_key=f'driver:{driver.id}:order:{order.id}:{update_kind}',
+        order_id=order.id,
+        store_id=getattr(shop_owner, 'id', None),
+        data={
+            'order_id': order.id,
+            'store_id': getattr(shop_owner, 'id', None),
+            'store_name': getattr(shop_owner, 'shop_name', None),
+            'screen': 'order_details',
+            'update_kind': update_kind,
+        },
+    )
 
 
 def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, request=None, scope=None, base_url=None):

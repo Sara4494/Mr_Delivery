@@ -132,6 +132,7 @@ from .driver_realtime import (
     sync_driver_order_state,
     sync_unavailable_order_for_driver,
 )
+from .fcm.service import send_driver_store_invite_notification
 
 
 def shop_dashboard_ui_view(request):
@@ -1410,16 +1411,19 @@ def _invite_driver(request, shop_owner, payload):
         existing_account.phone_number = normalized_phone
         existing_account.save(update_fields=['phone_number'])
 
-    send_ok, send_msg = otp_send(normalized_phone)
-    if not send_ok:
-        return error_response(
-            message=str(send_msg),
-            status_code=status.HTTP_400_BAD_REQUEST
+    try:
+        send_driver_store_invite_notification(
+            existing_account,
+            shop_owner,
+            relation,
+            request=request,
         )
+    except Exception as exc:
+        print(f"driver invitation push error: {exc}")
 
     response_data = _serialize_staff_member(existing_account, STAFF_TYPE_DRIVER, request)
     response_data['invitation_sent'] = True
-    response_data['invitation_channel'] = 'whatsapp_otp'
+    response_data['invitation_channel'] = 'fcm'
     response_data['invitation_note'] = 'Driver should respond using /api/driver/invitations/{invitation_id}/respond/'
     response_data['shop_link_status'] = relation.status
     return success_response(
@@ -7212,6 +7216,16 @@ def notification_list_view(request):
                 'has_more': has_more,
             },
         },
+        message=t(request, 'notifications_retrieved_successfully')
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notification_unread_count_view(request):
+    unread_count = _notification_queryset_for_user(request.user).filter(is_read=False).count()
+    return success_response(
+        data={'unread_count': unread_count},
         message=t(request, 'notifications_retrieved_successfully')
     )
 

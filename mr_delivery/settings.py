@@ -294,7 +294,14 @@ APP_STATUS_FORCE_UPDATE_REQUIRED_VERSION = (
 )
 
 # Firebase Cloud Messaging (FCM)
-DEFAULT_FCM_SERVICE_ACCOUNT_FILE = BASE_DIR / "zaygo-user-firebase-adminsdk-fbsvc-fc21d26812.json"
+_DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES = [
+    BASE_DIR / "zaygo-captains-firebase-adminsdk-fbsvc-54aab8b36c.json",
+    BASE_DIR / "zaygo-user-firebase-adminsdk-fbsvc-fc21d26812.json",
+]
+DEFAULT_FCM_SERVICE_ACCOUNT_FILE = next(
+    (path for path in _DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES if path.exists()),
+    _DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES[0],
+)
 FCM_SERVICE_ACCOUNT_FILE = os.environ.get(
     "FCM_SERVICE_ACCOUNT_FILE",
     str(DEFAULT_FCM_SERVICE_ACCOUNT_FILE if DEFAULT_FCM_SERVICE_ACCOUNT_FILE.exists() else ""),
@@ -311,6 +318,18 @@ FCM_RING_SOUND = os.environ.get("FCM_RING_SOUND", "incoming_call").strip() or "i
 FCM_RING_IOS_SOUND = os.environ.get("FCM_RING_IOS_SOUND", "incoming_call.mp3").strip() or "incoming_call.mp3"
 FCM_CHAT_SOUND = os.environ.get("FCM_CHAT_SOUND", "default").strip() or "default"
 FCM_CHAT_IOS_SOUND = os.environ.get("FCM_CHAT_IOS_SOUND", "default").strip() or "default"
+
+FCM_DRIVER_URGENT_CHANNEL_ID = (
+    os.environ.get("FCM_DRIVER_URGENT_CHANNEL_ID", "delivery_orders_urgent").strip()
+    or "delivery_orders_urgent"
+)
+FCM_DRIVER_GENERAL_CHANNEL_ID = (
+    os.environ.get("FCM_DRIVER_GENERAL_CHANNEL_ID", "delivery_general").strip()
+    or "delivery_general"
+)
+FCM_DRIVER_ORDER_SOUND = os.environ.get("FCM_DRIVER_ORDER_SOUND", "order_ring").strip() or "order_ring"
+FCM_DRIVER_ORDER_IOS_SOUND = os.environ.get("FCM_DRIVER_ORDER_IOS_SOUND", "order_ring.mp3").strip() or "order_ring.mp3"
+FCM_DRIVER_DEFAULT_SOUND = os.environ.get("FCM_DRIVER_DEFAULT_SOUND", "default").strip() or "default"
 
 # REST Framework settings
 REST_FRAMEWORK = {

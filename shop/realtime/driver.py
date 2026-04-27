@@ -8,6 +8,7 @@ from django.db.models import Q
 from user.utils import build_absolute_file_url, resolve_base_url
 
 from ..models import Driver, DriverOrderRejection, Order, ShopDriver
+from ..fcm.service import send_driver_new_order_notification, send_driver_order_update_notification
 from .presence import format_utc_iso8601
 
 
@@ -466,6 +467,21 @@ def upsert_available_order_for_all(order, *, request=None, scope=None, base_url=
         emit_available_order_upsert(driver_id, order_payload)
 
 
+def push_available_order_for_all(order, *, request=None, scope=None, base_url=None, exclude_driver_ids=None):
+    exclude_driver_ids = set(exclude_driver_ids or [])
+    target_driver_ids = (
+        [get_assigned_driver_id(order)]
+        if get_assigned_driver_id(order) and not has_driver_accepted(order)
+        else get_shop_receiving_driver_ids(order.shop_owner_id)
+    )
+    drivers = Driver.objects.filter(id__in=[driver_id for driver_id in target_driver_ids if driver_id not in exclude_driver_ids])
+    for driver in drivers:
+        try:
+            send_driver_new_order_notification(driver, order, request=request, scope=scope, base_url=base_url)
+        except Exception:
+            continue
+
+
 def remove_available_order_for_all(order, reason, *, driver_ids=None):
     target_driver_ids = driver_ids or get_shop_active_driver_ids(order.shop_owner_id)
     for driver_id in target_driver_ids:
@@ -549,6 +565,19 @@ def sync_driver_order_state(
         payload = build_driver_order_payload(order, request=request, scope=scope, base_url=base_url)
         emit_assigned_order_upsert(order.driver_id, payload)
         emit_order_updated(order.driver_id, payload)
+        if order.driver_id:
+            try:
+                send_driver_order_update_notification(
+                    order.driver,
+                    order,
+                    update_kind='assigned_order_update',
+                    body=f'تم تحديث الطلب #{order.order_number}.',
+                    request=request,
+                    scope=scope,
+                    base_url=base_url,
+                )
+            except Exception:
+                pass
         if previous_driver_id and previous_driver_id != order.driver_id:
             emit_assigned_order_remove(previous_driver_id, order.id, 'reassigned_to_another_driver')
         return
@@ -563,6 +592,7 @@ def sync_driver_order_state(
             emit_order_cancelled(previous_driver_id, order.id)
 
     if current_is_available:
+        should_push_new_order = previous_driver_id is not None or not was_available
         if previous_driver_id is not None or not was_available:
             clear_all_driver_rejections(order)
         assigned_driver_id = get_assigned_driver_id(order)
@@ -573,6 +603,23 @@ def sync_driver_order_state(
             if other_driver_ids:
                 remove_available_order_for_all(order, 'reserved_for_other_driver', driver_ids=other_driver_ids)
         upsert_available_order_for_all(order, request=request, scope=scope, base_url=base_url)
+        if should_push_new_order:
+            push_available_order_for_all(order, request=request, scope=scope, base_url=base_url)
         return
     removal_reason = 'cancelled' if order.status == 'cancelled' else 'unavailable'
     remove_available_order_for_all(order, removal_reason)
+    if previous_driver_id and order.status == 'cancelled':
+        previous_driver = Driver.objects.filter(id=previous_driver_id).first()
+        if previous_driver:
+            try:
+                send_driver_order_update_notification(
+                    previous_driver,
+                    order,
+                    update_kind='order_cancelled',
+                    body=f'تم إلغاء الطلب #{order.order_number}.',
+                    request=request,
+                    scope=scope,
+                    base_url=base_url,
+                )
+            except Exception:
+                pass

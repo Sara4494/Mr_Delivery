@@ -18,7 +18,7 @@ migrations/
 shop/migrations/*
 !shop/migrations/0014_driver_presence_real_time.py
 !shop/migrations/0015_notification_inbox_fields.py
-!shop/migrations/0016_customer_email.py
+!shop/migrations/0016_customer_email_and_driver_notification_fields.py
 !shop/migrations/__init__.py
 !shop/migrations/0009_driver_chat_backend.py
 !shop/migrations/0009_customer_support_chat.py
