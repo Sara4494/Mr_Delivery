@@ -1279,34 +1279,44 @@ class PaymentMethod(models.Model):
 
 
 class Notification(models.Model):
-    """نموذج الإشعارات"""
+    """Notification record stored server-side for app inbox screens."""
+
     TYPE_CHOICES = [
-        ('order_status', 'حالة الطلب'),
-        ('promotion', 'عرض'),
-        ('system', 'النظام'),
-        ('chat', 'محادثة'),
+        ('order_status', 'Order Status'),
+        ('order_assigned', 'Order Assigned'),
+        ('order_cancelled', 'Order Cancelled'),
+        ('promotion', 'Promotion'),
+        ('system', 'System'),
+        ('chat_message', 'Chat Message'),
+        ('chat', 'Chat Legacy'),
     ]
-    
-    # يمكن أن يكون للعميل أو صاحب المحل أو الموظف أو السائق
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name="العميل")
-    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name="صاحب المحل")
-    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name="الموظف")
-    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name="السائق")
-    
-    notification_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='system', verbose_name="نوع الإشعار")
-    title = models.CharField(max_length=200, verbose_name="العنوان")
-    message = models.TextField(verbose_name="الرسالة")
-    data = models.JSONField(blank=True, null=True, verbose_name="بيانات إضافية")
-    is_read = models.BooleanField(default=False, verbose_name="مقروء")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name="Customer")
+    shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name="Shop Owner")
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name="Employee")
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications', verbose_name="Driver")
+
+    notification_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='system', verbose_name="Notification Type")
+    title = models.CharField(max_length=200, verbose_name="Title")
+    message = models.TextField(verbose_name="Message")
+    reference_id = models.CharField(max_length=100, blank=True, null=True, verbose_name="Reference ID")
+    idempotency_key = models.CharField(max_length=150, blank=True, null=True, verbose_name="Idempotency Key")
+    data = models.JSONField(blank=True, null=True, verbose_name="Extra Data")
+    is_read = models.BooleanField(default=False, verbose_name="Read")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created At")
 
     class Meta:
-        verbose_name = "إشعار"
-        verbose_name_plural = "الإشعارات"
+        verbose_name = "Notification"
+        verbose_name_plural = "Notifications"
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['customer', '-created_at']),
             models.Index(fields=['shop_owner', '-created_at']),
+            models.Index(fields=['employee', '-created_at']),
+            models.Index(fields=['driver', '-created_at']),
+            models.Index(fields=['notification_type', '-created_at']),
+            models.Index(fields=['reference_id', 'notification_type']),
+            models.Index(fields=['idempotency_key']),
         ]
 
     def __str__(self):

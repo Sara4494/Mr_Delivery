@@ -2631,11 +2631,14 @@ def driver_order_transfer_view(request, order_id):
         old_driver.current_orders_count = old_driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
         old_driver.save(update_fields=['current_orders_count'])
 
-    Notification.objects.create(
-        shop_owner=order.shop_owner,
-        notification_type='system',
-        title='تحويل طلب',
-        message=f'الطلب #{order.order_number} يحتاج إعادة تعيين لمندوب آخر.',
+    _attach_notification_to_user(
+        'shop_owner',
+        order.shop_owner,
+        notification_type='order_assigned',
+        title='Order reassignment needed',
+        message=f'Order #{order.order_number} needs reassignment to another driver.',
+        reference_id=order.id,
+        idempotency_key=f"order-transfer:{order.id}:{driver.id}:{selected_reason['key']}",
         data={
             'order_id': order.id,
             'order_number': order.order_number,
@@ -4613,6 +4616,9 @@ def _notify_shop_about_driver_order_action(order, driver, action, request=None, 
             order.shop_owner,
             title='تحديث حالة السائق',
             message=content,
+            notification_type='order_status',
+            reference_id=order.id,
+            idempotency_key=f'shop-driver-action:{order.id}:{driver.id}:{action}',
             data={
                 'order_id': order.id,
                 'order_number': order.order_number,
@@ -4815,23 +4821,86 @@ def _get_target_moderation(target_type, target):
     return None
 
 
-def _attach_notification_to_user(user_type, user, *, title, message, data=None):
+INBOX_EXCLUDED_NOTIFICATION_TYPES = {'chat_message', 'chat'}
+
+
+def _notification_recipient_filter(user_type, user):
+    if user_type == 'customer':
+        return {'customer': user}
+    if user_type == 'shop_owner':
+        return {'shop_owner': user}
+    if user_type == 'employee':
+        return {'employee': user}
+    if user_type == 'driver':
+        return {'driver': user}
+    return None
+
+
+def _notification_queryset_for_user(user):
+    queryset = Notification.objects.exclude(notification_type__in=INBOX_EXCLUDED_NOTIFICATION_TYPES)
+    if isinstance(user, ShopOwner):
+        return queryset.filter(shop_owner=user)
+    if isinstance(user, Customer):
+        return queryset.filter(customer=user)
+    if isinstance(user, Employee):
+        return queryset.filter(employee=user)
+    if isinstance(user, Driver):
+        return queryset.filter(driver=user)
+    return Notification.objects.none()
+
+
+def _attach_notification_to_user(
+    user_type,
+    user,
+    *,
+    title,
+    message,
+    notification_type='system',
+    reference_id=None,
+    idempotency_key=None,
+    data=None,
+):
+    if notification_type in INBOX_EXCLUDED_NOTIFICATION_TYPES:
+        return None
+
+    recipient_filter = _notification_recipient_filter(user_type, user)
+    if not recipient_filter:
+        return None
+
     payload = {
-        'notification_type': 'system',
+        'notification_type': notification_type,
         'title': title,
         'message': message,
+        'reference_id': str(reference_id).strip() if reference_id not in (None, '') else None,
+        'idempotency_key': str(idempotency_key).strip() if idempotency_key not in (None, '') else None,
         'data': data or {},
+        **recipient_filter,
     }
-    if user_type == 'customer':
-        payload['customer'] = user
-    elif user_type == 'shop_owner':
-        payload['shop_owner'] = user
-    elif user_type == 'employee':
-        payload['employee'] = user
-    elif user_type == 'driver':
-        payload['driver'] = user
-    else:
-        return None
+
+    if payload['idempotency_key']:
+        existing = Notification.objects.filter(
+            idempotency_key=payload['idempotency_key'],
+            **recipient_filter,
+        ).first()
+        if existing:
+            return existing
+
+    if payload['reference_id']:
+        existing = Notification.objects.filter(
+            notification_type=notification_type,
+            reference_id=payload['reference_id'],
+            **recipient_filter,
+        ).first()
+        if existing:
+            updated_fields = []
+            for field in ('title', 'message', 'data'):
+                if getattr(existing, field) != payload[field]:
+                    setattr(existing, field, payload[field])
+                    updated_fields.append(field)
+            if updated_fields:
+                existing.save(update_fields=updated_fields)
+            return existing
+
     return Notification.objects.create(**payload)
 
 
@@ -7110,66 +7179,71 @@ def payment_method_delete_view(request, method_id):
 @permission_classes([IsAuthenticated])
 def notification_list_view(request):
     """
-    قائمة الإشعارات
+    Server-side notification inbox.
     GET /api/notifications/
     """
-    user = request.user
-    # تحديد نوع المستخدم
-    notifications = Notification.objects.none()
-
-    if isinstance(user, ShopOwner):
-        notifications = Notification.objects.filter(shop_owner=user)
-    elif isinstance(user, Customer):
-        notifications = Notification.objects.filter(customer=user)
-    elif isinstance(user, Employee):
-        notifications = Notification.objects.filter(employee=user)
-    elif isinstance(user, Driver):
-        notifications = Notification.objects.filter(driver=user)
-    else:
-        # محاولة من customer_id في JWT
-        try:
-            customer = Customer.objects.get(id=user.id)
-            notifications = Notification.objects.filter(customer=customer)
-        except:
-            pass
-
-    serializer = NotificationSerializer(notifications[:50], many=True)
+    notifications = _notification_queryset_for_user(request.user)
+    page = max(int(request.query_params.get('page', 1) or 1), 1)
+    limit = max(min(int(request.query_params.get('limit', 20) or 20), 100), 1)
+    start_offset = (page - 1) * limit
+    end_offset = start_offset + limit
+    sliced_notifications = list(notifications[start_offset:end_offset + 1])
+    has_more = len(sliced_notifications) > limit
+    serializer = NotificationSerializer(sliced_notifications[:limit], many=True)
     unread_count = notifications.filter(is_read=False).count()
     return success_response(
-        data={'notifications': serializer.data, 'unread_count': unread_count},
+        data={
+            'notifications': serializer.data,
+            'unread_count': unread_count,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'has_more': has_more,
+            },
+        },
         message=t(request, 'notifications_retrieved_successfully')
     )
 
 
-@api_view(['POST'])
+@api_view(['PATCH', 'POST'])
 @permission_classes([IsAuthenticated])
 def notification_mark_read_view(request, notification_id):
     """
-    تحديد إشعار كمقروء
-    POST /api/notifications/{id}/read/
+    Mark a single notification as read.
+    PATCH /api/notifications/{id}/read/
     """
-    try:
-        notification = Notification.objects.get(id=notification_id)
-        notification.is_read = True
-        notification.save()
-        return success_response(message=t(request, 'notification_marked_as_read'))
-    except Notification.DoesNotExist:
+    notification = _notification_queryset_for_user(request.user).filter(id=notification_id).first()
+    if not notification:
         return error_response(message=t(request, 'notification_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+    if not notification.is_read:
+        notification.is_read = True
+        notification.save(update_fields=['is_read'])
+    return success_response(message=t(request, 'notification_marked_as_read'))
 
 
-@api_view(['POST'])
+@api_view(['PATCH', 'POST'])
 @permission_classes([IsAuthenticated])
 def notification_mark_all_read_view(request):
     """
-    تحديد جميع الإشعارات كمقروءة
-    POST /api/notifications/read-all/
+    Mark all inbox notifications as read.
+    PATCH /api/notifications/read-all/
     """
-    user = request.user
-    if isinstance(user, ShopOwner):
-        Notification.objects.filter(shop_owner=user, is_read=False).update(is_read=True)
-    elif isinstance(user, Customer):
-        Notification.objects.filter(customer=user, is_read=False).update(is_read=True)
+    _notification_queryset_for_user(request.user).filter(is_read=False).update(is_read=True)
     return success_response(message=t(request, 'all_notifications_marked_as_read'))
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def notification_delete_view(request, notification_id):
+    """
+    Delete a single notification from the inbox.
+    DELETE /api/notifications/{id}/
+    """
+    notification = _notification_queryset_for_user(request.user).filter(id=notification_id).first()
+    if not notification:
+        return error_response(message=t(request, 'notification_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+    notification.delete()
+    return success_response(message=t(request, 'notification_deleted_successfully', default='Notification deleted successfully'))
 
 
 # ==================== Cart APIs ====================

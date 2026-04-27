@@ -1924,13 +1924,18 @@ class PaymentMethodCreateSerializer(serializers.Serializer):
 
 # Notification Serializers
 class NotificationSerializer(serializers.ModelSerializer):
-    """Serializer للإشعار"""
+    """Serializer for app inbox notifications."""
     notification_type_display = serializers.CharField(source='get_notification_type_display', read_only=True)
+    type = serializers.CharField(source='notification_type', read_only=True)
+    body = serializers.CharField(source='message', read_only=True)
+    reference_id = serializers.CharField(allow_null=True, read_only=True)
 
     class Meta:
         model = Notification
-        fields = ['id', 'notification_type', 'notification_type_display',
-                  'title', 'message', 'data', 'is_read', 'created_at']
+        fields = [
+            'id', 'type', 'body', 'reference_id', 'notification_type', 'notification_type_display',
+            'title', 'message', 'data', 'is_read', 'created_at'
+        ]
         read_only_fields = ['id', 'created_at']
 
 

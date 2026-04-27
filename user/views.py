@@ -1967,23 +1967,18 @@ def _resolve_support_action_target(account_type, account_id):
 
 
 def _create_support_action_notification(account_type, account, title, message, data=None):
-    from shop.models import Notification
+    from shop.views import _attach_notification_to_user
 
-    payload = {
-        "notification_type": "system",
-        "title": title,
-        "message": message,
-        "data": data or {},
-    }
-    if account_type == "customer":
-        payload["customer"] = account
-    elif account_type == "driver":
-        payload["driver"] = account
-    elif account_type == "shop_owner":
-        payload["shop_owner"] = account
-    else:
-        return None
-    return Notification.objects.create(**payload)
+    return _attach_notification_to_user(
+        account_type,
+        account,
+        title=title,
+        message=message,
+        notification_type="system",
+        reference_id=(data or {}).get("reference_id"),
+        idempotency_key=(data or {}).get("idempotency_key"),
+        data=data,
+    )
 
 
 def _admin_abuse_actor_name(obj, actor_type):
@@ -2040,23 +2035,27 @@ def _get_abuse_report_moderation(report):
 
 
 def _create_abuse_target_notification(report, title, message, data=None):
-    from shop.models import Notification
+    from shop.views import _attach_notification_to_user
 
-    payload = {
-        "notification_type": "system",
-        "title": title,
-        "message": message,
-        "data": data or {},
-    }
+    target = None
     if report.target_type == "customer" and report.target_customer_id:
-        payload["customer"] = report.target_customer
+        target = report.target_customer
     elif report.target_type == "shop_owner" and report.target_shop_owner_id:
-        payload["shop_owner"] = report.target_shop_owner
+        target = report.target_shop_owner
     elif report.target_type == "driver" and report.target_driver_id:
-        payload["driver"] = report.target_driver
-    else:
+        target = report.target_driver
+    if target is None:
         return None
-    return Notification.objects.create(**payload)
+    return _attach_notification_to_user(
+        report.target_type,
+        target,
+        title=title,
+        message=message,
+        notification_type="system",
+        reference_id=(data or {}).get("reference_id") or report.public_id,
+        idempotency_key=(data or {}).get("idempotency_key"),
+        data=data,
+    )
 
 
 def _apply_abuse_report_resolution(report, *, action, admin_user, admin_notes=None):

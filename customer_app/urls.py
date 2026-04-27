@@ -35,6 +35,7 @@ urlpatterns = [
     path('customer/payment-methods/<int:method_id>/', views.payment_method_delete_view, name='payment_method_delete'),
     path('orders/rate/', views.order_rating_create_view, name='order_rating_create'),
     path('notifications/', views.notification_list_view, name='notification_list'),
+    path('notifications/<int:notification_id>/', views.notification_delete_view, name='notification_delete'),
     path('notifications/<int:notification_id>/read/', views.notification_mark_read_view, name='notification_mark_read'),
     path('notifications/read-all/', views.notification_mark_all_read_view, name='notification_mark_all_read'),
     path('reports/reasons/', views.abuse_report_reasons_view, name='abuse_report_reasons'),

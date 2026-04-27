@@ -138,6 +138,7 @@ urlpatterns = [
     
     # ==================== Notifications ====================
     path('notifications/', views.notification_list_view, name='notification_list'),
+    path('notifications/<int:notification_id>/', views.notification_delete_view, name='notification_delete'),
     path('notifications/<int:notification_id>/read/', views.notification_mark_read_view, name='notification_mark_read'),
     path('notifications/read-all/', views.notification_mark_all_read_view, name='notification_mark_all_read'),
 
