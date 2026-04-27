@@ -35,6 +35,7 @@ class Customer(models.Model):
     shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, related_name='customers', verbose_name="صاحب المحل", null=True, blank=True)
     name = models.CharField(max_length=100, verbose_name="اسم العميل")
     phone_number = models.CharField(max_length=20, unique=True, verbose_name="رقم الهاتف")
+    email = models.EmailField(unique=True, blank=True, null=True, verbose_name="البريد الإلكتروني")
     password = models.CharField(max_length=128, blank=True, null=True, verbose_name="كلمة المرور")
     profile_image = models.ImageField(upload_to='customer_profiles/', blank=True, null=True, verbose_name="صورة العميل")
     is_online = models.BooleanField(default=False, verbose_name="متصل الآن")
@@ -50,6 +51,7 @@ class Customer(models.Model):
         indexes = [
             models.Index(fields=['-updated_at']),
             models.Index(fields=['phone_number']),
+            models.Index(fields=['email']),
         ]
 
     def set_password(self, raw_password):
@@ -77,7 +79,7 @@ class Customer(models.Model):
         return True
 
     def __str__(self):
-        return f"{self.name} - {self.phone_number}"
+        return f"{self.name} - {self.email or self.phone_number}"
 
 
 class CustomerPresenceConnection(models.Model):

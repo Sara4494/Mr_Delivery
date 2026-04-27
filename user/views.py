@@ -39,7 +39,12 @@ from .approval_requests import (
     review_approval_request,
 )
 from .utils import success_response, error_response, t, localize_message
-from .otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
+from .otp_service import (
+    send_otp as otp_send,
+    verify_otp as otp_verify,
+    normalize_email,
+    normalize_phone,
+)
 
 
 ARABIC_MONTH_NAMES = {
@@ -3646,6 +3651,7 @@ def unified_login_view(request):
     """
     role = request.data.get('role')
     phone_number = request.data.get('phone_number')
+    email = request.data.get('email')
     shop_number = request.data.get('shop_number')
     password = request.data.get('password')
     
@@ -3730,23 +3736,20 @@ def unified_login_view(request):
     
     # ===== Customer Login =====
     elif role == 'customer':
-        if not phone_number:
+        if not email:
             return error_response(
-                message=t(request, 'phone_number_is_required'),
+                message=t(request, 'email_is_required'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
         from shop.models import Customer
         try:
-            customer = (
-                _find_customer_by_phone(phone_number)
-                if phone_number else None
-            )
+            customer = _find_customer_by_email(email)
             if not customer:
                 raise Customer.DoesNotExist
             if not customer.check_password(password):
                 return error_response(
-                    message=t(request, 'phone_number_or_password_is_incorrect'),
+                    message=t(request, 'email_or_password_is_incorrect'),
                     status_code=status.HTTP_401_UNAUTHORIZED
                 )
             if not customer.is_verified:
@@ -3765,6 +3768,7 @@ def unified_login_view(request):
             refresh = RefreshToken()
             refresh['customer_id'] = customer.id
             refresh['phone_number'] = customer.phone_number
+            refresh['email'] = customer.email
             refresh['user_type'] = 'customer'
             
             return success_response(
@@ -3774,6 +3778,7 @@ def unified_login_view(request):
                     'user': {
                         'id': customer.id,
                         'name': customer.name,
+                        'email': customer.email,
                         'phone_number': customer.phone_number,
                     
                         'is_verified': customer.is_verified,
@@ -3784,7 +3789,7 @@ def unified_login_view(request):
             )
         except Customer.DoesNotExist:
             return error_response(
-                message=t(request, 'phone_number_or_password_is_incorrect'),
+                message=t(request, 'email_or_password_is_incorrect'),
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
     
@@ -3922,6 +3927,15 @@ def _find_customer_by_phone(phone_number):
     ).first()
 
 
+def _find_customer_by_email(email):
+    from shop.models import Customer
+
+    normalized = normalize_email(email)
+    if not normalized:
+        return None
+    return Customer.objects.filter(email__iexact=normalized).first()
+
+
 def _phone_variants(phone_number):
     """إرجاع كل الصيغ المحتملة للرقم (للبحث في DB)"""
     if not phone_number:
@@ -4035,6 +4049,7 @@ def unified_register_view(request):
     # ===== Customer Registration =====
     if role == 'customer':
         name = request.data.get('name')
+        email = request.data.get('email')
         phone_number = request.data.get('phone_number')
         password = request.data.get('password')
         profile_image = request.FILES.get('profile_image')
@@ -4042,6 +4057,8 @@ def unified_register_view(request):
         # التحقق من البيانات المطلوبة
         if not name:
             return error_response(message=t(request, 'name_is_required'), status_code=status.HTTP_400_BAD_REQUEST)
+        if not email:
+            return error_response(message=t(request, 'email_is_required'), status_code=status.HTTP_400_BAD_REQUEST)
         if not phone_number:
             return error_response(message=t(request, 'phone_number_is_required'), status_code=status.HTTP_400_BAD_REQUEST)
         if not password:
@@ -4051,6 +4068,22 @@ def unified_register_view(request):
 
         # التحقق من حالة الرقم مسبقاً
         from shop.models import Customer
+        normalized_email = normalize_email(email)
+        if '@' not in normalized_email:
+            return error_response(message=t(request, 'invalid_email_address'), status_code=status.HTTP_400_BAD_REQUEST)
+
+        existing_customer_by_email = _find_customer_by_email(normalized_email)
+        if existing_customer_by_email and existing_customer_by_email.is_verified:
+            return error_response(
+                message=t(request, 'email_is_already_registered_and_verified'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        if existing_customer_by_email and not existing_customer_by_email.is_verified:
+            return error_response(
+                message=t(request, 'account_already_exists_and_is_not_verified_send_otp_then_verify_via_api_auth_otp_verify'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
         existing_customer = _find_customer_by_phone(phone_number)
         if existing_customer and existing_customer.is_verified:
             return error_response(
@@ -4066,6 +4099,7 @@ def unified_register_view(request):
         normalized = normalize_phone(phone_number)
         customer = Customer.objects.create(
             name=name,
+            email=normalized_email,
             phone_number=normalized,
             profile_image=profile_image,
             is_verified=False
@@ -4082,6 +4116,7 @@ def unified_register_view(request):
                 'user': {
                     'id': customer.id,
                     'name': customer.name,
+                    'email': customer.email,
                     'phone_number': customer.phone_number,
                     'profile_image': customer.profile_image.url if customer.profile_image else None,
                     'profile_image_url': profile_image_url,
@@ -4130,18 +4165,28 @@ def send_otp_view(request):
         "shop_number": "12345"  // اختياري للموظف عند reset_password ومطلوب للسائق
     }
     """
+    email = request.data.get('email')
     phone_number = request.data.get('phone_number')
     purpose = request.data.get('purpose', 'login')
     role = request.data.get('role', 'customer')
     shop_number = request.data.get('shop_number')
-    if not phone_number:
+    target = phone_number
+
+    if role == 'customer':
+        if not email:
+            return error_response(
+                message=t(request, 'email_is_required'),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        target = normalize_email(email)
+    elif not phone_number:
         return error_response(
             message=t(request, 'phone_number_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
     if purpose == 'register':
-        customer = _find_customer_by_phone(phone_number)
+        customer = _find_customer_by_email(email) if role == 'customer' else _find_customer_by_phone(phone_number)
         if not customer:
             return error_response(
                 message=t(request, 'you_must_create_the_account_first_via_api_auth_register'),
@@ -4153,17 +4198,26 @@ def send_otp_view(request):
                 status_code=status.HTTP_400_BAD_REQUEST
             )
     elif purpose == 'reset_password':
-        user, err = _find_user_for_reset(role, phone_number, shop_number)
+        if role == 'customer':
+            user = _find_customer_by_email(email)
+            err = None if user else 'email_is_not_registered_please_register_first'
+        else:
+            user, err = _find_user_for_reset(role, phone_number, shop_number)
         if err:
             return error_response(
                 message=localize_message(request, err),
                 status_code=status.HTTP_404_NOT_FOUND
             )
 
-    success, msg = otp_send(phone_number)
+    success, msg = otp_send(target)
     if success:
         return success_response(
-            message=t(request, 'verification_code_sent_to_your_whatsapp')
+            message=t(
+                request,
+                'verification_code_sent_to_your_email'
+                if role == 'customer' else
+                'verification_code_sent_to_your_whatsapp'
+            )
         )
     return error_response(
         message=localize_message(request, msg),
@@ -4184,13 +4238,15 @@ def verify_otp_login_view(request):
     }
     """
 
+    email = request.data.get('email')
     phone_number = request.data.get('phone_number')
     otp_code = request.data.get('otp')
     purpose = request.data.get('purpose', 'login')
+    target = normalize_email(email) if email else phone_number
 
-    if not phone_number:
+    if not target:
         return error_response(
-            message=t(request, 'phone_number_is_required'),
+            message=t(request, 'email_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     if not otp_code:
@@ -4204,7 +4260,7 @@ def verify_otp_login_view(request):
             status_code=status.HTTP_400_BAD_REQUEST
         )
     
-    customer = _find_customer_by_phone(phone_number)
+    customer = _find_customer_by_email(email) if email else _find_customer_by_phone(phone_number)
 
     if purpose == 'register':
         if not customer:
@@ -4220,7 +4276,12 @@ def verify_otp_login_view(request):
     else:
         if not customer:
             return error_response(
-                message=t(request, 'phone_number_is_not_registered_please_register_first'),
+                message=t(
+                    request,
+                    'email_is_not_registered_please_register_first'
+                    if email else
+                    'phone_number_is_not_registered_please_register_first'
+                ),
                 status_code=status.HTTP_404_NOT_FOUND
             )
         if not customer.is_verified:
@@ -4236,7 +4297,7 @@ def verify_otp_login_view(request):
                 status_code=status.HTTP_403_FORBIDDEN
             )
 
-    if not otp_verify(phone_number, otp_code):
+    if not otp_verify(target, otp_code):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED
@@ -4249,6 +4310,7 @@ def verify_otp_login_view(request):
     refresh = RefreshToken()
     refresh['customer_id'] = customer.id
     refresh['phone_number'] = customer.phone_number
+    refresh['email'] = customer.email
     refresh['user_type'] = 'customer'
 
     success_message = t(request, 'verification_successful') if purpose == 'register' else t(request, 'login_successful')
@@ -4260,6 +4322,7 @@ def verify_otp_login_view(request):
             'user': {
                 'id': customer.id,
                 'name': customer.name,
+                'email': customer.email,
                 'phone_number': customer.phone_number,
         
                 'is_verified': customer.is_verified,
@@ -4289,14 +4352,16 @@ def reset_password_view(request):
     }
     """
     role = request.data.get('role', 'customer')
+    email = request.data.get('email')
     phone_number = request.data.get('phone_number')
     shop_number = request.data.get('shop_number')
     otp_code = request.data.get('otp')
     new_password = request.data.get('new_password')
+    target = normalize_email(email) if role == 'customer' and email else phone_number
 
-    if not phone_number:
+    if not target:
         return error_response(
-            message=t(request, 'phone_number_is_required'),
+            message=t(request, 'email_is_required' if role == 'customer' else 'phone_number_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     if not otp_code:
@@ -4315,13 +4380,17 @@ def reset_password_view(request):
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
-    if not otp_verify(phone_number, otp_code):
+    if not otp_verify(target, otp_code):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED
         )
 
-    user, err = _find_user_for_reset(role, phone_number, shop_number)
+    if role == 'customer':
+        user = _find_customer_by_email(email)
+        err = None if user else 'email_is_not_registered_please_register_first'
+    else:
+        user, err = _find_user_for_reset(role, phone_number, shop_number)
     if err:
         return error_response(
             message=localize_message(request, err),

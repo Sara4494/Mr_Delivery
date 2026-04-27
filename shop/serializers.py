@@ -151,7 +151,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Customer
-        fields = ['id', 'name', 'phone_number',  'profile_image', 'profile_image_url',
+        fields = ['id', 'name', 'email', 'phone_number',  'profile_image', 'profile_image_url',
                   'addresses', 'default_address', 'is_online', 'last_seen', 'is_verified',
                   'unread_messages_count', 'last_message', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -234,6 +234,7 @@ class CustomerAppProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'name',
+            'email',
             'phone_number',
             'profile_image',
             'profile_image_url',

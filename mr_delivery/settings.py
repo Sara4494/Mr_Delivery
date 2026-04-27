@@ -16,6 +16,26 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ[key] = value
+
+
+_load_dotenv(BASE_DIR / ".env")
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -315,11 +335,24 @@ REST_FRAMEWORK = {
 
 # OTP: رمز ثابت حتى الاشتراك في خدمة إرسال (واتساب/UltraMsg)
 # إذا كان معيّناً يُستخدم هذا الرمز لجميع الطلبات ولا يُرسل أي OTP فعلي
-FIXED_OTP_CODE = os.environ.get("FIXED_OTP_CODE", "123456")
+FIXED_OTP_CODE = os.environ.get("FIXED_OTP_CODE", "123456").strip()
 
 # UltraMsg (WhatsApp OTP) - يُستخدم فقط عندما FIXED_OTP_CODE فارغ
 ULTRAMSG_INSTANCE = os.environ.get("ULTRAMSG_INSTANCE", "instance160549")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN", "9l9mdphqnkcnuhf0")
+
+# Email (Gmail SMTP) for customer OTP
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = _env_int("EMAIL_PORT", 587)
+EMAIL_USE_TLS = _env_bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = _env_bool("EMAIL_USE_SSL", default=False)
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "").strip()
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "").strip()
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER).strip()
 
 # Cache (for OTP storage - uses Redis if available, else local memory)
 _CACHE_REDIS = os.environ.get("REDIS_URL", "").strip()
