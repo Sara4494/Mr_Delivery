@@ -1936,7 +1936,7 @@ def driver_status_view(request):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
     else:
-        target_status = 'available' if requested_online else 'busy'
+        target_status = 'available' if requested_online else 'offline'
 
     active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
     in_delivery_count = driver.orders.filter(status__in=['preparing', 'on_way']).count()
@@ -1966,7 +1966,7 @@ def driver_status_view(request):
             'driver_id': driver.id,
             'status': driver.status,
             'status_display': driver.get_status_display(),
-            'is_online': bool(driver.is_online),
+            'is_online': driver.status != 'offline',
             'can_receive_orders': driver.status == 'available',
         },
         message=t(request, 'driver_status_updated_successfully'),
