@@ -2012,6 +2012,18 @@ def _resolve_support_action_target(account_type, account_id):
 
 def _create_support_action_notification(account_type, account, title, message, data=None):
     from shop.views import _attach_notification_to_user
+    from shop.fcm.service import send_driver_system_notification
+
+    if account_type == "driver":
+        return send_driver_system_notification(
+            account,
+            title=title,
+            body=message,
+            data=data,
+            notification_type="general_notification",
+            reference_id=(data or {}).get("reference_id"),
+            idempotency_key=(data or {}).get("idempotency_key"),
+        )
 
     return _attach_notification_to_user(
         account_type,
@@ -2080,6 +2092,7 @@ def _get_abuse_report_moderation(report):
 
 def _create_abuse_target_notification(report, title, message, data=None):
     from shop.views import _attach_notification_to_user
+    from shop.fcm.service import send_driver_system_notification
 
     target = None
     if report.target_type == "customer" and report.target_customer_id:
@@ -2090,6 +2103,16 @@ def _create_abuse_target_notification(report, title, message, data=None):
         target = report.target_driver
     if target is None:
         return None
+    if report.target_type == "driver":
+        return send_driver_system_notification(
+            target,
+            title=title,
+            body=message,
+            data=data,
+            notification_type="general_notification",
+            reference_id=(data or {}).get("reference_id") or report.public_id,
+            idempotency_key=(data or {}).get("idempotency_key"),
+        )
     return _attach_notification_to_user(
         report.target_type,
         target,

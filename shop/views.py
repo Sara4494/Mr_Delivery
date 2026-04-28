@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -133,6 +135,9 @@ from .driver_realtime import (
     sync_unavailable_order_for_driver,
 )
 from .fcm.service import send_driver_store_invite_notification
+
+
+logger = logging.getLogger(__name__)
 
 
 def shop_dashboard_ui_view(request):
@@ -1412,14 +1417,30 @@ def _invite_driver(request, shop_owner, payload):
         existing_account.save(update_fields=['phone_number'])
 
     try:
-        send_driver_store_invite_notification(
+        push_result = send_driver_store_invite_notification(
             existing_account,
             shop_owner,
             relation,
             request=request,
         )
+        push_summary = push_result.get('push') or {}
+        logger.info(
+            'driver.invite.push_result driver_id=%s shop_owner_id=%s invitation_id=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+            existing_account.id,
+            shop_owner.id,
+            relation.id,
+            push_summary.get('tokens_total'),
+            push_summary.get('tokens_sent'),
+            push_summary.get('tokens_failed'),
+            push_summary.get('tokens_invalidated'),
+        )
     except Exception as exc:
-        print(f"driver invitation push error: {exc}")
+        logger.exception(
+            'driver.invite.push_failed driver_id=%s shop_owner_id=%s invitation_id=%s',
+            existing_account.id,
+            shop_owner.id,
+            relation.id,
+        )
 
     response_data = _serialize_staff_member(existing_account, STAFF_TYPE_DRIVER, request)
     response_data['invitation_sent'] = True
@@ -1851,7 +1872,7 @@ def driver_dashboard_view(request):
     in_delivery_orders_qs = driver.orders.filter(status__in=['preparing', 'on_way'])
     completed_orders_qs = driver.orders.filter(status='delivered')
     pending_invitations_count = ShopDriver.objects.filter(driver=driver, status='pending').count()
-    unread_notifications_count = Notification.objects.filter(driver=driver, is_read=False).count()
+    unread_notifications_count = _notification_queryset_for_user(driver).filter(is_read=False).count()
 
     active_shops = (
         ShopOwner.objects

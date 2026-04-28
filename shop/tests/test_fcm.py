@@ -9,6 +9,10 @@ from shop.fcm_service import (
     _stringify_payload,
     build_incoming_ring_payload,
     send_order_chat_push_fallback,
+    send_driver_new_order_notification,
+    send_driver_store_invite_notification,
+    send_driver_system_notification,
+    send_driver_system_notifications,
     send_push_to_token_record,
     send_push_to_user,
     send_ring_push_fallback,
@@ -19,7 +23,7 @@ from shop.fcm_views import (
     fcm_register_device_view,
     fcm_unregister_device_view,
 )
-from shop.models import AccountModerationStatus, Customer, Driver, Employee, FCMDeviceToken, Order
+from shop.models import AccountModerationStatus, Customer, Driver, Employee, FCMDeviceToken, Notification, Order, ShopDriver
 from user.models import ShopCategory, ShopOwner
 
 
@@ -581,3 +585,86 @@ class FCMServiceTests(TestCase):
         self.assertEqual(payload['type'], 'chat_message')
         self.assertEqual(payload['is_urgent'], 'true')
         self.assertNotIn('message_type', payload)
+
+
+class DriverNotificationModeTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.category = ShopCategory.objects.create(name='Groceries')
+        self.shop = ShopOwner.objects.create(
+            owner_name='Owner',
+            shop_name='Store',
+            shop_number='SHOP-400',
+            phone_number='01010000004',
+            password='secret123',
+            shop_category=self.category,
+        )
+        self.driver = Driver.objects.create(
+            name='Driver One',
+            phone_number='01030000004',
+            password='secret123',
+        )
+        self.other_driver = Driver.objects.create(
+            name='Driver Two',
+            phone_number='01030000005',
+            password='secret123',
+        )
+        self.order = Order.objects.create(
+            shop_owner=self.shop,
+            order_number='OD400',
+            status='new',
+            items='["Item"]',
+            total_amount='80.00',
+            delivery_fee='10.00',
+            address='Street',
+            notes='',
+        )
+        self.invitation = ShopDriver.objects.create(
+            shop_owner=self.shop,
+            driver=self.driver,
+            status='pending',
+        )
+
+    @patch('shop.fcm_service.send_to_user', return_value={'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
+    def test_push_only_driver_notifications_do_not_create_inbox_records(self, mock_send):
+        send_driver_new_order_notification(self.driver, self.order)
+        send_driver_store_invite_notification(self.driver, self.shop, self.invitation)
+
+        self.assertEqual(mock_send.call_count, 2)
+        self.assertFalse(Notification.objects.filter(driver=self.driver).exists())
+
+    @patch('shop.fcm_service.send_to_user', return_value={'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
+    def test_driver_system_notification_creates_record_and_push_payload(self, mock_send):
+        result = send_driver_system_notification(
+            self.driver,
+            title='Important notice',
+            body='Message from admin',
+            data={'type': 'general_notification'},
+            reference_id='admin-1',
+            idempotency_key='driver-admin-1',
+        )
+
+        notification = result['notification']
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.driver_id, self.driver.id)
+        self.assertEqual(notification.notification_type, 'general_notification')
+        self.assertEqual(notification.data['screen'], 'notifications')
+        sent_payload = mock_send.call_args.kwargs['data']
+        self.assertEqual(sent_payload['notification_id'], notification.id)
+        self.assertEqual(sent_payload['screen'], 'notifications')
+        self.assertEqual(sent_payload['type'], 'general_notification')
+
+    @patch('shop.fcm_service.send_to_user', return_value={'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
+    def test_driver_system_notifications_create_independent_read_records_per_driver(self, mock_send):
+        summary = send_driver_system_notifications(
+            [self.driver, self.other_driver],
+            title='Broadcast',
+            body='For all drivers',
+            data={'type': 'general_notification'},
+            reference_id='broadcast-1',
+            idempotency_key='broadcast-1',
+        )
+
+        self.assertEqual(summary['drivers_targeted'], 2)
+        self.assertEqual(Notification.objects.filter(reference_id='broadcast-1').count(), 2)
+        self.assertEqual(mock_send.call_count, 2)

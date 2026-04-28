@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from shop.models import Customer, Notification
+from shop.models import Customer, Driver, Notification
 
 
 class NotificationsApiTests(TestCase):
@@ -108,3 +108,71 @@ class NotificationsApiTests(TestCase):
             Notification.objects.filter(customer=self.customer, notification_type="chat_message").exists()
         )
         self.assertTrue(Notification.objects.filter(customer=self.other_customer).exists())
+
+
+class DriverNotificationsApiTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.driver = Driver.objects.create(
+            name="Driver Notification",
+            phone_number="+201099991001",
+            password="secret123",
+            is_verified=True,
+        )
+        self.other_driver = Driver.objects.create(
+            name="Other Driver",
+            phone_number="+201099991002",
+            password="secret123",
+            is_verified=True,
+        )
+
+        Notification.objects.create(
+            driver=self.driver,
+            notification_type="general_notification",
+            title="Important",
+            message="Message from admin",
+            data={"screen": "notifications"},
+        )
+        Notification.objects.create(
+            driver=self.driver,
+            notification_type="system",
+            title="System",
+            message="System notice",
+            data={"screen": "notifications"},
+        )
+        Notification.objects.create(
+            driver=self.other_driver,
+            notification_type="general_notification",
+            title="Foreign",
+            message="Other driver notification",
+        )
+
+        self.client.force_authenticate(user=self.driver)
+
+    def test_driver_list_returns_only_current_driver_system_notifications(self):
+        response = self.client.get("/api/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["unread_count"], 2)
+        self.assertEqual(len(response.data["data"]["notifications"]), 2)
+        row = response.data["data"]["notifications"][0]
+        self.assertIn(row["type"], {"general_notification", "system"})
+        self.assertIn("title", row)
+        self.assertIn("message", row)
+        self.assertIn("data", row)
+
+    def test_driver_mark_read_accepts_post(self):
+        notification = Notification.objects.filter(driver=self.driver, notification_type="general_notification").first()
+        response = self.client.post(f"/api/notifications/{notification.id}/read/")
+
+        self.assertEqual(response.status_code, 200)
+        notification.refresh_from_db()
+        self.assertTrue(notification.is_read)
+
+    def test_driver_mark_all_read_accepts_post(self):
+        response = self.client.post("/api/notifications/read-all/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["unread_count"], 0)
+        self.assertFalse(Notification.objects.filter(driver=self.driver, is_read=False).exists())

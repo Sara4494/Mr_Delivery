@@ -1211,7 +1211,7 @@ def _create_driver_notification_record(
     return Notification.objects.create(**payload)
 
 
-def send_driver_notification(
+def _send_driver_push(
     driver,
     *,
     notification_type,
@@ -1223,31 +1223,34 @@ def send_driver_notification(
     image_url=None,
     order_id=None,
     store_id=None,
+    create_record=False,
 ):
     data = dict(data or {})
     if image_url:
         data.setdefault('image_url', image_url)
 
-    notification = _create_driver_notification_record(
-        driver,
-        notification_type=notification_type,
-        title=title,
-        body=body,
-        data=data,
-        order_id=order_id,
-        store_id=store_id,
-        image_url=image_url,
-        reference_id=reference_id,
-        idempotency_key=idempotency_key,
-    )
-
-    profile = _driver_notification_profile(notification_type)
+    notification = None
     payload = {
         'type': notification_type,
-        'notification_id': notification.id,
         **data,
     }
 
+    if create_record:
+        notification = _create_driver_notification_record(
+            driver,
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            data=data,
+            order_id=order_id,
+            store_id=store_id,
+            image_url=image_url,
+            reference_id=reference_id,
+            idempotency_key=idempotency_key,
+        )
+        payload['notification_id'] = notification.id
+
+    profile = _driver_notification_profile(notification_type)
     return {
         'notification': notification,
         'push': send_to_user(
@@ -1262,9 +1265,172 @@ def send_driver_notification(
             ttl=profile['ttl'],
             click_action='FLUTTER_NOTIFICATION_CLICK',
             notification_priority=profile['notification_priority'],
-            tag=str(data.get('tag') or f"{notification_type}_{notification.id}"),
+            tag=str(data.get('tag') or f"{notification_type}_{notification.id if notification else driver.id}"),
         ),
     }
+
+
+def send_driver_notification(
+    driver,
+    *,
+    notification_type,
+    title,
+    body,
+    data=None,
+    reference_id=None,
+    idempotency_key=None,
+    image_url=None,
+    order_id=None,
+    store_id=None,
+):
+    return _send_driver_push(
+        driver,
+        notification_type=notification_type,
+        title=title,
+        body=body,
+        data=data,
+        reference_id=reference_id,
+        idempotency_key=idempotency_key,
+        image_url=image_url,
+        order_id=order_id,
+        store_id=store_id,
+        create_record=True,
+    )
+
+
+def send_driver_push_only_notification(
+    driver,
+    *,
+    notification_type,
+    title,
+    body,
+    data=None,
+    image_url=None,
+    order_id=None,
+    store_id=None,
+):
+    return _send_driver_push(
+        driver,
+        notification_type=notification_type,
+        title=title,
+        body=body,
+        data=data,
+        image_url=image_url,
+        order_id=order_id,
+        store_id=store_id,
+        create_record=False,
+    )
+
+
+def send_driver_system_notification(
+    driver,
+    *,
+    title,
+    body,
+    data=None,
+    notification_type='general_notification',
+    reference_id=None,
+    idempotency_key=None,
+    image_url=None,
+    order_id=None,
+    store_id=None,
+):
+    payload_data = dict(data or {})
+    payload_data.setdefault('screen', 'notifications')
+    return send_driver_notification(
+        driver,
+        notification_type=notification_type,
+        title=title,
+        body=body,
+        data=payload_data,
+        reference_id=reference_id,
+        idempotency_key=idempotency_key,
+        image_url=image_url,
+        order_id=order_id,
+        store_id=store_id,
+    )
+
+
+def send_driver_system_notifications(
+    drivers,
+    *,
+    title,
+    body,
+    data=None,
+    notification_type='general_notification',
+    reference_id=None,
+    idempotency_key=None,
+    image_url=None,
+    order_id=None,
+    store_id=None,
+):
+    summary = {
+        'drivers_targeted': 0,
+        'notifications_created': 0,
+        'tokens_total': 0,
+        'tokens_sent': 0,
+        'tokens_failed': 0,
+        'tokens_invalidated': 0,
+        'notification_ids': [],
+    }
+
+    for driver in drivers:
+        result = send_driver_system_notification(
+            driver,
+            title=title,
+            body=body,
+            data=data,
+            notification_type=notification_type,
+            reference_id=reference_id,
+            idempotency_key=(
+                f'{idempotency_key}:driver:{driver.id}'
+                if idempotency_key not in (None, '')
+                else None
+            ),
+            image_url=image_url,
+            order_id=order_id,
+            store_id=store_id,
+        )
+        summary['drivers_targeted'] += 1
+        notification = result.get('notification')
+        if notification is not None:
+            summary['notifications_created'] += 1
+            summary['notification_ids'].append(notification.id)
+        push_summary = result.get('push') or {}
+        summary['tokens_total'] += int(push_summary.get('tokens_total') or 0)
+        summary['tokens_sent'] += int(push_summary.get('tokens_sent') or 0)
+        summary['tokens_failed'] += int(push_summary.get('tokens_failed') or 0)
+        summary['tokens_invalidated'] += int(push_summary.get('tokens_invalidated') or 0)
+
+    return summary
+
+
+def send_driver_system_broadcast_notification(
+    *,
+    title,
+    body,
+    data=None,
+    notification_type='general_notification',
+    reference_id=None,
+    idempotency_key=None,
+    image_url=None,
+    order_id=None,
+    store_id=None,
+    drivers_queryset=None,
+):
+    drivers = list((drivers_queryset or Driver.objects.all()).order_by('id'))
+    return send_driver_system_notifications(
+        drivers,
+        title=title,
+        body=body,
+        data=data,
+        notification_type=notification_type,
+        reference_id=reference_id,
+        idempotency_key=idempotency_key,
+        image_url=image_url,
+        order_id=order_id,
+        store_id=store_id,
+    )
 
 
 def send_driver_new_order_notification(driver, order, *, request=None, scope=None, base_url=None):
@@ -1276,14 +1442,12 @@ def send_driver_new_order_notification(driver, order, *, request=None, scope=Non
         scope=scope,
         base_url=base_url,
     )
-    return send_driver_notification(
+    return send_driver_push_only_notification(
         driver,
         notification_type='new_delivery_order',
         title='في طلب جديد جاهز للاستلام',
         body=f'{store_name} أضافت طلب توصيل جديد ومتاح لك الآن.',
         image_url=image_url,
-        reference_id=f'order:{order.id}:new_delivery_order',
-        idempotency_key=f'driver:{driver.id}:order:{order.id}:new_delivery_order',
         order_id=order.id,
         store_id=getattr(shop_owner, 'id', None),
         data={
@@ -1304,14 +1468,12 @@ def send_driver_store_invite_notification(driver, shop_owner, invitation, *, req
         scope=scope,
         base_url=base_url,
     )
-    return send_driver_notification(
+    return send_driver_push_only_notification(
         driver,
         notification_type='store_invite',
         title='دعوة انضمام لمتجر',
         body=f'لديك دعوة جديدة من {shop_owner.shop_name}.',
         image_url=image_url,
-        reference_id=f'store_invite:{invitation.id}',
-        idempotency_key=f'driver:{driver.id}:invite:{invitation.id}',
         store_id=shop_owner.id,
         data={
             'invitation_id': invitation.id,
@@ -1332,14 +1494,12 @@ def send_driver_order_update_notification(driver, order, *, update_kind='order_u
         base_url=base_url,
     )
     order_number = getattr(order, 'order_number', order.id)
-    return send_driver_notification(
+    return send_driver_push_only_notification(
         driver,
         notification_type='order_update',
         title='تحديث مهم على الطلب',
         body=body or f'تم تحديث الطلب #{order_number} من {store_name}.',
         image_url=image_url,
-        reference_id=f'order:{order.id}:{update_kind}',
-        idempotency_key=f'driver:{driver.id}:order:{order.id}:{update_kind}',
         order_id=order.id,
         store_id=getattr(shop_owner, 'id', None),
         data={
