@@ -592,6 +592,21 @@ def broadcast_message_created(message: DriverChatMessage, *, request=None, scope
         conversation=message.conversation,
         driver=message.conversation.driver,
     )
+    try:
+        from ..fcm.service import send_driver_chat_push_fallback
+        send_driver_chat_push_fallback(
+            message.conversation,
+            serialized,
+            request=request,
+            scope=scope,
+            base_url=base_url,
+        )
+    except Exception:
+        logger.exception(
+            'fcm driver chat fallback failed conversation_id=%s driver_id=%s',
+            message.conversation.public_id,
+            message.conversation.driver_id,
+        )
     return serialized
 
 

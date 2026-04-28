@@ -1657,6 +1657,83 @@ def build_chat_message_payload(*, order, chat_type, message_payload, shop_name=N
     }
 
 
+def build_driver_store_chat_message_payload(*, conversation, message_payload, order_id=None, shop_name=None, shop_profile_image_url=None):
+    message_payload = message_payload or {}
+    return {
+        'type': 'chat_message',
+        'screen': 'chat',
+        'route': '/driver-chats',
+        'click_action': 'OPEN_CHAT',
+        'conversation_id': conversation.public_id,
+        'order_id': order_id or '',
+        'shop_id': conversation.shop_owner_id,
+        'shop_name': shop_name or getattr(conversation.shop_owner, 'shop_name', '') or 'Mr Delivery',
+        'shop_profile_image_url': shop_profile_image_url or '',
+        'sender_type': message_payload.get('sender') or message_payload.get('sender_type') or '',
+        'message_type': message_payload.get('type') or message_payload.get('message_type') or 'text',
+        'message_preview': _message_preview(message_payload),
+    }
+
+
+def send_driver_chat_push_fallback(conversation, message_payload, *, request=None, scope=None, base_url=None):
+    if not conversation or not getattr(conversation, 'driver_id', None):
+        return {'users_targeted': 0, 'tokens_total': 0, 'tokens_sent': 0, 'tokens_failed': 0, 'tokens_invalidated': 0}
+
+    sender_type = str((message_payload or {}).get('sender') or (message_payload or {}).get('sender_type') or '').strip()
+    if sender_type != 'store':
+        return {'users_targeted': 0, 'tokens_total': 0, 'tokens_sent': 0, 'tokens_failed': 0, 'tokens_invalidated': 0}
+
+    shop_name = getattr(conversation.shop_owner, 'shop_name', '') or 'Mr Delivery'
+    shop_profile_image_url = build_absolute_file_url(
+        getattr(conversation.shop_owner, 'profile_image', None),
+        request=request,
+        scope=scope,
+        base_url=base_url,
+    )
+
+    order_link = (
+        conversation.orders
+        .select_related('order')
+        .order_by('-is_active', '-updated_at', '-created_at')
+        .first()
+    )
+    order_id = order_link.order_id if order_link else None
+    payload = build_driver_store_chat_message_payload(
+        conversation=conversation,
+        message_payload=message_payload,
+        order_id=order_id,
+        shop_name=shop_name,
+        shop_profile_image_url=shop_profile_image_url,
+    )
+    logger.info(
+        'fcm.driver_chat.dispatch conversation_id=%s driver_id=%s sender_type=%s',
+        conversation.public_id,
+        conversation.driver_id,
+        sender_type,
+    )
+    summary = send_push_to_user(
+        user_type='driver',
+        user_id=conversation.driver_id,
+        title=_trim_text(shop_name, default='Mr Delivery', max_length=120),
+        body=_trim_text(_message_preview(message_payload), default='لديك رسالة جديدة', max_length=180),
+        data=payload,
+        channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'chat_channel'),
+        sound=getattr(settings, 'FCM_CHAT_SOUND', 'default'),
+        ios_sound=getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default'),
+        high_priority=False,
+    )
+    logger.info(
+        'fcm.driver_chat.result conversation_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+        conversation.public_id,
+        summary['users_targeted'],
+        summary['tokens_total'],
+        summary['tokens_sent'],
+        summary['tokens_failed'],
+        summary['tokens_invalidated'],
+    )
+    return summary
+
+
 def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, shop_profile_image_url=None):
     ring_payload = ring_payload or {}
     driver_image_url = ring_payload.get('driver_image_url')

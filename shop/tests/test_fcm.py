@@ -23,7 +23,17 @@ from shop.fcm_views import (
     fcm_register_device_view,
     fcm_unregister_device_view,
 )
-from shop.models import AccountModerationStatus, Customer, Driver, Employee, FCMDeviceToken, Notification, Order, ShopDriver
+from shop.models import (
+    AccountModerationStatus,
+    Customer,
+    Driver,
+    DriverChatConversation,
+    Employee,
+    FCMDeviceToken,
+    Notification,
+    Order,
+    ShopDriver,
+)
 from user.models import ShopCategory, ShopOwner
 
 
@@ -668,3 +678,23 @@ class DriverNotificationModeTests(TestCase):
         self.assertEqual(summary['drivers_targeted'], 2)
         self.assertEqual(Notification.objects.filter(reference_id='broadcast-1').count(), 2)
         self.assertEqual(mock_send.call_count, 2)
+
+    @patch('shop.fcm_service.send_to_user', return_value={'users_targeted': 1, 'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
+    def test_store_driver_chat_message_sends_push_only_to_driver(self, mock_send):
+        from shop.driver_chat.service import store_send_text
+
+        conversation = DriverChatConversation.objects.create(
+            shop_owner=self.shop,
+            driver=self.driver,
+            status='waiting_reply',
+        )
+
+        message = store_send_text(conversation=conversation, text='New store message')
+
+        self.assertIsNotNone(message)
+        self.assertEqual(mock_send.call_count, 1)
+        self.assertFalse(Notification.objects.filter(driver=self.driver, notification_type='chat_message').exists())
+        sent_payload = mock_send.call_args.kwargs['data']
+        self.assertEqual(sent_payload['type'], 'chat_message')
+        self.assertEqual(sent_payload['screen'], 'chat')
+        self.assertEqual(sent_payload['conversation_id'], conversation.public_id)
