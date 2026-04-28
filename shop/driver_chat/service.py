@@ -503,12 +503,22 @@ def _group_send(group_name, payload):
     channel_layer = get_channel_layer()
     if not channel_layer:
         return
-    async_to_sync(channel_layer.group_send)(
-        group_name,
-        {
+    event_type = payload.get('type') if isinstance(payload, dict) else None
+    if isinstance(event_type, str) and event_type.startswith('driver_chat.'):
+        message = {
             'type': 'driver_chat_message',
             'payload': payload,
         }
+    elif isinstance(payload, dict):
+        message = dict(payload)
+    else:
+        message = {
+            'type': 'driver_chat_message',
+            'payload': payload,
+        }
+    async_to_sync(channel_layer.group_send)(
+        group_name,
+        message
     )
 
 
