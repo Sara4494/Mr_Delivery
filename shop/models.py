@@ -216,6 +216,7 @@ class Driver(models.Model):
     STATUS_CHOICES = [
         ('available', 'متاح'),
         ('busy', 'مشغول'),
+        ('unavailable', 'غير متاح'),
         ('offline', 'غير متصل'),
     ]
     VEHICLE_TYPE_CHOICES = [
@@ -241,6 +242,7 @@ class Driver(models.Model):
     )
     is_verified = models.BooleanField(default=True, verbose_name="تم التحقق")
     is_online = models.BooleanField(default=False, verbose_name="متصل الآن")
+    availability_enabled = models.BooleanField(default=False, verbose_name="يرغب في استقبال الطلبات")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='offline', verbose_name="الحالة التشغيلية")
     current_orders_count = models.IntegerField(default=0, verbose_name="عدد الطلبات الحالية")
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0, verbose_name="التقييم")
@@ -290,6 +292,59 @@ class Driver(models.Model):
     def shop_owner(self):
         """للتوافق مع لوحة التحكم (Admin): إرجاع أول متجر مرتبط"""
         return self.shops.first()
+
+    def get_active_orders_count(self):
+        orders_manager = getattr(self, 'orders', None)
+        if orders_manager is None or not hasattr(orders_manager, 'filter'):
+            return int(getattr(self, 'current_orders_count', 0) or 0)
+        return orders_manager.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
+
+    def get_in_delivery_orders_count(self):
+        orders_manager = getattr(self, 'orders', None)
+        if orders_manager is None or not hasattr(orders_manager, 'filter'):
+            return 0
+        return orders_manager.filter(status__in=['preparing', 'on_way']).count()
+
+    def get_availability_snapshot(self, *, active_orders_count=None, in_delivery_count=None):
+        active_orders_count = self.get_active_orders_count() if active_orders_count is None else int(active_orders_count or 0)
+        in_delivery_count = self.get_in_delivery_orders_count() if in_delivery_count is None else int(in_delivery_count or 0)
+
+        moderation = None
+        try:
+            moderation = self.moderation_status
+        except Exception:
+            moderation = None
+
+        is_suspended = bool(getattr(moderation, 'is_suspended', False))
+        presence_online = bool(self.is_online)
+        availability_enabled = bool(getattr(self, 'availability_enabled', False))
+
+        reason = None
+        if not self.is_verified or is_suspended:
+            status = 'unavailable'
+            can_receive_orders = False
+            reason = 'account_restricted'
+        elif not availability_enabled:
+            status = 'unavailable'
+            can_receive_orders = False
+        elif active_orders_count > 0:
+            status = 'busy'
+            can_receive_orders = False
+            reason = 'active_orders'
+        else:
+            status = 'available'
+            can_receive_orders = True
+
+        return {
+            'presence_online': presence_online,
+            'is_online': presence_online,
+            'availability_enabled': availability_enabled,
+            'can_receive_orders': can_receive_orders,
+            'status': status,
+            'active_orders_count': active_orders_count,
+            'in_delivery_count': in_delivery_count,
+            'reason': reason,
+        }
 
 
 class ShopDriver(models.Model):

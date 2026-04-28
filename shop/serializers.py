@@ -424,7 +424,7 @@ class DriverSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return obj.status != 'offline'
+        return bool(obj.is_online)
 
 
 class DriverCreateSerializer(serializers.ModelSerializer):
@@ -495,7 +495,7 @@ class DriverAppSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return obj.status != 'offline'
+        return bool(obj.is_online)
 
 
 class DriverProfileResponseSerializer(serializers.ModelSerializer):
@@ -527,7 +527,7 @@ class DriverProfileResponseSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return obj.status != 'offline'
+        return bool(obj.is_online)
 
 
 class DriverProfileSerializer(DriverProfileResponseSerializer):

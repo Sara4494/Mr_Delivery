@@ -1187,10 +1187,16 @@ def get_resync_events(shop_owner, last_event_id):
 
 
 def _driver_presence_payload(driver: Driver):
+    availability = driver.get_availability_snapshot()
     return {
         'driver_id': str(driver.id),
         'is_online': _driver_is_online(driver),
         'presence_status': _driver_presence_status(driver),
+        'presence_online': bool(availability.get('presence_online')),
+        'availability_status': availability.get('status'),
+        'can_receive_orders': bool(availability.get('can_receive_orders')),
+        'availability_enabled': bool(availability.get('availability_enabled')),
+        'reason': availability.get('reason'),
         'last_seen_at': format_utc_iso8601(driver.last_seen_at),
         'active_connections_count': int(getattr(driver, 'active_connections_count', 0) or 0),
         'driver': serialize_driver_chat_driver(driver),

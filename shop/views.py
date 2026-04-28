@@ -1071,28 +1071,58 @@ def _build_driver_branch_label(shop_owner):
 
 
 def _build_driver_status_panel(driver, active_orders_count):
-    is_online = driver.status != 'offline'
-    can_receive_orders = driver.status == 'available'
+    snapshot = driver.get_availability_snapshot(active_orders_count=active_orders_count)
+    is_online = bool(snapshot['presence_online'])
+    can_receive_orders = bool(snapshot['can_receive_orders'])
+    status_value = snapshot['status']
 
-    if driver.status == 'busy':
+    if status_value == 'busy':
         title = 'أنت مشغول الآن'
         subtitle = 'لديك طلبات جارية حتى الآن.'
-    elif is_online:
-        title = 'أنت متصل الآن'
+    elif status_value == 'available':
+        title = 'أنت متاح الآن'
         subtitle = 'جاهز لاستقبال الطلبات الجديدة.'
     else:
-        title = 'أنت غير متصل الآن'
-        subtitle = 'فعّل الاتصال لتبدأ استقبال الطلبات.'
+        title = 'أنت غير متاح الآن'
+        subtitle = 'قم بتفعيل حالتك لاستقبال الطلبات الجديدة.'
 
+    status_display_map = {
+        'available': 'متاح',
+        'busy': 'مشغول',
+        'unavailable': 'غير متاح',
+        'offline': 'غير متصل',
+    }
     return {
+        'presence_online': is_online,
         'is_online': is_online,
+        'availability_enabled': bool(snapshot['availability_enabled']),
         'can_receive_orders': can_receive_orders,
-        'status': driver.status,
-        'status_display': driver.get_status_display(),
+        'status': status_value,
+        'status_display': status_display_map.get(status_value, driver.get_status_display()),
         'active_orders_count': active_orders_count,
+        'reason': snapshot.get('reason'),
         'title': title,
         'subtitle': subtitle,
     }
+
+
+def _sync_driver_availability_status(driver, *, active_orders_count=None, in_delivery_count=None):
+    snapshot = driver.get_availability_snapshot(
+        active_orders_count=active_orders_count,
+        in_delivery_count=in_delivery_count,
+    )
+    update_fields = []
+    if driver.status != snapshot['status']:
+        driver.status = snapshot['status']
+        update_fields.append('status')
+    current_orders_count = int(snapshot['active_orders_count'] or 0)
+    if int(getattr(driver, 'current_orders_count', 0) or 0) != current_orders_count:
+        driver.current_orders_count = current_orders_count
+        update_fields.append('current_orders_count')
+    if update_fields:
+        update_fields.append('updated_at')
+        driver.save(update_fields=update_fields)
+    return snapshot
 
 
 def _serialize_driver_presence_response(driver):
@@ -1330,14 +1360,12 @@ def _respond_to_driver_invitation(request, shop_driver, driver, action, normaliz
     if normalized_phone and driver.phone_number != normalized_phone:
         driver.phone_number = normalized_phone
         driver_update_fields.append('phone_number')
-    if driver.status == 'offline':
-        driver.status = 'available'
-        driver_update_fields.append('status')
     if driver_update_fields:
         driver.save(update_fields=driver_update_fields)
 
     shop_driver.status = 'active'
     shop_driver.save(update_fields=['status'])
+    _sync_driver_availability_status(driver)
     try:
         notify_driver_status_updated(driver)
     except Exception as e:
@@ -1721,9 +1749,10 @@ def staff_delete_view(request, staff_type, staff_id):
             driver=staff_member,
             status='active',
         ).count()
-        if remaining_active_shops_count == 0 and staff_member.status != 'offline':
-            staff_member.status = 'offline'
-            staff_member.save(update_fields=['status', 'updated_at'])
+        if remaining_active_shops_count == 0:
+            staff_member.availability_enabled = False
+            staff_member.save(update_fields=['availability_enabled', 'updated_at'])
+            _sync_driver_availability_status(staff_member)
             try:
                 notify_driver_status_updated(staff_member)
             except Exception as e:
@@ -1771,10 +1800,11 @@ def staff_block_view(request, staff_type, staff_id):
     else:
         active_orders_count = staff_member.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
         if blocked:
-            staff_member.status = 'offline'
-        elif staff_member.status == 'offline':
-            staff_member.status = 'busy' if active_orders_count > 0 else 'available'
-        staff_member.save()
+            staff_member.availability_enabled = False
+            staff_member.save(update_fields=['availability_enabled', 'updated_at'])
+        else:
+            staff_member.save()
+        _sync_driver_availability_status(staff_member, active_orders_count=active_orders_count)
         try:
             notify_driver_status_updated(staff_member)
         except Exception as e:
@@ -1871,6 +1901,11 @@ def driver_dashboard_view(request):
     active_orders_qs = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way'])
     in_delivery_orders_qs = driver.orders.filter(status__in=['preparing', 'on_way'])
     completed_orders_qs = driver.orders.filter(status='delivered')
+    _sync_driver_availability_status(
+        driver,
+        active_orders_count=active_orders_qs.count(),
+        in_delivery_count=in_delivery_orders_qs.count(),
+    )
     pending_invitations_count = ShopDriver.objects.filter(driver=driver, status='pending').count()
     unread_notifications_count = _notification_queryset_for_user(driver).filter(is_read=False).count()
 
@@ -1910,64 +1945,85 @@ def driver_dashboard_view(request):
 @permission_classes([IsDriver])
 def driver_status_view(request):
     """
-    Toggle driver online/offline status from the delivery app.
+    Update driver availability preference from the delivery app.
     PATCH /api/driver/status/
-    Body: { "is_online": true|false } or { "status": "available|offline" }
+    Body:
+    - { "can_receive_orders": true|false }
+    - { "availability": "available|unavailable" }
+    - Legacy: { "is_online": true|false }
     """
     driver = _get_driver_from_request(request)
     if not driver:
         return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
 
     requested_status = request.data.get('status')
+    requested_availability = request.data.get('availability')
+    requested_can_receive_orders = _coerce_bool(request.data.get('can_receive_orders'))
     requested_online = _coerce_bool(request.data.get('is_online'))
 
-    if requested_status is None and requested_online is None:
+    if requested_status is None and requested_availability is None and requested_can_receive_orders is None and requested_online is None:
         return error_response(
             message=t(request, 'invalid_data'),
-            errors={'is_online': [t(request, 'driver_status_or_is_online_is_required')]},
+            errors={'can_receive_orders': [t(request, 'driver_status_or_is_online_is_required')]},
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    if requested_status is not None:
-        target_status = str(requested_status).strip().lower()
-        if target_status not in {'available', 'busy', 'offline'}:
+    target_enabled = None
+    if requested_can_receive_orders is not None:
+        target_enabled = bool(requested_can_receive_orders)
+    elif requested_availability is not None:
+        normalized_availability = str(requested_availability).strip().lower()
+        if normalized_availability not in {'available', 'unavailable', 'offline'}:
             return error_response(
                 message=t(request, 'invalid_driver_status'),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
+        target_enabled = normalized_availability == 'available'
+    elif requested_status is not None:
+        normalized_status = str(requested_status).strip().lower()
+        if normalized_status not in {'available', 'busy', 'unavailable', 'offline'}:
+            return error_response(
+                message=t(request, 'invalid_driver_status'),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        target_enabled = normalized_status in {'available', 'busy'}
     else:
-        target_status = 'available' if requested_online else 'offline'
+        target_enabled = bool(requested_online)
 
     active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
     in_delivery_count = driver.orders.filter(status__in=['preparing', 'on_way']).count()
-
-    if target_status == 'offline' and active_orders_count > 0:
-        return error_response(
-            message=t(request, 'driver_cannot_go_offline_with_active_orders'),
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    new_status = target_status
-    if target_status == 'available' and in_delivery_count > 0:
-        new_status = 'busy'
-    elif target_status == 'busy' and active_orders_count == 0:
-        new_status = 'offline'
-
-    driver.status = new_status
-    driver.save(update_fields=['status', 'updated_at'])
+    if bool(driver.availability_enabled) != bool(target_enabled):
+        driver.availability_enabled = bool(target_enabled)
+        driver.save(update_fields=['availability_enabled', 'updated_at'])
+    snapshot = _sync_driver_availability_status(
+        driver,
+        active_orders_count=active_orders_count,
+        in_delivery_count=in_delivery_count,
+    )
 
     try:
         notify_driver_status_updated(driver)
     except Exception as e:
         print(f"driver_status_updated WebSocket error: {e}")
 
+    status_display_map = {
+        'available': 'متاح',
+        'busy': 'مشغول',
+        'unavailable': 'غير متاح',
+        'offline': 'غير متصل',
+    }
+
     return success_response(
         data={
             'driver_id': driver.id,
-            'status': driver.status,
-            'status_display': driver.get_status_display(),
-            'is_online': driver.status != 'offline',
-            'can_receive_orders': driver.status == 'available',
+            'presence_online': bool(snapshot['presence_online']),
+            'is_online': bool(snapshot['presence_online']),
+            'availability_enabled': bool(snapshot['availability_enabled']),
+            'can_receive_orders': bool(snapshot['can_receive_orders']),
+            'status': snapshot['status'],
+            'status_display': status_display_map.get(snapshot['status'], driver.get_status_display()),
+            'active_orders_count': int(snapshot['active_orders_count'] or 0),
+            'reason': snapshot.get('reason'),
         },
         message=t(request, 'driver_status_updated_successfully'),
         status_code=status.HTTP_200_OK,
@@ -2343,13 +2399,8 @@ def driver_logout_view(request):
     update_fields = ['is_online', 'last_seen_at', 'updated_at']
     driver.is_online = False
     driver.last_seen_at = timezone.now()
-
-    active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
-    if active_orders_count == 0 and driver.status != 'offline':
-        driver.status = 'offline'
-        update_fields.append('status')
-
     driver.save(update_fields=update_fields)
+    _sync_driver_availability_status(driver)
 
     try:
         notify_driver_status_updated(driver)
@@ -2550,6 +2601,7 @@ def driver_order_deliver_view(request, order_id):
             driver_id=order.driver_id,
             order_data=order_data,
         )
+        _sync_driver_availability_status(driver)
         notify_driver_status_updated(driver)
     except Exception as e:
         print(f"driver_order_deliver websocket sync error: {e}")
@@ -2683,6 +2735,7 @@ def driver_order_transfer_view(request, order_id):
             order_data=order_data,
         )
         if old_driver:
+            _sync_driver_availability_status(old_driver)
             notify_driver_status_updated(old_driver)
     except Exception as e:
         print(f"driver_order_transfer WebSocket error: {e}")

@@ -291,30 +291,22 @@ def get_shop_active_driver_ids(shop_owner_id):
 
 
 def driver_can_receive_new_orders(driver):
-    if not driver or getattr(driver, 'status', None) != 'available':
+    if not driver:
         return False
-
-    orders_manager = getattr(driver, 'orders', None)
-    if orders_manager is None or not hasattr(orders_manager, 'filter'):
-        return not bool(getattr(driver, 'active_orders_count', 0))
-
-    return not orders_manager.filter(status__in=DRIVER_ASSIGNED_ORDER_STATUSES, driver_accepted_at__isnull=False).exists()
+    snapshot = driver.get_availability_snapshot()
+    return bool(snapshot.get('can_receive_orders'))
 
 
 def get_shop_receiving_driver_ids(shop_owner_id):
-    return list(
-        Driver.objects
-        .filter(
+    drivers = list(
+        Driver.objects.filter(
             id__in=ShopDriver.objects.filter(
                 shop_owner_id=shop_owner_id,
                 status='active',
             ).values_list('driver_id', flat=True),
-            status='available',
-        )
-        .exclude(orders__status__in=DRIVER_ASSIGNED_ORDER_STATUSES, orders__driver_accepted_at__isnull=False)
-        .values_list('id', flat=True)
-        .distinct()
+        ).distinct()
     )
+    return [driver.id for driver in drivers if driver_can_receive_new_orders(driver)]
 
 
 def get_available_orders_queryset(driver):
