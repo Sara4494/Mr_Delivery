@@ -405,6 +405,7 @@ class DriverSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     vehicle_type_display = serializers.CharField(source='get_vehicle_type_display', read_only=True)
     last_seen_at = serializers.SerializerMethodField()
+    is_online = serializers.SerializerMethodField()
 
     class Meta:
         model = Driver
@@ -421,6 +422,9 @@ class DriverSerializer(serializers.ModelSerializer):
 
     def get_last_seen_at(self, obj):
         return format_utc_iso8601(obj.last_seen_at)
+
+    def get_is_online(self, obj):
+        return obj.status != 'offline'
 
 
 class DriverCreateSerializer(serializers.ModelSerializer):
@@ -457,6 +461,7 @@ class DriverAppSerializer(serializers.ModelSerializer):
     vehicle_type_display = serializers.CharField(source='get_vehicle_type_display', read_only=True)
     active_shops = serializers.SerializerMethodField()
     last_seen_at = serializers.SerializerMethodField()
+    is_online = serializers.SerializerMethodField()
 
     class Meta:
         model = Driver
@@ -489,12 +494,16 @@ class DriverAppSerializer(serializers.ModelSerializer):
     def get_last_seen_at(self, obj):
         return format_utc_iso8601(obj.last_seen_at)
 
+    def get_is_online(self, obj):
+        return obj.status != 'offline'
+
 
 class DriverProfileResponseSerializer(serializers.ModelSerializer):
     """Driver profile payload for the profile and personal-info screens."""
 
     profile_image_url = serializers.SerializerMethodField()
     last_seen_at = serializers.SerializerMethodField()
+    is_online = serializers.SerializerMethodField()
 
     class Meta:
         model = Driver
@@ -516,6 +525,9 @@ class DriverProfileResponseSerializer(serializers.ModelSerializer):
 
     def get_last_seen_at(self, obj):
         return format_utc_iso8601(obj.last_seen_at)
+
+    def get_is_online(self, obj):
+        return obj.status != 'offline'
 
 
 class DriverProfileSerializer(DriverProfileResponseSerializer):
