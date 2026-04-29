@@ -2601,6 +2601,7 @@ def driver_order_deliver_view(request, order_id):
             customer_id=order.customer_id,
             driver_id=order.driver_id,
             order_data=order_data,
+            notify_customer=False,
         )
         _sync_driver_availability_status(driver)
         notify_driver_status_updated(driver)

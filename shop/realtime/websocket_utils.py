@@ -92,12 +92,19 @@ def notify_new_order(shop_owner_id, order_data):
     send_to_group(f'shop_orders_{shop_owner_id}', 'new_order', order_data)
 
 
-def notify_order_update(shop_owner_id, customer_id, driver_id, order_data):
+def notify_order_update(
+    shop_owner_id,
+    customer_id,
+    driver_id,
+    order_data,
+    *,
+    notify_customer=True,
+):
     """إشعار جميع الأطراف بتحديث الطلب"""
     if shop_owner_id:
         send_to_group(f'shop_orders_{shop_owner_id}', 'order_update', order_data)
 
-    if customer_id and order_data.get('id'):
+    if notify_customer and customer_id and order_data.get('id'):
         broadcast_customer_order_changed(
             order_data['id'],
             customer_id=customer_id,
