@@ -33,6 +33,20 @@ class FCMConfigurationError(RuntimeError):
     pass
 
 
+_DRIVER_ORDER_NOTIFICATION_TYPES = {
+    'order',
+    'order_status',
+    'order_assigned',
+    'order_cancelled',
+    'order_update',
+    'new_delivery_order',
+}
+_DRIVER_CHAT_NOTIFICATION_TYPES = {
+    'chat',
+    'chat_message',
+}
+
+
 def resolve_user_identity(user):
     user_type = getattr(user, 'user_type', None)
     user_id = getattr(user, 'id', None)
@@ -371,6 +385,98 @@ def _driver_notification_profile(notification_type):
         },
     }
     return profiles.get(normalized, profiles['general_notification'])
+
+
+def build_driver_inbox_notification_payload(
+    *,
+    notification_type,
+    notification_id,
+    data=None,
+    order_id=None,
+):
+    payload = dict(data or {})
+    normalized_type = str(notification_type or '').strip() or 'general_notification'
+    notification_id_value = str(notification_id)
+    order_id_value = (
+        payload.get('order_id')
+        if payload.get('order_id') not in (None, '')
+        else order_id
+    )
+    order_id_value = str(order_id_value) if order_id_value not in (None, '') else None
+    conversation_id = payload.get('conversation_id') or payload.get('support_conversation_id')
+
+    payload['notification_id'] = notification_id_value
+
+    if normalized_type in _DRIVER_CHAT_NOTIFICATION_TYPES or conversation_id:
+        payload['type'] = 'chat_message'
+        payload['screen'] = 'chat'
+        payload['click_action'] = 'OPEN_CHAT'
+        if conversation_id not in (None, ''):
+            payload['conversation_id'] = str(conversation_id)
+        if order_id_value is not None:
+            payload['order_id'] = order_id_value
+        return payload
+
+    if normalized_type in _DRIVER_ORDER_NOTIFICATION_TYPES or (
+        order_id_value is not None and str(payload.get('screen') or '').strip() == 'order_details'
+    ):
+        payload['type'] = 'order'
+        payload['screen'] = 'order_details'
+        payload['click_action'] = 'OPEN_ORDER'
+        if order_id_value is not None:
+            payload['order_id'] = order_id_value
+        payload.pop('route', None)
+        return payload
+
+    payload['type'] = payload.get('type') or normalized_type
+    payload['screen'] = 'notifications'
+    payload['route'] = '/notifications'
+    payload['click_action'] = 'OPEN_NOTIFICATIONS'
+    return payload
+
+
+def send_driver_notification_from_record(driver, notification):
+    if not driver or not notification:
+        return {
+            'notification': notification,
+            'push': {
+                'tokens_total': 0,
+                'tokens_sent': 0,
+                'tokens_failed': 0,
+                'tokens_invalidated': 0,
+            },
+        }
+
+    payload = build_driver_inbox_notification_payload(
+        notification_type=notification.notification_type,
+        notification_id=notification.id,
+        data=notification.data or {},
+        order_id=notification.order_id,
+    )
+    profile = _driver_notification_profile(notification.notification_type)
+    tag = (
+        str(payload.get('tag')).strip()
+        if str(payload.get('tag') or '').strip()
+        else f"{notification.notification_type}_{notification.id}"
+    )
+
+    return {
+        'notification': notification,
+        'push': send_to_user(
+            driver,
+            title=notification.title,
+            body=notification.message,
+            data=payload,
+            high_priority=profile['high_priority'],
+            channel_id=profile['channel_id'],
+            sound=profile['sound'],
+            ios_sound=profile['ios_sound'],
+            ttl=profile['ttl'],
+            click_action=payload['click_action'],
+            notification_priority=profile['notification_priority'],
+            tag=tag,
+        ),
+    }
 
 
 def _build_android_config(
@@ -1248,7 +1354,7 @@ def _send_driver_push(
             reference_id=reference_id,
             idempotency_key=idempotency_key,
         )
-        payload['notification_id'] = notification.id
+        return send_driver_notification_from_record(driver, notification)
 
     profile = _driver_notification_profile(notification_type)
     return {

@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.fcm_service import (
     _stringify_payload,
+    build_driver_inbox_notification_payload,
     build_incoming_ring_payload,
     send_order_chat_push_fallback,
     send_driver_new_order_notification,
@@ -18,6 +19,7 @@ from shop.fcm_service import (
     send_ring_push_fallback,
 )
 from shop.consumers import _build_ring_dispatch_context
+from shop.views import _attach_notification_to_user
 from shop.fcm_views import (
     fcm_refresh_device_view,
     fcm_register_device_view,
@@ -660,9 +662,11 @@ class DriverNotificationModeTests(TestCase):
         self.assertEqual(notification.notification_type, 'general_notification')
         self.assertEqual(notification.data['screen'], 'notifications')
         sent_payload = mock_send.call_args.kwargs['data']
-        self.assertEqual(sent_payload['notification_id'], notification.id)
+        self.assertEqual(sent_payload['notification_id'], str(notification.id))
         self.assertEqual(sent_payload['screen'], 'notifications')
         self.assertEqual(sent_payload['type'], 'general_notification')
+        self.assertEqual(sent_payload['route'], '/notifications')
+        self.assertEqual(sent_payload['click_action'], 'OPEN_NOTIFICATIONS')
 
     @patch('shop.fcm_service.send_to_user', return_value={'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
     def test_driver_system_notifications_create_independent_read_records_per_driver(self, mock_send):
@@ -698,3 +702,45 @@ class DriverNotificationModeTests(TestCase):
         self.assertEqual(sent_payload['type'], 'chat_message')
         self.assertEqual(sent_payload['screen'], 'chat')
         self.assertEqual(sent_payload['conversation_id'], conversation.public_id)
+
+    @patch('shop.fcm_service.send_to_user', return_value={'tokens_total': 2, 'tokens_sent': 1, 'tokens_failed': 1, 'tokens_invalidated': 1})
+    def test_attach_driver_notification_dispatches_fcm_after_commit(self, mock_send):
+        with self.captureOnCommitCallbacks(execute=True):
+            notification = _attach_notification_to_user(
+                'driver',
+                self.driver,
+                title='Account suspended',
+                message='Suspended by support.',
+                notification_type='account_suspended',
+                data={'type': 'account_suspended'},
+            )
+
+        self.assertIsNotNone(notification)
+        sent_payload = mock_send.call_args.kwargs['data']
+        self.assertEqual(sent_payload['type'], 'account_suspended')
+        self.assertEqual(sent_payload['screen'], 'notifications')
+        self.assertEqual(sent_payload['route'], '/notifications')
+        self.assertEqual(sent_payload['notification_id'], str(notification.id))
+        self.assertEqual(mock_send.call_args.kwargs['click_action'], 'OPEN_NOTIFICATIONS')
+
+    def test_build_driver_inbox_notification_payload_normalizes_order_and_chat(self):
+        order_payload = build_driver_inbox_notification_payload(
+            notification_type='order_status',
+            notification_id=68,
+            data={'order_id': 99},
+        )
+        chat_payload = build_driver_inbox_notification_payload(
+            notification_type='chat',
+            notification_id=69,
+            data={'conversation_id': 'conv-1', 'order_id': 100},
+        )
+
+        self.assertEqual(order_payload['type'], 'order')
+        self.assertEqual(order_payload['screen'], 'order_details')
+        self.assertEqual(order_payload['order_id'], '99')
+        self.assertEqual(order_payload['click_action'], 'OPEN_ORDER')
+        self.assertEqual(chat_payload['type'], 'chat_message')
+        self.assertEqual(chat_payload['screen'], 'chat')
+        self.assertEqual(chat_payload['conversation_id'], 'conv-1')
+        self.assertEqual(chat_payload['order_id'], '100')
+        self.assertEqual(chat_payload['click_action'], 'OPEN_CHAT')

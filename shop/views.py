@@ -4979,7 +4979,14 @@ def _attach_notification_to_user(
                 existing.save(update_fields=updated_fields)
             return existing
 
-    return Notification.objects.create(**payload)
+    notification = Notification.objects.create(**payload)
+
+    if user_type == 'driver':
+        from .fcm.service import send_driver_notification_from_record
+
+        transaction.on_commit(lambda: send_driver_notification_from_record(user, notification))
+
+    return notification
 
 
 def _validate_abuse_report_target(order, reporter, reporter_type, target_type, target_id):
