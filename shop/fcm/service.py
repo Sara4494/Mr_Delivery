@@ -1095,7 +1095,7 @@ def send_push_to_user(
         exclude_tokens=exclude_tokens,
         exclude_device_ids=exclude_device_ids,
     )
-    return _send_push_to_token_records(
+    summary = _send_push_to_token_records(
         token_records,
         title=title,
         body=body,
@@ -1109,6 +1109,8 @@ def send_push_to_user(
         notification_priority=notification_priority,
         tag=tag,
     )
+    summary['users_targeted'] = 1 if token_records else 0
+    return summary
 
 
 def send_to_users(
