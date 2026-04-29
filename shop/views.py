@@ -100,7 +100,7 @@ from user.models import (
     default_work_schedule,
 )
 from user.utils import success_response, error_response, build_message_fields, t, localize_message, build_absolute_file_url
-from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_phone
+from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_email, normalize_phone
 from .websocket_utils import (
     notify_order_update,
     notify_driver_assigned,
@@ -4642,6 +4642,10 @@ def _customer_phone_change_cache_key(customer_id):
     return f"customer_phone_change:{customer_id}"
 
 
+def _customer_profile_otp_email(customer):
+    return normalize_email(getattr(customer, "email", None))
+
+
 def _normalize_order_items(items):
     normalized_items = []
     for item in items or []:
@@ -6783,7 +6787,15 @@ def customer_profile_phone_send_otp_view(request):
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    send_ok, send_msg = otp_send(normalized_phone)
+    email_target = _customer_profile_otp_email(customer)
+    if not email_target:
+        return error_response(
+            message='Customer email is required for OTP verification',
+            errors={'email': ['Customer email is required for OTP verification']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    send_ok, send_msg = otp_send(email_target)
     if not send_ok:
         return error_response(
             message=localize_message(request, send_msg),
@@ -6792,16 +6804,20 @@ def customer_profile_phone_send_otp_view(request):
 
     cache.set(
         _customer_phone_change_cache_key(customer.id),
-        {'phone_number': normalized_phone},
+        {
+            'phone_number': normalized_phone,
+            'email': email_target,
+        },
         CUSTOMER_PHONE_CHANGE_OTP_TTL_SECONDS,
     )
 
     return success_response(
         data={
+            'email': email_target,
             'new_phone_number': normalized_phone,
             'expires_in_seconds': CUSTOMER_PHONE_CHANGE_OTP_TTL_SECONDS,
         },
-        message=t(request, 'phone_number_change_otp_sent_successfully'),
+        message='OTP sent successfully to your email',
         status_code=status.HTTP_200_OK,
     )
 
@@ -6847,6 +6863,14 @@ def customer_profile_phone_verify_otp_view(request):
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    email_target = normalize_email(pending_change.get('email')) or _customer_profile_otp_email(customer)
+    if not email_target:
+        return error_response(
+            message='Customer email is required for OTP verification',
+            errors={'email': ['Customer email is required for OTP verification']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
     phone_variants = CustomerProfileUpdateSerializer._phone_variants(normalized_phone)
     existing_customer = Customer.objects.filter(phone_number__in=phone_variants).exclude(pk=customer.pk)
     if existing_customer.exists():
@@ -6856,7 +6880,7 @@ def customer_profile_phone_verify_otp_view(request):
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    if not otp_verify(normalized_phone, otp_code):
+    if not otp_verify(email_target, otp_code):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED,
