@@ -124,7 +124,7 @@ def notify_driver_assigned(driver_id, order_data):
     send_to_group(f'driver_{driver_id}', 'new_order', order_data)
 
 
-def broadcast_chat_message(order_id, chat_type, message_payload, request=None, base_url=None):
+def broadcast_chat_message(order_id, chat_type, message_payload, request=None, base_url=None, send_push=True):
     """
     إرسال رسالة شات إلى مجموعة الطلب حسب نوع المحادثة.
     chat_type: shop_customer | driver_customer
@@ -151,24 +151,32 @@ def broadcast_chat_message(order_id, chat_type, message_payload, request=None, b
     for group_name in _get_message_target_groups(order, chat_type):
         send_to_group(group_name, 'new_message', notification_payload)
 
-    try:
-        send_order_chat_push_fallback(
-            order.id,
-            chat_type,
-            message_payload,
-            request=request,
-            base_url=base_url,
-        )
-    except Exception as exc:
-        logger.exception('fcm chat fallback failed for order_id=%s chat_type=%s: %s', order.id, chat_type, exc)
+    if send_push:
+        try:
+            send_order_chat_push_fallback(
+                order.id,
+                chat_type,
+                message_payload,
+                request=request,
+                base_url=base_url,
+            )
+        except Exception as exc:
+            logger.exception('fcm chat fallback failed for order_id=%s chat_type=%s: %s', order.id, chat_type, exc)
 
 
-def broadcast_chat_message_to_order(order_id, message_payload, request=None, base_url=None):
+def broadcast_chat_message_to_order(order_id, message_payload, request=None, base_url=None, send_push=True):
     """
     إرسال رسالة شات إلى مجموعة طلب (لظهورها فوراً عند العميل والمحل).
     message_payload: dict مثل {'id', 'sender_type', 'sender_name', 'message_type', 'content', 'created_at', ...}
     """
-    broadcast_chat_message(order_id, 'shop_customer', message_payload, request=request, base_url=base_url)
+    broadcast_chat_message(
+        order_id,
+        'shop_customer',
+        message_payload,
+        request=request,
+        base_url=base_url,
+        send_push=send_push,
+    )
 
 
 def broadcast_chat_message_to_customer(order_id, chat_type, message_payload, request=None, base_url=None):

@@ -4735,7 +4735,12 @@ def _notify_shop_about_driver_order_action(order, driver, action, request=None, 
             message_type='text',
             content=content,
         )
-        broadcast_chat_message_to_order(order.id, _chat_message_payload(msg, request=request), request=request)
+        broadcast_chat_message_to_order(
+            order.id,
+            _chat_message_payload(msg, request=request),
+            request=request,
+            send_push=False,
+        )
     except Exception as exc:
         print(f"driver action chat message error: {exc}")
 
