@@ -472,6 +472,12 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
     async def handle_driver_chat_call_cancel(self, data, request_id=None):
         await self._finish_call(data.get('call_id'), 'cancelled', request_id=request_id)
 
+    async def handle_driver_chat_call_accept(self, data, request_id=None):
+        await self._respond_to_call(data.get('call_id'), 'accepted', request_id=request_id)
+
+    async def handle_driver_chat_call_reject(self, data, request_id=None):
+        await self._respond_to_call(data.get('call_id'), 'rejected', request_id=request_id, reason='busy')
+
     async def handle_driver_chat_call_end(self, data, request_id=None):
         await self._finish_call(data.get('call_id'), 'ended', request_id=request_id)
 
@@ -481,6 +487,15 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
             await self.send_error('CALL_NOT_FOUND', 'المكالمة غير موجودة', request_id=request_id)
             return
         await self._update_call_status(call, status_value=status_value)
+        self._cancel_timeout(call.public_id)
+        await self.send_ack(request_id, data={'call_id': call.public_id, 'status': status_value})
+
+    async def _respond_to_call(self, call_id, status_value, request_id=None, reason=None):
+        call = await self._get_call(call_id)
+        if not call:
+            await self.send_error('CALL_NOT_FOUND', 'المكالمة غير موجودة', request_id=request_id)
+            return
+        await self._update_call_status(call, status_value=status_value, reason=reason)
         self._cancel_timeout(call.public_id)
         await self.send_ack(request_id, data={'call_id': call.public_id, 'status': status_value})
 
@@ -711,6 +726,18 @@ class DriverChatsDriverConsumer(BaseDriverChatConsumer):
             scope=getattr(self, 'scope', None),
             base_url=getattr(self, 'base_url', None),
         )
+
+    async def handle_driver_chat_call_start(self, data, request_id=None):
+        conversation = await self._require_conversation(data.get('conversation_id'), request_id=request_id)
+        if not conversation:
+            return
+        call = await self._start_call(conversation)
+        self._schedule_timeout(call.public_id)
+        await self.send_ack(request_id, data={'call_id': call.public_id, 'conversation_id': conversation.public_id})
+
+    @database_sync_to_async
+    def _start_call(self, conversation):
+        return start_call(conversation=conversation, initiated_by='driver')
 
     async def handle_driver_chat_call_accept(self, data, request_id=None):
         await self._respond_to_call(data.get('call_id'), 'accepted', request_id=request_id)
