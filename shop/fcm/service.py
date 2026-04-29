@@ -357,7 +357,7 @@ def _driver_notification_profile(notification_type):
             'ios_sound': order_ios_sound,
             'high_priority': True,
             'ttl': '60s',
-            'notification_priority': 'PRIORITY_MAX',
+            'notification_priority': 'max',
         },
         'store_invite': {
             'channel_id': general_channel,
@@ -365,7 +365,7 @@ def _driver_notification_profile(notification_type):
             'ios_sound': default_sound,
             'high_priority': True,
             'ttl': '3600s',
-            'notification_priority': 'PRIORITY_HIGH',
+            'notification_priority': 'high',
         },
         'general_notification': {
             'channel_id': general_channel,
@@ -373,7 +373,7 @@ def _driver_notification_profile(notification_type):
             'ios_sound': default_sound,
             'high_priority': False,
             'ttl': '86400s',
-            'notification_priority': 'PRIORITY_DEFAULT',
+            'notification_priority': 'default',
         },
         'order_update': {
             'channel_id': general_channel,
@@ -381,7 +381,7 @@ def _driver_notification_profile(notification_type):
             'ios_sound': default_sound,
             'high_priority': True,
             'ttl': '3600s',
-            'notification_priority': 'PRIORITY_HIGH',
+            'notification_priority': 'high',
         },
     }
     return profiles.get(normalized, profiles['general_notification'])
