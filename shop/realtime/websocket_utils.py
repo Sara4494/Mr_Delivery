@@ -190,14 +190,14 @@ def broadcast_chat_message_to_customer(order_id, chat_type, message_payload, req
         request=request,
         base_url=base_url,
     )
-    if order.customer_id and chat_type == 'shop_customer':
+    if order.customer_id and chat_type in {'shop_customer', 'driver_customer'}:
         broadcast_customer_order_changed(
             order.id,
             customer_id=order.customer_id,
             shop_owner_id=order.shop_owner_id,
             include_order=True,
             include_shop=True,
-            include_on_way=False,
+            include_on_way=(chat_type == 'driver_customer'),
             include_history=True,
             base_url=base_url,
         )

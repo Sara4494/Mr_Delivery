@@ -2256,15 +2256,15 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         payload = event.get('data') or {}
         chat_type = payload.get('chat_type')
         order_id = self._extract_order_id(payload)
-        if chat_type != 'shop_customer' or not order_id:
+        if chat_type not in {'shop_customer', 'driver_customer'} or not order_id:
             return
         await self.emit_delta_events(
             await self.get_order_delta_events(
                 order_id,
-                include_order=True,
-                include_shop=True,
-                include_on_way=False,
-                include_history=True,
+                include_order=(chat_type == 'shop_customer'),
+                include_shop=(chat_type == 'shop_customer'),
+                include_on_way=(chat_type == 'driver_customer'),
+                include_history=(chat_type == 'shop_customer'),
             )
         )
 

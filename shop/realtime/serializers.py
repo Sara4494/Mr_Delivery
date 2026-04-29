@@ -39,7 +39,10 @@ def is_customer_active_order(order):
 
 
 def is_customer_on_way_order(order):
-    return order.status in CUSTOMER_ON_WAY_ORDER_STATUSES
+    return (
+        order.status in CUSTOMER_ON_WAY_ORDER_STATUSES
+        and has_customer_visible_driver_chat(order)
+    )
 
 
 def get_order_shop_messages(order):

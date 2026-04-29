@@ -88,6 +88,14 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         refresh['user_type'] = 'shop_owner'
         return str(refresh.access_token)
 
+    def _driver_access_token(self, driver=None):
+        driver = driver or self.driver
+        refresh = RefreshToken()
+        refresh['driver_id'] = driver.id
+        refresh['phone_number'] = driver.phone_number
+        refresh['user_type'] = 'driver'
+        return str(refresh.access_token)
+
     def _next_order_number(self):
         return f'OD{Order.objects.count() + 1:06d}'
 
@@ -267,6 +275,17 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         await communicator.receive_json_from()
         return communicator
 
+    async def _connect_order_chat_as_driver(self, order, chat_type='driver_customer'):
+        communicator = WebsocketCommunicator(
+            self.application,
+            f'/ws/chat/order/{order.id}/?token={self._driver_access_token()}&chat_type={chat_type}&lang=ar',
+        )
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+        await communicator.receive_json_from()
+        await communicator.receive_json_from()
+        return communicator
+
     async def _connect_support_chat_as_shop(self, conversation):
         communicator = WebsocketCommunicator(
             self.application,
@@ -316,7 +335,8 @@ class CustomerAppRealtimeTests(TransactionTestCase):
             on_way_order.save(update_fields=['driver_accepted_at', 'updated_at'])
             self._create_order_message(
                 on_way_order,
-                sender_type='shop_owner',
+                sender_type='driver',
+                chat_type='driver_customer',
                 content='المندوب في الطريق',
                 is_read=False,
                 created_at=base_time + timedelta(minutes=3),
@@ -539,7 +559,7 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
         async_to_sync(run)()
 
-    def test_order_enters_on_way_pushes_on_way_upsert(self):
+    def test_order_enters_on_way_without_driver_message_pushes_on_way_remove(self):
         async def run():
             order = self._create_order(status='new')
             customer_socket, _ = await self._connect_customer_socket()
@@ -558,19 +578,16 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
                 events = await self._receive_until_types(
                     customer_socket,
-                    {'order_upsert', 'on_way_upsert', 'order_history_entry_upsert'},
+                    {'order_upsert', 'on_way_remove', 'order_history_entry_upsert'},
                 )
-                on_way_event = next(event for event in events if event['type'] == 'on_way_upsert')
+                on_way_event = next(event for event in events if event['type'] == 'on_way_remove')
                 self.assertEqual(on_way_event['data']['order_id'], order.id)
-                self.assertEqual(on_way_event['data']['driver_id'], self.driver.id)
-                self.assertIsNone(on_way_event['data']['driver_name'])
-                self.assertIsNone(on_way_event['data']['chat'])
             finally:
                 await customer_socket.disconnect()
 
         async_to_sync(run)()
 
-    def test_accepted_order_on_way_does_not_show_driver_before_driver_message(self):
+    def test_accepted_order_on_way_stays_hidden_before_driver_message(self):
         async def run():
             order = self._create_order(status='confirmed', driver=self.driver)
             order.driver_accepted_at = timezone.now()
@@ -591,17 +608,48 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
                 events = await self._receive_until_types(
                     customer_socket,
-                    {'order_upsert', 'on_way_upsert', 'order_history_entry_upsert'},
+                    {'order_upsert', 'on_way_remove', 'order_history_entry_upsert'},
                 )
-                on_way_event = next(event for event in events if event['type'] == 'on_way_upsert')
-                self.assertIsNone(on_way_event['data']['driver_name'])
-                self.assertIsNone(on_way_event['data']['chat'])
+                on_way_event = next(event for event in events if event['type'] == 'on_way_remove')
+                self.assertEqual(on_way_event['data']['order_id'], order.id)
             finally:
                 await customer_socket.disconnect()
 
         async_to_sync(run)()
 
-    def test_driver_message_makes_driver_visible_in_on_way(self):
+    def test_first_driver_message_pushes_on_way_upsert(self):
+        async def run():
+            order = self._create_order(status='on_way', driver=self.driver)
+            order.driver_accepted_at = timezone.now()
+            order.save(update_fields=['driver_accepted_at', 'updated_at'])
+
+            customer_socket, _ = await self._connect_customer_socket()
+            driver_chat = await self._connect_order_chat_as_driver(order)
+            try:
+                await driver_chat.send_json_to(
+                    {
+                        'type': 'send_message',
+                        'message_type': 'text',
+                        'content': 'Ø£Ù†Ø§ ÙÙŠ Ø§Ù„Ø·Ø±ÙŠÙ‚',
+                    }
+                )
+                events = await self._receive_until_types(
+                    customer_socket,
+                    {'on_way_upsert'},
+                )
+                on_way_event = next(event for event in events if event['type'] == 'on_way_upsert')
+                self.assertEqual(on_way_event['data']['order_id'], order.id)
+                self.assertEqual(on_way_event['data']['driver_name'], self.driver.name)
+                self.assertIsNotNone(on_way_event['data']['chat'])
+                self.assertTrue(on_way_event['data']['chat']['can_open'])
+                self.assertEqual(on_way_event['data']['chat']['chat_type'], 'driver_customer')
+            finally:
+                await driver_chat.disconnect()
+                await customer_socket.disconnect()
+
+        async_to_sync(run)()
+
+    def test_driver_message_makes_driver_visible_in_on_way_snapshot(self):
         async def run():
             order = self._create_order(status='on_way', driver=self.driver)
             order.driver_accepted_at = timezone.now()
