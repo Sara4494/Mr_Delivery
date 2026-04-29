@@ -681,6 +681,49 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
         async_to_sync(run)()
 
+    def test_on_way_snapshot_returns_latest_driver_activity_first(self):
+        async def run():
+            base_time = timezone.now() - timedelta(hours=1)
+            older_order = self._create_order(
+                status='on_way',
+                driver=self.driver,
+                created_at=base_time,
+            )
+            older_order.driver_accepted_at = base_time + timedelta(minutes=1)
+            older_order.save(update_fields=['driver_accepted_at', 'updated_at'])
+            self._create_order_message(
+                older_order,
+                sender_type='driver',
+                chat_type='driver_customer',
+                content='رسالة أقدم',
+                created_at=base_time + timedelta(minutes=5),
+            )
+
+            newer_order = self._create_order(
+                status='on_way',
+                driver=self.driver,
+                created_at=base_time + timedelta(minutes=2),
+            )
+            newer_order.driver_accepted_at = base_time + timedelta(minutes=3)
+            newer_order.save(update_fields=['driver_accepted_at', 'updated_at'])
+            self._create_order_message(
+                newer_order,
+                sender_type='driver',
+                chat_type='driver_customer',
+                content='رسالة أحدث',
+                created_at=base_time + timedelta(minutes=15),
+            )
+
+            communicator, initial_messages = await self._connect_customer_socket()
+            try:
+                on_way_snapshot = initial_messages[3]
+                result_ids = [row['order_id'] for row in on_way_snapshot['data']['results']]
+                self.assertEqual(result_ids[:2], [newer_order.id, older_order.id])
+            finally:
+                await communicator.disconnect()
+
+        async_to_sync(run)()
+
     def test_order_leaves_on_way_pushes_on_way_remove(self):
         async def run():
             order = self._create_order(status='confirmed', driver=self.driver)

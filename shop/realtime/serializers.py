@@ -98,6 +98,11 @@ def get_order_driver_messages(order):
     )
 
 
+def get_latest_order_driver_message(order):
+    messages = get_order_driver_messages(order)
+    return messages[0] if messages else None
+
+
 def has_customer_visible_driver_chat(order):
     return any(
         str(getattr(message, 'sender_type', '')).strip() == 'driver'
@@ -142,6 +147,9 @@ def get_order_sort_key(order):
 def get_on_way_sort_key(order):
     candidates = [order.updated_at, order.created_at]
     driver = getattr(order, 'driver', None)
+    latest_driver_message = get_latest_order_driver_message(order)
+    if latest_driver_message and latest_driver_message.created_at:
+        candidates.append(latest_driver_message.created_at)
     if driver and driver.location_updated_at:
         candidates.append(driver.location_updated_at)
     return max(candidate for candidate in candidates if candidate is not None)
