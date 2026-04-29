@@ -580,7 +580,14 @@ def broadcast_conversation_snapshot(conversation: DriverChatConversation, *, req
     return serialized
 
 
-def broadcast_message_created(message: DriverChatMessage, *, request=None, scope=None, base_url=None):
+def broadcast_message_created(
+    message: DriverChatMessage,
+    *,
+    request=None,
+    scope=None,
+    base_url=None,
+    send_push=True,
+):
     serialized = serialize_driver_chat_message(message, request=request, scope=scope, base_url=base_url)
     publish_driver_chat_event(
         shop_owner_id=message.conversation.shop_owner_id,
@@ -592,21 +599,22 @@ def broadcast_message_created(message: DriverChatMessage, *, request=None, scope
         conversation=message.conversation,
         driver=message.conversation.driver,
     )
-    try:
-        from ..fcm.service import send_driver_chat_push_fallback
-        send_driver_chat_push_fallback(
-            message.conversation,
-            serialized,
-            request=request,
-            scope=scope,
-            base_url=base_url,
-        )
-    except Exception:
-        logger.exception(
-            'fcm driver chat fallback failed conversation_id=%s driver_id=%s',
-            message.conversation.public_id,
-            message.conversation.driver_id,
-        )
+    if send_push:
+        try:
+            from ..fcm.service import send_driver_chat_push_fallback
+            send_driver_chat_push_fallback(
+                message.conversation,
+                serialized,
+                request=request,
+                scope=scope,
+                base_url=base_url,
+            )
+        except Exception:
+            logger.exception(
+                'fcm driver chat fallback failed conversation_id=%s driver_id=%s',
+                message.conversation.public_id,
+                message.conversation.driver_id,
+            )
     return serialized
 
 
@@ -958,7 +966,13 @@ def driver_accept_order(*, conversation: DriverChatConversation, conversation_or
         },
     )
     broadcast_order_updated(conversation_order)
-    broadcast_message_created(system_message, request=request, scope=scope, base_url=base_url)
+    broadcast_message_created(
+        system_message,
+        request=request,
+        scope=scope,
+        base_url=base_url,
+        send_push=False,
+    )
     broadcast_conversation_snapshot(conversation, request=request, scope=scope, base_url=base_url)
     broadcast_driver_presence_update(conversation.driver_id)
     _log_sensitive('accept_order', order_id=order.id, conversation_id=conversation.public_id, driver_id=conversation.driver_id)
