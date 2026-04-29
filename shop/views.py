@@ -6795,7 +6795,7 @@ def customer_profile_phone_send_otp_view(request):
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    send_ok, send_msg = otp_send(email_target)
+    send_ok, send_msg = otp_send(email_target, allow_fixed_code=False)
     if not send_ok:
         return error_response(
             message=localize_message(request, send_msg),
@@ -6880,7 +6880,7 @@ def customer_profile_phone_verify_otp_view(request):
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    if not otp_verify(email_target, otp_code):
+    if not otp_verify(email_target, otp_code, allow_fixed_code=False):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED,

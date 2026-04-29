@@ -112,7 +112,7 @@ def _get_fixed_otp_code():
     return (getattr(settings, "FIXED_OTP_CODE", None) or "").strip() or None
 
 
-def send_otp(target: str) -> tuple[bool, str]:
+def send_otp(target: str, *, allow_fixed_code: bool = True) -> tuple[bool, str]:
     normalized = normalize_otp_target(target)
     if not normalized:
         return False, "بيانات الإرسال غير صالحة"
@@ -123,7 +123,7 @@ def send_otp(target: str) -> tuple[bool, str]:
     elif len(normalized) < 12:
         return False, "رقم الهاتف غير صالح"
 
-    fixed = _get_fixed_otp_code()
+    fixed = _get_fixed_otp_code() if allow_fixed_code else None
     if fixed:
         cache.set(get_otp_cache_key(normalized), fixed, OTP_EXPIRY_SECONDS)
         cache.set(get_otp_cooldown_key(normalized), True, OTP_RESEND_COOLDOWN)
@@ -145,13 +145,13 @@ def send_otp(target: str) -> tuple[bool, str]:
     return success, msg
 
 
-def verify_otp(target: str, otp: str) -> bool:
+def verify_otp(target: str, otp: str, *, allow_fixed_code: bool = True) -> bool:
     normalized = normalize_otp_target(target)
     if not normalized or not otp:
         return False
 
     code = str(otp).strip()
-    fixed = _get_fixed_otp_code()
+    fixed = _get_fixed_otp_code() if allow_fixed_code else None
     if fixed and code == fixed:
         cache.delete(get_otp_cache_key(normalized))
         return True

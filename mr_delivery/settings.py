@@ -354,7 +354,7 @@ REST_FRAMEWORK = {
 
 # OTP: رمز ثابت حتى الاشتراك في خدمة إرسال (واتساب/UltraMsg)
 # إذا كان معيّناً يُستخدم هذا الرمز لجميع الطلبات ولا يُرسل أي OTP فعلي
-FIXED_OTP_CODE = os.environ.get("FIXED_OTP_CODE", "123456").strip()
+FIXED_OTP_CODE = os.environ.get("FIXED_OTP_CODE", "").strip()
 
 # UltraMsg (WhatsApp OTP) - يُستخدم فقط عندما FIXED_OTP_CODE فارغ
 ULTRAMSG_INSTANCE = os.environ.get("ULTRAMSG_INSTANCE", "instance160549")

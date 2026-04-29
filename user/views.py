@@ -4271,7 +4271,7 @@ def send_otp_view(request):
                 status_code=status.HTTP_404_NOT_FOUND
             )
 
-    success, msg = otp_send(target)
+    success, msg = otp_send(target, allow_fixed_code=(role != 'customer'))
     if success:
         return success_response(
             message=t(
@@ -4359,7 +4359,7 @@ def verify_otp_login_view(request):
                 status_code=status.HTTP_403_FORBIDDEN
             )
 
-    if not otp_verify(target, otp_code):
+    if not otp_verify(target, otp_code, allow_fixed_code=not bool(email)):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED
@@ -4442,7 +4442,7 @@ def reset_password_view(request):
             status_code=status.HTTP_400_BAD_REQUEST
         )
 
-    if not otp_verify(target, otp_code):
+    if not otp_verify(target, otp_code, allow_fixed_code=(role != 'customer')):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED
