@@ -17,7 +17,7 @@ from ..models import Customer, Driver, Employee, FCMDeviceToken, Notification, O
 
 logger = logging.getLogger(__name__)
 
-_FIREBASE_APP = None
+_FIREBASE_APPS = {}
 _FIREBASE_LOCK = threading.Lock()
 _UNSET = object()
 _FCM_RESERVED_DATA_KEYS = {
@@ -44,6 +44,12 @@ _DRIVER_ORDER_NOTIFICATION_TYPES = {
 _DRIVER_CHAT_NOTIFICATION_TYPES = {
     'chat',
     'chat_message',
+}
+_FCM_USER_TYPE_APP_PROFILE = {
+    'driver': 'driver',
+    'customer': 'customer',
+    'shop_owner': 'customer',
+    'employee': 'customer',
 }
 
 
@@ -180,24 +186,52 @@ def _firebase_modules():
     return firebase_admin, credentials, messaging
 
 
-def _firebase_app():
-    global _FIREBASE_APP
+def _firebase_app_profile(user_type=None):
+    normalized_user_type = str(user_type or '').strip().lower()
+    return _FCM_USER_TYPE_APP_PROFILE.get(normalized_user_type, 'default')
 
+
+def _firebase_app_settings(profile):
+    normalized_profile = str(profile or 'default').strip().lower() or 'default'
+    if normalized_profile == 'driver':
+        return {
+            'service_account_json': str(getattr(settings, 'FCM_DRIVER_SERVICE_ACCOUNT_JSON', '') or '').strip(),
+            'service_account_file': str(getattr(settings, 'FCM_DRIVER_SERVICE_ACCOUNT_FILE', '') or '').strip(),
+            'project_id': str(getattr(settings, 'FCM_DRIVER_PROJECT_ID', '') or '').strip(),
+        }
+    if normalized_profile == 'customer':
+        return {
+            'service_account_json': str(getattr(settings, 'FCM_CUSTOMER_SERVICE_ACCOUNT_JSON', '') or '').strip(),
+            'service_account_file': str(getattr(settings, 'FCM_CUSTOMER_SERVICE_ACCOUNT_FILE', '') or '').strip(),
+            'project_id': str(getattr(settings, 'FCM_CUSTOMER_PROJECT_ID', '') or '').strip(),
+        }
+    return {
+        'service_account_json': str(getattr(settings, 'FCM_SERVICE_ACCOUNT_JSON', '') or '').strip(),
+        'service_account_file': str(getattr(settings, 'FCM_SERVICE_ACCOUNT_FILE', '') or '').strip(),
+        'project_id': str(getattr(settings, 'FCM_PROJECT_ID', '') or '').strip(),
+    }
+
+
+def _firebase_app(user_type=None):
     if not getattr(settings, 'FCM_ENABLED', False):
         raise FCMConfigurationError('FCM is disabled.')
 
-    if _FIREBASE_APP is not None:
-        return _FIREBASE_APP
+    profile = _firebase_app_profile(user_type)
+    existing_app = _FIREBASE_APPS.get(profile)
+    if existing_app is not None:
+        return existing_app
 
     firebase_admin, credentials, _ = _firebase_modules()
 
     with _FIREBASE_LOCK:
-        if _FIREBASE_APP is not None:
-            return _FIREBASE_APP
+        existing_app = _FIREBASE_APPS.get(profile)
+        if existing_app is not None:
+            return existing_app
 
-        service_account_json = str(getattr(settings, 'FCM_SERVICE_ACCOUNT_JSON', '') or '').strip()
-        service_account_file = str(getattr(settings, 'FCM_SERVICE_ACCOUNT_FILE', '') or '').strip()
-        project_id = str(getattr(settings, 'FCM_PROJECT_ID', '') or '').strip()
+        app_settings = _firebase_app_settings(profile)
+        service_account_json = app_settings['service_account_json']
+        service_account_file = app_settings['service_account_file']
+        project_id = app_settings['project_id']
 
         if service_account_json:
             try:
@@ -208,19 +242,22 @@ def _firebase_app():
         elif service_account_file:
             path = Path(service_account_file)
             if not path.exists():
-                raise FCMConfigurationError(f'FCM service account file not found: {service_account_file}')
+                raise FCMConfigurationError(
+                    f'FCM service account file not found for profile "{profile}": {service_account_file}'
+                )
             credential = credentials.Certificate(str(path))
         else:
             raise FCMConfigurationError(
-                'FCM is enabled but neither FCM_SERVICE_ACCOUNT_FILE nor FCM_SERVICE_ACCOUNT_JSON is configured.'
+                f'FCM is enabled but no service account is configured for profile "{profile}".'
             )
 
         options = {}
         if project_id:
             options['projectId'] = project_id
 
-        _FIREBASE_APP = firebase_admin.initialize_app(credential, options or None, name='mr_delivery_fcm')
-        return _FIREBASE_APP
+        app_name = f'mr_delivery_fcm_{profile}'
+        _FIREBASE_APPS[profile] = firebase_admin.initialize_app(credential, options or None, name=app_name)
+        return _FIREBASE_APPS[profile]
 
 
 def register_device_token(*, user, device_id, platform, fcm_token, app_version=_UNSET, action='register'):
@@ -234,10 +271,7 @@ def register_device_token(*, user, device_id, platform, fcm_token, app_version=_
             user_type=user_type,
             user_id=user_id,
             device_id=device_id,
-        ).update(
-            is_active=False,
-            updated_at=now,
-        )
+        ).delete()
 
         token_record, created = FCMDeviceToken.objects.select_for_update().get_or_create(
             user_type=user_type,
@@ -289,7 +323,6 @@ def register_device_token(*, user, device_id, platform, fcm_token, app_version=_
 
 def unregister_device_token(*, user, device_id=None, fcm_token=None):
     user_type, user_id = resolve_user_identity(user)
-    now = timezone.now()
 
     queryset = FCMDeviceToken.objects.filter(
         user_type=user_type,
@@ -303,10 +336,7 @@ def unregister_device_token(*, user, device_id=None, fcm_token=None):
 
     affected = queryset.count()
     if affected:
-        queryset.update(
-            is_active=False,
-            updated_at=now,
-        )
+        queryset.delete()
 
     logger.info(
         'fcm.token.unregister user_type=%s user_id=%s device_id=%s token=%s affected=%s',
@@ -561,6 +591,7 @@ def _build_message_kwargs(
 def _send_push_to_fcm_token(
     *,
     token,
+    user_type=None,
     title,
     body,
     data,
@@ -574,7 +605,7 @@ def _send_push_to_fcm_token(
     tag=None,
 ):
     _, _, messaging = _firebase_modules()
-    app = _firebase_app()
+    app = _firebase_app(user_type=user_type)
     message = messaging.Message(
         token=token,
         **_build_message_kwargs(
@@ -624,10 +655,7 @@ def _is_invalid_token_error(exc):
 
 
 def _deactivate_token_record(token_record):
-    FCMDeviceToken.objects.filter(pk=token_record.pk).update(
-        is_active=False,
-        updated_at=timezone.now(),
-    )
+    FCMDeviceToken.objects.filter(pk=token_record.pk).delete()
 
 
 def _normalize_excluded(values):
@@ -674,6 +702,7 @@ def send_push_to_token_record(
     try:
         response_id = _send_push_to_fcm_token(
             token=token_record.fcm_token,
+            user_type=token_record.user_type,
             title=title,
             body=body,
             data=data,
@@ -765,7 +794,8 @@ def _send_push_to_token_records(
 
     try:
         firebase_admin, _, messaging = _firebase_modules()
-        app = _firebase_app()
+        primary_user_type = token_records[0].user_type if token_records else None
+        app = _firebase_app(user_type=primary_user_type)
     except FCMConfigurationError as exc:
         logger.warning('fcm.send.skipped reason=%s', exc)
         summary['tokens_failed'] = summary['tokens_total']
@@ -969,6 +999,7 @@ def send_push_to_token(
     try:
         response_id = _send_push_to_fcm_token(
             token=fcm_token,
+            user_type=token_record.user_type if token_record else None,
             title=title,
             body=body,
             data=data,

@@ -308,9 +308,28 @@ FCM_SERVICE_ACCOUNT_FILE = os.environ.get(
 ).strip()
 FCM_SERVICE_ACCOUNT_JSON = os.environ.get("FCM_SERVICE_ACCOUNT_JSON", "").strip()
 FCM_PROJECT_ID = os.environ.get("FCM_PROJECT_ID", "").strip()
+FCM_DRIVER_SERVICE_ACCOUNT_FILE = os.environ.get(
+    "FCM_DRIVER_SERVICE_ACCOUNT_FILE",
+    str(BASE_DIR / "zaygo-captains-firebase-adminsdk-fbsvc-54aab8b36c.json"),
+).strip()
+FCM_DRIVER_SERVICE_ACCOUNT_JSON = os.environ.get("FCM_DRIVER_SERVICE_ACCOUNT_JSON", "").strip()
+FCM_DRIVER_PROJECT_ID = os.environ.get("FCM_DRIVER_PROJECT_ID", "").strip()
+FCM_CUSTOMER_SERVICE_ACCOUNT_FILE = os.environ.get(
+    "FCM_CUSTOMER_SERVICE_ACCOUNT_FILE",
+    str(BASE_DIR / "zaygo-user-firebase-adminsdk-fbsvc-fc21d26812.json"),
+).strip()
+FCM_CUSTOMER_SERVICE_ACCOUNT_JSON = os.environ.get("FCM_CUSTOMER_SERVICE_ACCOUNT_JSON", "").strip()
+FCM_CUSTOMER_PROJECT_ID = os.environ.get("FCM_CUSTOMER_PROJECT_ID", "").strip()
 FCM_ENABLED = _env_bool(
     "FCM_ENABLED",
-    default=bool(FCM_SERVICE_ACCOUNT_FILE or FCM_SERVICE_ACCOUNT_JSON),
+    default=bool(
+        FCM_SERVICE_ACCOUNT_FILE
+        or FCM_SERVICE_ACCOUNT_JSON
+        or FCM_DRIVER_SERVICE_ACCOUNT_FILE
+        or FCM_DRIVER_SERVICE_ACCOUNT_JSON
+        or FCM_CUSTOMER_SERVICE_ACCOUNT_FILE
+        or FCM_CUSTOMER_SERVICE_ACCOUNT_JSON
+    ),
 )
 FCM_RING_CHANNEL_ID = os.environ.get("FCM_RING_CHANNEL_ID", "incoming_ring_channel").strip() or "incoming_ring_channel"
 FCM_CHAT_CHANNEL_ID = os.environ.get("FCM_CHAT_CHANNEL_ID", "chat_channel").strip() or "chat_channel"

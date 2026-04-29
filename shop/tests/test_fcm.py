@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
+from django.test import override_settings
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -219,7 +220,7 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(created_token.app_version, '4.0.0')
         self.assertTrue(created_token.is_active)
 
-    def test_register_endpoint_deactivates_same_token_for_other_user(self):
+    def test_register_endpoint_deletes_same_token_for_other_user(self):
         other_user_token = FCMDeviceToken.objects.create(
             user_type='driver',
             user_id=self.driver.id,
@@ -250,8 +251,7 @@ class FCMDeviceApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        other_user_token.refresh_from_db()
-        self.assertFalse(other_user_token.is_active)
+        self.assertFalse(FCMDeviceToken.objects.filter(pk=other_user_token.pk).exists())
         current_user_token = FCMDeviceToken.objects.get(
             user_type='customer',
             user_id=self.customer.id,
@@ -290,7 +290,7 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(token.fcm_token, 'new-body-token')
         self.assertEqual(token.app_version, '3.0.0')
 
-    def test_unregister_endpoint_only_deactivates_current_users_tokens(self):
+    def test_unregister_endpoint_only_deletes_current_users_tokens(self):
         own_token = FCMDeviceToken.objects.create(
             user_type='customer',
             user_id=self.customer.id,
@@ -319,9 +319,8 @@ class FCMDeviceApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        own_token.refresh_from_db()
         other_token.refresh_from_db()
-        self.assertFalse(own_token.is_active)
+        self.assertFalse(FCMDeviceToken.objects.filter(pk=own_token.pk).exists())
         self.assertTrue(other_token.is_active)
 
     def test_unregister_endpoint_accepts_access_token_in_body(self):
@@ -346,8 +345,7 @@ class FCMDeviceApiTests(TestCase):
         response = fcm_unregister_device_view(request)
 
         self.assertEqual(response.status_code, 200)
-        own_token.refresh_from_db()
-        self.assertFalse(own_token.is_active)
+        self.assertFalse(FCMDeviceToken.objects.filter(pk=own_token.pk).exists())
 
 
 class FCMFallbackDispatchTests(TestCase):
@@ -560,7 +558,7 @@ class FCMServiceTests(TestCase):
         self.assertEqual(mock_send.call_count, 2)
 
     @patch('shop.fcm_service._send_push_to_fcm_token', side_effect=Exception('UNREGISTERED'))
-    def test_send_push_to_token_record_deactivates_invalid_tokens(self, mock_send):
+    def test_send_push_to_token_record_deletes_invalid_tokens(self, mock_send):
         token_record = FCMDeviceToken.objects.create(
             user_type='customer',
             user_id=self.customer.id,
@@ -581,8 +579,7 @@ class FCMServiceTests(TestCase):
 
         self.assertFalse(result['success'])
         self.assertTrue(result['invalid_token'])
-        token_record.refresh_from_db()
-        self.assertFalse(token_record.is_active)
+        self.assertFalse(FCMDeviceToken.objects.filter(pk=token_record.pk).exists())
 
     def test_stringify_payload_renames_reserved_fcm_keys(self):
         payload = _stringify_payload(
@@ -597,6 +594,56 @@ class FCMServiceTests(TestCase):
         self.assertEqual(payload['type'], 'chat_message')
         self.assertEqual(payload['is_urgent'], 'true')
         self.assertNotIn('message_type', payload)
+
+    @override_settings(
+        FCM_ENABLED=True,
+        FCM_SERVICE_ACCOUNT_FILE='',
+        FCM_SERVICE_ACCOUNT_JSON='',
+        FCM_PROJECT_ID='',
+        FCM_DRIVER_SERVICE_ACCOUNT_FILE='driver-firebase.json',
+        FCM_DRIVER_SERVICE_ACCOUNT_JSON='',
+        FCM_DRIVER_PROJECT_ID='driver-project',
+        FCM_CUSTOMER_SERVICE_ACCOUNT_FILE='customer-firebase.json',
+        FCM_CUSTOMER_SERVICE_ACCOUNT_JSON='',
+        FCM_CUSTOMER_PROJECT_ID='customer-project',
+    )
+    @patch('shop.fcm_service.Path.exists', return_value=True)
+    @patch('shop.fcm_service._firebase_modules')
+    def test_firebase_app_uses_separate_project_per_user_type(self, mock_firebase_modules, _mock_exists):
+        from shop import fcm_service
+
+        fcm_service._FIREBASE_APPS.clear()
+
+        initialized = []
+
+        class DummyCredentials:
+            @staticmethod
+            def Certificate(value):
+                return {'certificate': value}
+
+        class DummyFirebaseAdmin:
+            @staticmethod
+            def initialize_app(credential, options=None, name=None):
+                initialized.append(
+                    {
+                        'credential': credential,
+                        'options': options,
+                        'name': name,
+                    }
+                )
+                return {'name': name, 'options': options}
+
+        mock_firebase_modules.return_value = (DummyFirebaseAdmin, DummyCredentials, object())
+
+        driver_app = fcm_service._firebase_app(user_type='driver')
+        customer_app = fcm_service._firebase_app(user_type='customer')
+
+        self.assertEqual(driver_app['name'], 'mr_delivery_fcm_driver')
+        self.assertEqual(customer_app['name'], 'mr_delivery_fcm_customer')
+        self.assertEqual(initialized[0]['credential']['certificate'], 'driver-firebase.json')
+        self.assertEqual(initialized[0]['options'], {'projectId': 'driver-project'})
+        self.assertEqual(initialized[1]['credential']['certificate'], 'customer-firebase.json')
+        self.assertEqual(initialized[1]['options'], {'projectId': 'customer-project'})
 
 
 class DriverNotificationModeTests(TestCase):
