@@ -4,6 +4,7 @@ from django.db.models import Prefetch
 
 from ..models import ChatMessage, CustomerSupportConversation, CustomerSupportMessage, Order
 from .serializers import (
+    DRIVER_ORDER_MESSAGES_ATTR,
     SHOP_ORDER_MESSAGES_ATTR,
     SUPPORT_MESSAGES_ATTR,
     CustomerAppRealtimeOnWaySerializer,
@@ -37,6 +38,19 @@ ORDER_SHOP_MESSAGES_PREFETCH = Prefetch(
     to_attr=SHOP_ORDER_MESSAGES_ATTR,
 )
 
+ORDER_DRIVER_MESSAGES_PREFETCH = Prefetch(
+    'messages',
+    queryset=ChatMessage.objects.filter(chat_type='driver_customer')
+    .select_related(
+        'sender_customer',
+        'sender_shop_owner',
+        'sender_employee',
+        'sender_driver',
+    )
+    .order_by('-created_at'),
+    to_attr=DRIVER_ORDER_MESSAGES_ATTR,
+)
+
 SUPPORT_MESSAGES_PREFETCH = Prefetch(
     'messages',
     queryset=CustomerSupportMessage.objects.select_related(
@@ -67,7 +81,7 @@ def _order_queryset(customer_id):
     return (
         Order.objects.filter(customer_id=customer_id)
         .select_related('shop_owner', 'driver')
-        .prefetch_related(ORDER_SHOP_MESSAGES_PREFETCH)
+        .prefetch_related(ORDER_SHOP_MESSAGES_PREFETCH, ORDER_DRIVER_MESSAGES_PREFETCH)
     )
 
 

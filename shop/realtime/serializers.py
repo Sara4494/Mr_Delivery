@@ -30,6 +30,7 @@ CUSTOMER_SUPPORT_CHAT_TYPE = 'support_customer'
 CUSTOMER_DRIVER_CHAT_TYPE = 'driver_customer'
 
 SHOP_ORDER_MESSAGES_ATTR = 'customer_app_shop_messages_desc'
+DRIVER_ORDER_MESSAGES_ATTR = 'customer_app_driver_messages_desc'
 SUPPORT_MESSAGES_ATTR = 'customer_app_support_messages_desc'
 
 
@@ -75,6 +76,30 @@ def get_support_messages(conversation):
 def get_latest_order_shop_message(order):
     messages = get_order_shop_messages(order)
     return messages[0] if messages else None
+
+
+def get_order_driver_messages(order):
+    prefetched_messages = getattr(order, DRIVER_ORDER_MESSAGES_ATTR, None)
+    if prefetched_messages is not None:
+        return prefetched_messages
+
+    return list(
+        order.messages.filter(chat_type=CUSTOMER_DRIVER_CHAT_TYPE)
+        .select_related(
+            'sender_customer',
+            'sender_shop_owner',
+            'sender_employee',
+            'sender_driver',
+        )
+        .order_by('-created_at')
+    )
+
+
+def has_customer_visible_driver_chat(order):
+    return any(
+        str(getattr(message, 'sender_type', '')).strip() == 'driver'
+        for message in get_order_driver_messages(order)
+    )
 
 
 def get_latest_support_message(conversation):
@@ -553,7 +578,7 @@ class CustomerAppRealtimeOnWaySerializer(serializers.ModelSerializer):
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
     shop_logo_url = serializers.SerializerMethodField()
     driver_id = serializers.IntegerField(read_only=True)
-    driver_name = serializers.CharField(source='driver.name', read_only=True)
+    driver_name = serializers.SerializerMethodField()
     driver_image_url = serializers.SerializerMethodField()
     driver_role_label = serializers.SerializerMethodField()
     status_key = serializers.CharField(source='status', read_only=True)
@@ -583,22 +608,33 @@ class CustomerAppRealtimeOnWaySerializer(serializers.ModelSerializer):
     def get_shop_logo_url(self, obj):
         return _context_file_url(self, getattr(obj.shop_owner, 'profile_image', None))
 
+    def get_driver_name(self, obj):
+        if not has_customer_visible_driver_chat(obj):
+            return None
+        return getattr(getattr(obj, 'driver', None), 'name', None)
+
     def get_driver_image_url(self, obj):
+        if not has_customer_visible_driver_chat(obj):
+            return None
         driver = getattr(obj, 'driver', None)
         return _context_file_url(self, getattr(driver, 'profile_image', None)) if driver else None
 
     def get_driver_role_label(self, obj):
-        return 'مندوب' if obj.driver_id else None
+        if not (obj.driver_id and has_customer_visible_driver_chat(obj)):
+            return None
+        return 'مندوب'
 
     def get_last_delivery_update_at(self, obj):
         return format_utc_iso8601(get_on_way_sort_key(obj))
 
     def get_chat(self, obj):
+        if not has_customer_visible_driver_chat(obj):
+            return None
         return {
             'thread_id': f'delivery_{obj.id}',
             'order_id': obj.id,
             'chat_type': CUSTOMER_DRIVER_CHAT_TYPE,
-            'can_open': bool(getattr(obj, 'driver_accepted_at', None)),
+            'can_open': True,
         }
 
 

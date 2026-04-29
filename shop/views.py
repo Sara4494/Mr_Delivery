@@ -119,6 +119,7 @@ from .driver_chat_service import (
     request_transfer_for_order,
     sync_order_assignment_change,
 )
+from .realtime.serializers import has_customer_visible_driver_chat
 from .driver_realtime import (
     build_driver_order_payload,
     clear_all_driver_rejections,
@@ -4792,7 +4793,7 @@ def _build_customer_message_summary_payload(message, request):
 
 def _build_customer_on_way_order_item(order, request, base_url=None):
     driver = order.driver
-    can_chat_with_driver = bool(order.driver_id and order.status in {'preparing', 'on_way'})
+    can_show_driver = bool(driver and has_customer_visible_driver_chat(order))
 
     return {
         'order_id': order.id,
@@ -4802,9 +4803,9 @@ def _build_customer_on_way_order_item(order, request, base_url=None):
         'shop_name': order.shop_owner.shop_name,
         'shop_logo_url': _build_file_url(request, order.shop_owner.profile_image, base_url=base_url),
         'driver_id': driver.id if driver else None,
-        'driver_name': driver.name if driver else None,
-        'driver_image_url': _build_file_url(request, driver.profile_image, base_url=base_url) if driver else None,
-        'driver_role_label': 'مندوب التوصيل' if driver else None,
+        'driver_name': driver.name if can_show_driver else None,
+        'driver_image_url': _build_file_url(request, driver.profile_image, base_url=base_url) if can_show_driver else None,
+        'driver_role_label': 'مندوب التوصيل' if can_show_driver else None,
         'chat': (
             {
                 'thread_id': str(order.id),
@@ -4812,7 +4813,7 @@ def _build_customer_on_way_order_item(order, request, base_url=None):
                 'chat_type': 'driver_customer',
                 'driver_id': driver.id,
             }
-            if can_chat_with_driver and driver else None
+            if can_show_driver else None
         ),
     }
 
