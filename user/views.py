@@ -1,4 +1,5 @@
 import json
+import logging
 from collections import Counter, defaultdict
 from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
@@ -71,6 +72,8 @@ ARABIC_WEEKDAY_NAMES = {
     5: "السبت",
     6: "الأحد",
 }
+
+logger = logging.getLogger(__name__)
 
 
 SUSPENDED_ACCOUNT_ERROR_CODES = {
@@ -258,6 +261,119 @@ def _normalize_admin_desktop_permissions(role, permissions):
         if permission in allowed_permissions and permission not in normalized:
             normalized.append(permission)
     return normalized
+
+
+def _build_customer_auth_payload(customer):
+    refresh = RefreshToken()
+    refresh['customer_id'] = customer.id
+    refresh['phone_number'] = customer.phone_number
+    refresh['email'] = customer.email
+    refresh['user_type'] = 'customer'
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+        'user': {
+            'id': customer.id,
+            'name': customer.name,
+            'email': customer.email,
+            'phone_number': customer.phone_number,
+            'is_verified': customer.is_verified,
+        },
+        'role': 'customer',
+    }
+
+
+def _normalize_google_token(raw_token):
+    token = str(raw_token or '').strip()
+    if token.lower().startswith('bearer '):
+        token = token[7:].strip()
+    return token
+
+
+def _verify_google_identity_token(raw_token):
+    token = _normalize_google_token(raw_token)
+    if not token:
+        raise ValueError('Google idToken is required.')
+
+    allowed_audiences = [
+        str(value).strip()
+        for value in str(getattr(settings, 'GOOGLE_AUTH_ALLOWED_AUDIENCES', '') or '').split(',')
+        if str(value).strip()
+    ]
+
+    try:
+        from shop.fcm.service import _firebase_app
+        from firebase_admin import auth as firebase_auth
+
+        decoded = firebase_auth.verify_id_token(
+            token,
+            app=_firebase_app(user_type='customer'),
+            check_revoked=False,
+        )
+        return {
+            'provider': 'firebase',
+            'sub': decoded.get('uid') or decoded.get('sub'),
+            'email': normalize_email(decoded.get('email')),
+            'email_verified': bool(decoded.get('email_verified')),
+            'name': decoded.get('name') or '',
+            'picture': decoded.get('picture') or '',
+            'claims': decoded,
+        }
+    except Exception as exc:
+        logger.info('google auth firebase token verification fallback: %s', exc)
+
+    try:
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token as google_id_token
+
+        decoded = google_id_token.verify_oauth2_token(
+            token,
+            google_requests.Request(),
+            audience=None,
+        )
+        issuer = str(decoded.get('iss') or '')
+        if issuer not in {'accounts.google.com', 'https://accounts.google.com'}:
+            raise ValueError('Invalid Google token issuer.')
+        audience = str(decoded.get('aud') or '').strip()
+        if allowed_audiences and audience not in allowed_audiences:
+            raise ValueError('Google token audience is not allowed.')
+        return {
+            'provider': 'google',
+            'sub': decoded.get('sub'),
+            'email': normalize_email(decoded.get('email')),
+            'email_verified': bool(decoded.get('email_verified')),
+            'name': decoded.get('name') or '',
+            'picture': decoded.get('picture') or '',
+            'claims': decoded,
+        }
+    except Exception as exc:
+        logger.warning('google auth token verification failed: %s', exc)
+        raise ValueError('Invalid Google idToken.') from exc
+
+
+def _register_google_customer_fcm(*, customer, request):
+    fcm_token = str(
+        request.data.get('fcm_token')
+        or request.data.get('fcmToken')
+        or ''
+    ).strip()
+    device_id = str(request.data.get('device_id') or request.data.get('deviceId') or '').strip()
+    platform = str(request.data.get('platform') or '').strip().lower()
+    app_version = request.data.get('app_version') or request.data.get('appVersion')
+
+    if not (fcm_token and device_id and platform in {'android', 'ios'}):
+        return None
+
+    from shop.fcm.service import register_device_token
+
+    return register_device_token(
+        user=customer,
+        device_id=device_id,
+        platform=platform,
+        fcm_token=fcm_token,
+        app_version=app_version,
+        action='register',
+    )
 
 
 def _can_view_admin_desktop_users(user):
@@ -3976,6 +4092,153 @@ def unified_login_view(request):
             message=t(request, 'invalid_user_type_available_values_shop_owner_customer_employee_driver'),
             status_code=status.HTTP_400_BAD_REQUEST
         )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def google_customer_auth_view(request):
+    from shop.models import Customer
+
+    def _suspended_account_response(message, *, code):
+        return _auth_error_response(
+            request,
+            errors={'code': code, 'detail': message},
+            default_message=message,
+            default_status=status.HTTP_403_FORBIDDEN,
+        )
+
+    raw_id_token = request.data.get('id_token') or request.data.get('idToken')
+    if not raw_id_token:
+        return error_response(
+            message='Google idToken is required.',
+            errors={'idToken': ['This field is required.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        google_identity = _verify_google_identity_token(raw_id_token)
+    except ValueError as exc:
+        return error_response(
+            message=str(exc),
+            errors={'idToken': [str(exc)]},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    email = normalize_email(
+        request.data.get('email')
+        or google_identity.get('email')
+    )
+    if not email:
+        return error_response(
+            message='A verified Google email is required.',
+            errors={'email': ['Google account email is missing.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if not google_identity.get('email_verified'):
+        return error_response(
+            message='Google email must be verified.',
+            errors={'email': ['Google account email is not verified.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    display_name = str(
+        request.data.get('name')
+        or google_identity.get('name')
+        or ''
+    ).strip()
+    photo_url = str(
+        request.data.get('photo_url')
+        or request.data.get('photoUrl')
+        or google_identity.get('picture')
+        or ''
+    ).strip()
+
+    customer = Customer.objects.select_related('moderation_status').filter(email__iexact=email).first()
+    if customer:
+        moderation = getattr(customer, 'moderation_status', None)
+        if moderation and moderation.is_suspended:
+            return _suspended_account_response(
+                moderation.suspension_reason or 'هذا الحساب معلق حاليًا. برجاء التواصل مع الدعم.',
+                code='CUSTOMER_ACCOUNT_SUSPENDED',
+            )
+        update_fields = []
+        if display_name and customer.name != display_name:
+            customer.name = display_name
+            update_fields.append('name')
+        if not customer.is_verified:
+            customer.is_verified = True
+            update_fields.append('is_verified')
+        if update_fields:
+            update_fields.append('updated_at')
+            customer.save(update_fields=update_fields)
+
+        token_record = _register_google_customer_fcm(customer=customer, request=request)
+        payload = _build_customer_auth_payload(customer)
+        if token_record:
+            payload['fcm_device'] = {
+                'device_id': token_record.device_id,
+                'platform': token_record.platform,
+            }
+        return success_response(
+            data=payload,
+            message=t(request, 'login_successful'),
+            status_code=status.HTTP_200_OK,
+        )
+
+    phone_number = request.data.get('phone_number') or request.data.get('phoneNumber')
+    if not phone_number:
+        return success_response(
+            data={
+                'registration_completed': False,
+                'requires_phone_number': True,
+                'google_user': {
+                    'email': email,
+                    'name': display_name,
+                    'photo_url': photo_url or None,
+                },
+            },
+            message='Google account verified. Phone number is required to complete registration.',
+            status_code=status.HTTP_200_OK,
+        )
+
+    existing_customer_by_phone = _find_customer_by_phone(phone_number)
+    if existing_customer_by_phone and existing_customer_by_phone.email and normalize_email(existing_customer_by_phone.email) != email:
+        return error_response(
+            message='Phone number is already linked to another account.',
+            errors={'phone_number': ['Phone number is already linked to another account.']},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if existing_customer_by_phone and not existing_customer_by_phone.email:
+        existing_customer_by_phone.email = email
+        if display_name and existing_customer_by_phone.name != display_name:
+            existing_customer_by_phone.name = display_name
+        existing_customer_by_phone.is_verified = True
+        existing_customer_by_phone.save(update_fields=['email', 'name', 'is_verified', 'updated_at'])
+        customer = existing_customer_by_phone
+    elif existing_customer_by_phone:
+        customer = existing_customer_by_phone
+    else:
+        customer = Customer.objects.create(
+            name=display_name or email.split('@')[0],
+            email=email,
+            phone_number=normalize_phone(phone_number),
+            is_verified=True,
+        )
+
+    token_record = _register_google_customer_fcm(customer=customer, request=request)
+    payload = _build_customer_auth_payload(customer)
+    payload['registration_completed'] = True
+    payload['is_new_user'] = True
+    if token_record:
+        payload['fcm_device'] = {
+            'device_id': token_record.device_id,
+            'platform': token_record.platform,
+        }
+    return success_response(
+        data=payload,
+        message='Google login successful',
+        status_code=status.HTTP_200_OK,
+    )
 
 
 def _find_customer_by_phone(phone_number):

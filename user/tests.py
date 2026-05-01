@@ -1,5 +1,6 @@
 from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from user.models import (
     ADMIN_DESKTOP_FULL_ADMIN_ROLE,
@@ -265,7 +266,6 @@ class AbuseReportsFlowTests(TestCase):
             },
             format="json",
         )
-
         self.assertEqual(response.status_code, 201)
         self.assertEqual(AbuseReport.objects.count(), 1)
         report = AbuseReport.objects.first()
@@ -306,6 +306,96 @@ class AbuseReportsFlowTests(TestCase):
         self.assertEqual(report.status, "closed")
         self.assertEqual(report.resolution_action, "warning")
         self.assertTrue(response.data["data"]["auto_suspended"])
+
+
+class GoogleCustomerAuthTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+
+    @patch("user.views._verify_google_identity_token")
+    def test_existing_customer_can_login_via_google(self, mock_verify):
+        customer = Customer.objects.create(
+            name="Existing Customer",
+            email="existing@example.com",
+            phone_number="+201011111111",
+            password="secret123",
+            is_verified=True,
+        )
+        mock_verify.return_value = {
+            "email": "existing@example.com",
+            "email_verified": True,
+            "name": "Existing Customer Updated",
+            "picture": "https://example.com/pic.jpg",
+        }
+
+        response = self.client.post(
+            "/api/auth/google/",
+            {
+                "idToken": "mock-google-token",
+                "email": "existing@example.com",
+                "name": "Existing Customer Updated",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["role"], "customer")
+        self.assertIn("access", response.data["data"])
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "Existing Customer Updated")
+
+    @patch("user.views._verify_google_identity_token")
+    def test_new_google_user_without_phone_gets_completion_payload(self, mock_verify):
+        mock_verify.return_value = {
+            "email": "new@example.com",
+            "email_verified": True,
+            "name": "New Customer",
+            "picture": "https://example.com/pic.jpg",
+        }
+
+        response = self.client.post(
+            "/api/auth/google/",
+            {
+                "idToken": "mock-google-token",
+                "email": "new@example.com",
+                "name": "New Customer",
+                "photoUrl": "https://example.com/pic.jpg",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["data"]["registration_completed"])
+        self.assertTrue(response.data["data"]["requires_phone_number"])
+        self.assertEqual(response.data["data"]["google_user"]["email"], "new@example.com")
+
+    @patch("user.views._verify_google_identity_token")
+    def test_new_google_user_with_phone_creates_customer(self, mock_verify):
+        mock_verify.return_value = {
+            "email": "signup@example.com",
+            "email_verified": True,
+            "name": "Signup Customer",
+            "picture": "",
+        }
+
+        response = self.client.post(
+            "/api/auth/google/",
+            {
+                "idToken": "mock-google-token",
+                "email": "signup@example.com",
+                "name": "Signup Customer",
+                "phone_number": "01012345678",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["data"]["registration_completed"])
+        self.assertEqual(response.data["data"]["role"], "customer")
+        created_customer = Customer.objects.get(email="signup@example.com")
+        self.assertEqual(created_customer.phone_number, "+201012345678")
+        self.assertTrue(created_customer.is_verified)
 
 
 class SupportActionsEndpointsTests(TestCase):
