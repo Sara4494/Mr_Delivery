@@ -2041,15 +2041,29 @@ class UpdateCartItemSerializer(serializers.Serializer):
 
 
 class AppStatusMaintenanceSerializer(serializers.Serializer):
+    title_ar = serializers.CharField(allow_blank=True)
+    title_en = serializers.CharField(allow_blank=True)
+    message_ar = serializers.CharField(allow_blank=True)
+    message_en = serializers.CharField(allow_blank=True)
+    window_label_ar = serializers.CharField(allow_blank=True)
+    window_label_en = serializers.CharField(allow_blank=True)
+
+
+class AppStatusUpdatePlatformSerializer(serializers.Serializer):
+    min_version = serializers.CharField(allow_blank=True)
+    store_url = serializers.CharField(allow_blank=True, required=False)
+    download_url = serializers.CharField(allow_blank=True, required=False)
+
+
+class AppStatusUpdateSerializer(serializers.Serializer):
     enabled = serializers.BooleanField()
-    code = serializers.CharField(allow_null=True)
-    title = serializers.CharField(allow_null=True)
-    message = serializers.CharField(allow_null=True)
-    footnote = serializers.CharField(allow_null=True)
-    retry_after_seconds = serializers.IntegerField(allow_null=True)
-    starts_at = serializers.CharField(allow_null=True)
-    ends_at = serializers.CharField(allow_null=True)
+    force_update = serializers.BooleanField()
+    android = AppStatusUpdatePlatformSerializer()
+    ios = AppStatusUpdatePlatformSerializer()
+    windows = AppStatusUpdatePlatformSerializer()
 
 
 class AppStatusSerializer(serializers.Serializer):
-    maintenance = AppStatusMaintenanceSerializer()
+    maintenance_mode = serializers.BooleanField()
+    update = AppStatusUpdateSerializer()
+    maintenance = AppStatusMaintenanceSerializer(required=False)

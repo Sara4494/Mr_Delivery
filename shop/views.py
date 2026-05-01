@@ -141,6 +141,28 @@ from .fcm.service import send_driver_store_invite_notification
 logger = logging.getLogger(__name__)
 
 
+def _app_status_bool(value, default=False):
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _app_status_text(value, default=''):
+    text = str(value if value is not None else default).strip()
+    return text or str(default or '').strip()
+
+
+def _app_status_int(value, default=None):
+    if value in (None, ''):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def shop_dashboard_ui_view(request):
     """واجهة تجريبية/تشغيلية للوحة المحل (Shop frontend)."""
     return render(request, 'shop/dashboard_ui.html')
@@ -191,12 +213,53 @@ def _build_app_status_payload(request):
         platform=platform,
     )
     localized_text = maintenance.get_localized_text(lang)
+    maintenance_mode = bool(
+        _app_status_bool(getattr(settings, 'APP_STATUS_MAINTENANCE_MODE', False))
+        or enabled
+    )
 
     return {
-        'maintenance_mode': _app_status_bool(
-            getattr(settings, 'APP_STATUS_MAINTENANCE_MODE', False)
-        ),
+        'maintenance_mode': maintenance_mode,
+        'update': {
+            'enabled': _app_status_bool(
+                getattr(settings, 'APP_STATUS_UPDATE_ENABLED', False)
+            ),
+            'force_update': _app_status_bool(
+                getattr(settings, 'APP_STATUS_UPDATE_FORCE_UPDATE', False)
+            ),
+            'android': {
+                'min_version': _app_status_text(
+                    getattr(settings, 'APP_STATUS_ANDROID_MIN_VERSION', ''),
+                    '',
+                ),
+                'store_url': _app_status_text(
+                    getattr(settings, 'APP_STATUS_ANDROID_STORE_URL', ''),
+                    '',
+                ),
+            },
+            'ios': {
+                'min_version': _app_status_text(
+                    getattr(settings, 'APP_STATUS_IOS_MIN_VERSION', ''),
+                    '',
+                ),
+                'store_url': _app_status_text(
+                    getattr(settings, 'APP_STATUS_IOS_STORE_URL', ''),
+                    '',
+                ),
+            },
+            'windows': {
+                'min_version': _app_status_text(
+                    getattr(settings, 'APP_STATUS_WINDOWS_MIN_VERSION', ''),
+                    '',
+                ),
+                'download_url': _app_status_text(
+                    getattr(settings, 'APP_STATUS_WINDOWS_DOWNLOAD_URL', ''),
+                    '',
+                ),
+            },
+        },
         'maintenance': {
+            'enabled': enabled,
             'title_ar': _app_status_text(
                 getattr(settings, 'APP_STATUS_MAINTENANCE_TITLE_AR', ''),
                 'التطبيق تحت الصيانة حاليًا',
@@ -232,13 +295,6 @@ def _build_app_status_payload(request):
                 getattr(settings, 'APP_STATUS_ESTIMATED_MINUTES', None)
             ),
         },
-        'force_update': {
-            'enabled': _app_status_bool(
-                getattr(settings, 'APP_STATUS_FORCE_UPDATE_ENABLED', False)
-            ),
-            'current_version': current_version,
-            'required_version': required_version,
-        },
     }
 
 
@@ -268,11 +324,86 @@ def _build_public_maintenance_status_payload(request):
     }
 
 
+def _build_public_app_status_payload(request):
+    maintenance_payload = _build_public_maintenance_status_payload(request).get('maintenance', {})
+    maintenance_mode = bool(
+        _app_status_bool(getattr(settings, 'APP_STATUS_MAINTENANCE_MODE', False))
+        or maintenance_payload.get('enabled')
+    )
+    return {
+        'maintenance_mode': maintenance_mode,
+        'update': {
+            'enabled': _app_status_bool(
+                getattr(settings, 'APP_STATUS_UPDATE_ENABLED', False)
+            ),
+            'force_update': _app_status_bool(
+                getattr(settings, 'APP_STATUS_UPDATE_FORCE_UPDATE', False)
+            ),
+            'android': {
+                'min_version': _app_status_text(
+                    getattr(settings, 'APP_STATUS_ANDROID_MIN_VERSION', ''),
+                    '',
+                ),
+                'store_url': _app_status_text(
+                    getattr(settings, 'APP_STATUS_ANDROID_STORE_URL', ''),
+                    '',
+                ),
+            },
+            'ios': {
+                'min_version': _app_status_text(
+                    getattr(settings, 'APP_STATUS_IOS_MIN_VERSION', ''),
+                    '',
+                ),
+                'store_url': _app_status_text(
+                    getattr(settings, 'APP_STATUS_IOS_STORE_URL', ''),
+                    '',
+                ),
+            },
+            'windows': {
+                'min_version': _app_status_text(
+                    getattr(settings, 'APP_STATUS_WINDOWS_MIN_VERSION', ''),
+                    '',
+                ),
+                'download_url': _app_status_text(
+                    getattr(settings, 'APP_STATUS_WINDOWS_DOWNLOAD_URL', ''),
+                    '',
+                ),
+            },
+        },
+        'maintenance': {
+            'title_ar': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_TITLE_AR', ''),
+                '',
+            ) if maintenance_mode else '',
+            'title_en': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_TITLE_EN', ''),
+                '',
+            ) if maintenance_mode else '',
+            'message_ar': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_MESSAGE_AR', ''),
+                '',
+            ) if maintenance_mode else '',
+            'message_en': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_MESSAGE_EN', ''),
+                '',
+            ) if maintenance_mode else '',
+            'window_label_ar': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_WINDOW_LABEL_AR', ''),
+                '',
+            ) if maintenance_mode else '',
+            'window_label_en': _app_status_text(
+                getattr(settings, 'APP_STATUS_MAINTENANCE_WINDOW_LABEL_EN', ''),
+                '',
+            ) if maintenance_mode else '',
+        },
+    }
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def app_status_view(request):
     """Public maintenance-status endpoint that remains reachable before and during maintenance."""
-    serializer = AppStatusSerializer(instance=_build_public_maintenance_status_payload(request))
+    serializer = AppStatusSerializer(instance=_build_public_app_status_payload(request))
     response = Response(
         {
             'status': status.HTTP_200_OK,
