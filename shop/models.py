@@ -38,6 +38,7 @@ class Customer(models.Model):
     email = models.EmailField(unique=True, blank=True, null=True, verbose_name="البريد الإلكتروني")
     password = models.CharField(max_length=128, blank=True, null=True, verbose_name="كلمة المرور")
     profile_image = models.ImageField(upload_to='customer_profiles/', blank=True, null=True, verbose_name="صورة العميل")
+    google_profile_image_url = models.URLField(blank=True, null=True, verbose_name="رابط صورة جوجل")
     is_online = models.BooleanField(default=False, verbose_name="متصل الآن")
     last_seen = models.DateTimeField(blank=True, null=True, verbose_name="آخر ظهور")
     is_verified = models.BooleanField(default=False, verbose_name="تم التحقق")

@@ -140,6 +140,13 @@ def _context_file_url(serializer, file_field):
     )
 
 
+def _customer_profile_image_url(serializer, obj):
+    if obj.profile_image:
+        return _context_file_url(serializer, obj.profile_image)
+    google_image_url = str(getattr(obj, 'google_profile_image_url', '') or '').strip()
+    return google_image_url or None
+
+
 class CustomerSerializer(serializers.ModelSerializer):
     """Serializer للعميل"""
     profile_image_url = serializers.SerializerMethodField()
@@ -158,9 +165,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     def get_profile_image_url(self, obj):
         """إرجاع رابط صورة العميل الكامل"""
-        if obj.profile_image:
-            return _context_file_url(self, obj.profile_image)
-        return None
+        return _customer_profile_image_url(self, obj)
 
     def get_default_address(self, obj):
         """العنوان الافتراضي"""
@@ -246,9 +251,7 @@ class CustomerAppProfileSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_profile_image_url(self, obj):
-        if obj.profile_image:
-            return _context_file_url(self, obj.profile_image)
-        return None
+        return _customer_profile_image_url(self, obj)
 
     def get_default_address(self, obj):
         addr = obj.addresses.filter(is_default=True).first()

@@ -4166,6 +4166,9 @@ def google_customer_auth_view(request):
         if display_name and customer.name != display_name:
             customer.name = display_name
             update_fields.append('name')
+        if photo_url and customer.google_profile_image_url != photo_url:
+            customer.google_profile_image_url = photo_url
+            update_fields.append('google_profile_image_url')
         if not customer.is_verified:
             customer.is_verified = True
             update_fields.append('is_verified')
@@ -4213,16 +4216,29 @@ def google_customer_auth_view(request):
         existing_customer_by_phone.email = email
         if display_name and existing_customer_by_phone.name != display_name:
             existing_customer_by_phone.name = display_name
+        if photo_url and existing_customer_by_phone.google_profile_image_url != photo_url:
+            existing_customer_by_phone.google_profile_image_url = photo_url
         existing_customer_by_phone.is_verified = True
-        existing_customer_by_phone.save(update_fields=['email', 'name', 'is_verified', 'updated_at'])
+        existing_customer_by_phone.save(update_fields=['email', 'name', 'google_profile_image_url', 'is_verified', 'updated_at'])
         customer = existing_customer_by_phone
     elif existing_customer_by_phone:
+        update_fields = []
+        if photo_url and existing_customer_by_phone.google_profile_image_url != photo_url:
+            existing_customer_by_phone.google_profile_image_url = photo_url
+            update_fields.append('google_profile_image_url')
+        if display_name and existing_customer_by_phone.name != display_name:
+            existing_customer_by_phone.name = display_name
+            update_fields.append('name')
+        if update_fields:
+            update_fields.append('updated_at')
+            existing_customer_by_phone.save(update_fields=update_fields)
         customer = existing_customer_by_phone
     else:
         customer = Customer.objects.create(
             name=display_name or email.split('@')[0],
             email=email,
             phone_number=normalize_phone(phone_number),
+            google_profile_image_url=photo_url or None,
             is_verified=True,
         )
 
