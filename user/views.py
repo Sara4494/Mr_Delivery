@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from io import StringIO
 from math import ceil
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Q, Sum
 from django.http import HttpResponse
