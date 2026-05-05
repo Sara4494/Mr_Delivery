@@ -48,9 +48,21 @@ DEBUG = True
 ALLOWED_HOSTS = ['mrdelivery.pythonanywhere.com', '86.48.3.103', 'localhost', '127.0.0.1']
 
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://mrdelivery.pythonanywhere.com",
-]
+_csrf_trusted_origins = {
+  
+    "http://86.48.3.103",
+    "https://86.48.3.103",
+    "http://localhost",
+    "https://localhost",
+    "http://127.0.0.1",
+    "https://127.0.0.1",
+}
+_extra_csrf_origins = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+for _origin in _extra_csrf_origins.split(","):
+    _origin = _origin.strip()
+    if _origin:
+        _csrf_trusted_origins.add(_origin)
+CSRF_TRUSTED_ORIGINS = sorted(_csrf_trusted_origins)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
