@@ -110,6 +110,7 @@ class AppStatusSettingsAdmin(admin.ModelAdmin):
                 "ios_min_version",
                 "ios_store_url",
                 "windows_min_version",
+                "windows_installer_file",
                 "windows_download_url",
             )
         }),

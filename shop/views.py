@@ -307,6 +307,10 @@ def _build_public_maintenance_status_payload(request):
 def _build_public_app_status_payload_from_model(request):
     app_status = AppStatusSettings.get_solo()
     maintenance_payload = _build_public_maintenance_status_payload(request).get('maintenance', {})
+    windows_download_url = build_absolute_file_url(
+        getattr(app_status, 'windows_installer_file', None),
+        request=request,
+    ) or _app_status_text(app_status.windows_download_url, '')
     maintenance_mode = bool(
         _app_status_bool(app_status.maintenance_mode) or maintenance_payload.get('enabled')
     )
@@ -325,7 +329,7 @@ def _build_public_app_status_payload_from_model(request):
             },
             'windows': {
                 'min_version': _app_status_text(app_status.windows_min_version, ''),
-                'download_url': _app_status_text(app_status.windows_download_url, ''),
+                'download_url': windows_download_url,
             },
         },
         'maintenance': {

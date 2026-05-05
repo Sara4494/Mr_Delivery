@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.test import TestCase
 from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 from shop.models import Customer
@@ -155,6 +156,24 @@ class AppStatusEndpointTests(TestCase):
         self.assertEqual(payload["maintenance"]["title_ar"], "تحديث مهم")
         self.assertEqual(payload["maintenance"]["message_ar"], "يرجى تحديث التطبيق")
         self.assertEqual(payload["maintenance"]["window_label_ar"], "الآن")
+
+    def test_app_status_prefers_uploaded_windows_installer_file(self):
+        self.app_status.windows_download_url = "https://example.com/old.exe"
+        self.app_status.windows_installer_file = SimpleUploadedFile(
+            "MrDeliverySetup.exe",
+            b"dummy-binary",
+            content_type="application/octet-stream",
+        )
+        self.app_status.save()
+
+        response = self.client.get(
+            "/api/app/status/",
+            {"platform": "android", "user_type": "customer", "lang": "ar"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        download_url = response.json()["data"]["update"]["windows"]["download_url"]
+        self.assertIn("/media/downloads/app_status/MrDeliverySetup", download_url)
 
 
 class CustomerMaintenanceBlockingTests(TestCase):

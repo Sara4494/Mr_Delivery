@@ -303,6 +303,12 @@ class AppStatusSettings(models.Model):
     ios_min_version = models.CharField(max_length=50, blank=True, default="", verbose_name="أقل إصدار iOS")
     ios_store_url = models.URLField(blank=True, default="", verbose_name="رابط متجر iOS")
     windows_min_version = models.CharField(max_length=50, blank=True, default="", verbose_name="أقل إصدار Windows")
+    windows_installer_file = models.FileField(
+        upload_to="downloads/app_status/",
+        blank=True,
+        null=True,
+        verbose_name="ملف تحديث Windows",
+    )
     windows_download_url = models.URLField(blank=True, default="", verbose_name="رابط تنزيل Windows")
 
     maintenance_title_ar = models.CharField(max_length=200, blank=True, default="", verbose_name="عنوان الصيانة بالعربية")
