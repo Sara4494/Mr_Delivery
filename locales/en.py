@@ -69,6 +69,7 @@ MESSAGES = {
     'driver_chat_order_rejected_by_driver': 'The driver {driver_name} rejected order #{order_number}.',
     'driver_chat_order_rejected_by_driver_with_reason': 'The driver {driver_name} rejected order #{order_number}. Reason: {reason}',
     'driver_order_transferred_successfully': 'Order transferred successfully',
+    'driver_order_transfer_requested_successfully': 'Order transfer request submitted successfully',
     'driver_orders_retrieved_successfully': 'Driver orders retrieved successfully',
     'driver_data_updated_successfully': 'Driver data updated successfully',
     'driver_deleted_successfully': 'Driver deleted successfully',

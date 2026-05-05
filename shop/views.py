@@ -93,6 +93,7 @@ from user.models import (
     AdminApprovalRequest,
     APP_MAINTENANCE_RESPONSE_CODE,
     AppMaintenanceSettings,
+    AppStatusSettings,
     ShopCategory,
     ShopOwner,
     WORK_SCHEDULE_DAYS,
@@ -128,6 +129,7 @@ from .driver_realtime import (
     emit_available_order_remove,
     emit_order_accepted,
     emit_order_rejected,
+    emit_order_transfer_requested,
     emit_order_transferred,
     get_available_order_for_driver,
     has_driver_accepted,
@@ -204,6 +206,7 @@ def _serialize_app_status_datetime(value):
 
 def _build_app_status_payload(request):
     maintenance = AppMaintenanceSettings.get_solo()
+    app_status = AppStatusSettings.get_solo()
     lang = getattr(request, 'api_lang', None) or request.query_params.get('lang')
     user_type = AppMaintenanceSettings.normalize_user_type(request.query_params.get('user_type')) or 'customer'
     platform = AppMaintenanceSettings.normalize_platform(request.query_params.get('platform'))
@@ -212,50 +215,27 @@ def _build_app_status_payload(request):
         user_type=user_type,
         platform=platform,
     )
-    localized_text = maintenance.get_localized_text(lang)
     maintenance_mode = bool(
-        _app_status_bool(getattr(settings, 'APP_STATUS_MAINTENANCE_MODE', False))
+        _app_status_bool(app_status.maintenance_mode)
         or enabled
     )
 
     return {
         'maintenance_mode': maintenance_mode,
         'update': {
-            'enabled': _app_status_bool(
-                getattr(settings, 'APP_STATUS_UPDATE_ENABLED', False)
-            ),
-            'force_update': _app_status_bool(
-                getattr(settings, 'APP_STATUS_UPDATE_FORCE_UPDATE', False)
-            ),
+            'enabled': _app_status_bool(app_status.update_enabled),
+            'force_update': _app_status_bool(app_status.force_update),
             'android': {
-                'min_version': _app_status_text(
-                    getattr(settings, 'APP_STATUS_ANDROID_MIN_VERSION', ''),
-                    '',
-                ),
-                'store_url': _app_status_text(
-                    getattr(settings, 'APP_STATUS_ANDROID_STORE_URL', ''),
-                    '',
-                ),
+                'min_version': _app_status_text(app_status.android_min_version, ''),
+                'store_url': _app_status_text(app_status.android_store_url, ''),
             },
             'ios': {
-                'min_version': _app_status_text(
-                    getattr(settings, 'APP_STATUS_IOS_MIN_VERSION', ''),
-                    '',
-                ),
-                'store_url': _app_status_text(
-                    getattr(settings, 'APP_STATUS_IOS_STORE_URL', ''),
-                    '',
-                ),
+                'min_version': _app_status_text(app_status.ios_min_version, ''),
+                'store_url': _app_status_text(app_status.ios_store_url, ''),
             },
             'windows': {
-                'min_version': _app_status_text(
-                    getattr(settings, 'APP_STATUS_WINDOWS_MIN_VERSION', ''),
-                    '',
-                ),
-                'download_url': _app_status_text(
-                    getattr(settings, 'APP_STATUS_WINDOWS_DOWNLOAD_URL', ''),
-                    '',
-                ),
+                'min_version': _app_status_text(app_status.windows_min_version, ''),
+                'download_url': _app_status_text(app_status.windows_download_url, ''),
             },
         },
         'maintenance': {
@@ -321,6 +301,41 @@ def _build_public_maintenance_status_payload(request):
             'starts_at': _serialize_app_status_datetime(maintenance.starts_at) if enabled else None,
             'ends_at': _serialize_app_status_datetime(maintenance.ends_at) if enabled else None,
         }
+    }
+
+
+def _build_public_app_status_payload_from_model(request):
+    app_status = AppStatusSettings.get_solo()
+    maintenance_payload = _build_public_maintenance_status_payload(request).get('maintenance', {})
+    maintenance_mode = bool(
+        _app_status_bool(app_status.maintenance_mode) or maintenance_payload.get('enabled')
+    )
+    return {
+        'maintenance_mode': maintenance_mode,
+        'update': {
+            'enabled': _app_status_bool(app_status.update_enabled),
+            'force_update': _app_status_bool(app_status.force_update),
+            'android': {
+                'min_version': _app_status_text(app_status.android_min_version, ''),
+                'store_url': _app_status_text(app_status.android_store_url, ''),
+            },
+            'ios': {
+                'min_version': _app_status_text(app_status.ios_min_version, ''),
+                'store_url': _app_status_text(app_status.ios_store_url, ''),
+            },
+            'windows': {
+                'min_version': _app_status_text(app_status.windows_min_version, ''),
+                'download_url': _app_status_text(app_status.windows_download_url, ''),
+            },
+        },
+        'maintenance': {
+            'title_ar': _app_status_text(app_status.maintenance_title_ar, '') if maintenance_mode else '',
+            'title_en': _app_status_text(app_status.maintenance_title_en, '') if maintenance_mode else '',
+            'message_ar': _app_status_text(app_status.maintenance_message_ar, '') if maintenance_mode else '',
+            'message_en': _app_status_text(app_status.maintenance_message_en, '') if maintenance_mode else '',
+            'window_label_ar': _app_status_text(app_status.maintenance_window_label_ar, '') if maintenance_mode else '',
+            'window_label_en': _app_status_text(app_status.maintenance_window_label_en, '') if maintenance_mode else '',
+        },
     }
 
 
@@ -403,7 +418,7 @@ def _build_public_app_status_payload(request):
 @permission_classes([AllowAny])
 def app_status_view(request):
     """Public maintenance-status endpoint that remains reachable before and during maintenance."""
-    serializer = AppStatusSerializer(instance=_build_public_app_status_payload(request))
+    serializer = AppStatusSerializer(instance=_build_public_app_status_payload_from_model(request))
     response = Response(
         {
             'status': status.HTTP_200_OK,
@@ -2767,7 +2782,7 @@ def driver_order_deliver_view(request, order_id):
 @permission_classes([IsDriver])
 def driver_order_transfer_view(request, order_id):
     """
-    Driver transfers an assigned order back for reassignment.
+    Driver requests transferring an assigned order back for reassignment.
     POST /api/driver/orders/{id}/transfer/
     Body: { "reason_key": "...", "note": "..." }
     """
@@ -2811,16 +2826,6 @@ def driver_order_transfer_view(request, order_id):
         )
 
     old_driver = order.driver
-    old_driver_accepted_at = order.driver_accepted_at
-    old_status = order.status
-    if order.status in {'preparing', 'on_way'}:
-        order.status = 'confirmed'
-    order.driver = None
-    order.driver_assigned_at = None
-    order.driver_accepted_at = None
-    order.driver_chat_opened_at = None
-    order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'driver_chat_opened_at', 'status', 'updated_at'])
-    clear_all_driver_rejections(order)
 
     transfer_reason = selected_reason['label']
     if note:
@@ -2836,10 +2841,6 @@ def driver_order_transfer_view(request, order_id):
             )
         except Exception as e:
             print(f"driver_chat transfer request sync error: {e}")
-
-    if old_driver:
-        old_driver.current_orders_count = old_driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
-        old_driver.save(update_fields=['current_orders_count'])
 
     _attach_notification_to_user(
         'shop_owner',
@@ -2859,36 +2860,24 @@ def driver_order_transfer_view(request, order_id):
         },
     )
 
-    try:
-        order_data = OrderSerializer(order, context={'request': request}).data
-        notify_order_update(
-            shop_owner_id=order.shop_owner_id,
-            customer_id=order.customer_id,
-            driver_id=None,
-            order_data=order_data,
+    if old_driver:
+        emit_order_transfer_requested(
+            old_driver.id,
+            order.id,
+            requested_by_driver_id=old_driver.id,
+            reason_key=selected_reason['key'],
+            note=note or None,
         )
-        if old_driver:
-            _sync_driver_availability_status(old_driver)
-            notify_driver_status_updated(old_driver)
-    except Exception as e:
-        print(f"driver_order_transfer WebSocket error: {e}")
-
-    if old_driver:
-        emit_order_transferred(old_driver.id, order.id, reason_key=selected_reason['key'], note=note or None)
-    sync_driver_order_state(
-        order,
-        previous_status=old_status,
-        previous_driver_id=old_driver.id if old_driver else None,
-        previous_driver_accepted_at=old_driver_accepted_at,
-        request=request,
-    )
-    if old_driver:
-        record_driver_rejection(order, old_driver, selected_reason['key'])
-        sync_unavailable_order_for_driver(old_driver, order.id, order=order)
 
     return success_response(
-        data={},
-        message=t(request, 'driver_order_transferred_successfully'),
+        data={
+            'order_id': order.id,
+            'requested_by_driver_id': old_driver.id if old_driver else driver.id,
+            'reason_key': selected_reason['key'],
+            'note': note or None,
+            'status': 'pending_store_approval',
+        },
+        message=t(request, 'driver_order_transfer_requested_successfully'),
         status_code=status.HTTP_200_OK,
     )
 
@@ -4026,6 +4015,15 @@ def order_detail_view(request, order_id):
             # إذا تم تعيين سائق جديد، إشعاره
             if order.driver and (not old_driver or old_driver.id != order.driver.id):
                 notify_driver_assigned(order.driver.id, order_data)
+                if old_driver:
+                    emit_order_transferred(
+                        old_driver.id,
+                        order.id,
+                        old_driver_id=old_driver.id,
+                        new_driver_id=order.driver.id,
+                        transferred_by='store',
+                        status='transferred',
+                    )
 
             notified_driver_ids = set()
             if old_driver:

@@ -69,6 +69,7 @@ MESSAGES = {
     'driver_chat_order_rejected_by_driver': 'رفض السائق {driver_name} الأوردر #{order_number}.',
     'driver_chat_order_rejected_by_driver_with_reason': 'رفض السائق {driver_name} الأوردر #{order_number}. السبب: {reason}',
     'driver_order_transferred_successfully': 'تم تحويل الطلب بنجاح',
+    'driver_order_transfer_requested_successfully': 'تم إرسال طلب تحويل الطلب بنجاح',
     'driver_orders_retrieved_successfully': 'تم جلب طلبات الدليفري بنجاح',
     'driver_data_updated_successfully': 'تم تحديث بيانات السائق بنجاح',
     'driver_deleted_successfully': 'تم حذف السائق بنجاح',

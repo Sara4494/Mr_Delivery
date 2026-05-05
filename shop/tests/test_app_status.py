@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from shop.models import Customer
-from user.models import AdminDesktopUser, AppMaintenanceSettings
+from user.models import AdminDesktopUser, AppMaintenanceSettings, AppStatusSettings
 
 
 class AppStatusEndpointTests(TestCase):
@@ -13,6 +13,7 @@ class AppStatusEndpointTests(TestCase):
         super().setUp()
         self.client = APIClient()
         self.maintenance = AppMaintenanceSettings.get_solo()
+        self.app_status = AppStatusSettings.get_solo()
 
     def test_app_maintenance_singleton_sets_timestamps_when_created(self):
         AppMaintenanceSettings.objects.all().delete()
@@ -119,6 +120,41 @@ class AppStatusEndpointTests(TestCase):
 
         self.assertTrue(customer_response.json()["data"]["maintenance"]["enabled"])
         self.assertFalse(shop_response.json()["data"]["maintenance"]["enabled"])
+
+    def test_app_status_returns_update_values_from_model(self):
+        self.app_status.maintenance_mode = True
+        self.app_status.update_enabled = True
+        self.app_status.force_update = True
+        self.app_status.android_min_version = "2.1.0"
+        self.app_status.android_store_url = "https://play.google.com/store/apps/details?id=mr.delivery"
+        self.app_status.ios_min_version = "2.2.0"
+        self.app_status.ios_store_url = "https://apps.apple.com/app/id123456789"
+        self.app_status.windows_min_version = "1.5.0"
+        self.app_status.windows_download_url = "https://example.com/windows.exe"
+        self.app_status.maintenance_title_ar = "تحديث مهم"
+        self.app_status.maintenance_title_en = "Important update"
+        self.app_status.maintenance_message_ar = "يرجى تحديث التطبيق"
+        self.app_status.maintenance_message_en = "Please update the app"
+        self.app_status.maintenance_window_label_ar = "الآن"
+        self.app_status.maintenance_window_label_en = "Now"
+        self.app_status.save()
+
+        response = self.client.get(
+            "/api/app/status/",
+            {"platform": "android", "user_type": "customer", "lang": "ar"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertTrue(payload["maintenance_mode"])
+        self.assertTrue(payload["update"]["enabled"])
+        self.assertTrue(payload["update"]["force_update"])
+        self.assertEqual(payload["update"]["android"]["min_version"], "2.1.0")
+        self.assertEqual(payload["update"]["ios"]["min_version"], "2.2.0")
+        self.assertEqual(payload["update"]["windows"]["download_url"], "https://example.com/windows.exe")
+        self.assertEqual(payload["maintenance"]["title_ar"], "تحديث مهم")
+        self.assertEqual(payload["maintenance"]["message_ar"], "يرجى تحديث التطبيق")
+        self.assertEqual(payload["maintenance"]["window_label_ar"], "الآن")
 
 
 class CustomerMaintenanceBlockingTests(TestCase):

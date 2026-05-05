@@ -429,14 +429,51 @@ def emit_order_rejected(driver_id, order_id, reason='rejected_by_driver'):
     _send_driver_event(driver_id, 'driver.order.rejected', {'order_id': order_id, 'reason': reason})
 
 
-def emit_order_transferred(driver_id, order_id, reason_key=None, note=None):
+def emit_order_transferred(
+    driver_id,
+    order_id,
+    reason_key=None,
+    note=None,
+    *,
+    old_driver_id=None,
+    new_driver_id=None,
+    transferred_by=None,
+    status='transferred',
+):
+    data = {
+        'order_id': order_id,
+        'reason_key': reason_key,
+        'note': note,
+    }
+    if old_driver_id is not None:
+        data['old_driver_id'] = old_driver_id
+    if new_driver_id is not None:
+        data['new_driver_id'] = new_driver_id
+    if transferred_by is not None:
+        data['transferred_by'] = transferred_by
+    if status is not None:
+        data['status'] = status
+    _send_driver_event(driver_id, 'driver.order.transferred', data)
+
+
+def emit_order_transfer_requested(
+    driver_id,
+    order_id,
+    *,
+    requested_by_driver_id,
+    reason_key=None,
+    note=None,
+    status='pending_store_approval',
+):
     _send_driver_event(
         driver_id,
-        'driver.order.transferred',
+        'driver.order.transfer_requested',
         {
             'order_id': order_id,
+            'requested_by_driver_id': requested_by_driver_id,
             'reason_key': reason_key,
             'note': note,
+            'status': status,
         },
     )
 

@@ -293,6 +293,75 @@ class AppMaintenanceSettings(models.Model):
         }
 
 
+class AppStatusSettings(models.Model):
+    maintenance_mode = models.BooleanField(default=False, verbose_name="تفعيل شاشة حالة التطبيق")
+    update_enabled = models.BooleanField(default=False, verbose_name="تفعيل التحديث")
+    force_update = models.BooleanField(default=False, verbose_name="فرض التحديث")
+
+    android_min_version = models.CharField(max_length=50, blank=True, default="", verbose_name="أقل إصدار Android")
+    android_store_url = models.URLField(blank=True, default="", verbose_name="رابط متجر Android")
+    ios_min_version = models.CharField(max_length=50, blank=True, default="", verbose_name="أقل إصدار iOS")
+    ios_store_url = models.URLField(blank=True, default="", verbose_name="رابط متجر iOS")
+    windows_min_version = models.CharField(max_length=50, blank=True, default="", verbose_name="أقل إصدار Windows")
+    windows_download_url = models.URLField(blank=True, default="", verbose_name="رابط تنزيل Windows")
+
+    maintenance_title_ar = models.CharField(max_length=200, blank=True, default="", verbose_name="عنوان الصيانة بالعربية")
+    maintenance_title_en = models.CharField(max_length=200, blank=True, default="", verbose_name="عنوان الصيانة بالإنجليزية")
+    maintenance_message_ar = models.TextField(blank=True, default="", verbose_name="رسالة الصيانة بالعربية")
+    maintenance_message_en = models.TextField(blank=True, default="", verbose_name="رسالة الصيانة بالإنجليزية")
+    maintenance_window_label_ar = models.CharField(max_length=200, blank=True, default="", verbose_name="وسم النافذة بالعربية")
+    maintenance_window_label_en = models.CharField(max_length=200, blank=True, default="", verbose_name="وسم النافذة بالإنجليزية")
+    show_contact_support = models.BooleanField(default=False, verbose_name="إظهار وسيلة التواصل")
+    support_whatsapp = models.CharField(max_length=50, blank=True, default="", verbose_name="واتساب الدعم")
+    estimated_minutes = models.PositiveIntegerField(blank=True, null=True, verbose_name="المدة المتوقعة بالدقائق")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "إعدادات حالة التطبيق العامة"
+        verbose_name_plural = "إعدادات حالة التطبيق العامة"
+
+    def __str__(self):
+        return "إعدادات حالة التطبيق العامة"
+
+    @classmethod
+    def _default_values(cls):
+        from django.conf import settings
+
+        return {
+            "maintenance_mode": bool(getattr(settings, "APP_STATUS_MAINTENANCE_MODE", False)),
+            "update_enabled": bool(
+                getattr(settings, "APP_STATUS_UPDATE_ENABLED", getattr(settings, "APP_STATUS_FORCE_UPDATE_ENABLED", False))
+            ),
+            "force_update": bool(getattr(settings, "APP_STATUS_UPDATE_FORCE_UPDATE", False)),
+            "android_min_version": str(getattr(settings, "APP_STATUS_ANDROID_MIN_VERSION", "") or "").strip(),
+            "android_store_url": str(getattr(settings, "APP_STATUS_ANDROID_STORE_URL", "") or "").strip(),
+            "ios_min_version": str(getattr(settings, "APP_STATUS_IOS_MIN_VERSION", "") or "").strip(),
+            "ios_store_url": str(getattr(settings, "APP_STATUS_IOS_STORE_URL", "") or "").strip(),
+            "windows_min_version": str(getattr(settings, "APP_STATUS_WINDOWS_MIN_VERSION", "") or "").strip(),
+            "windows_download_url": str(getattr(settings, "APP_STATUS_WINDOWS_DOWNLOAD_URL", "") or "").strip(),
+            "maintenance_title_ar": str(getattr(settings, "APP_STATUS_MAINTENANCE_TITLE_AR", "") or "").strip(),
+            "maintenance_title_en": str(getattr(settings, "APP_STATUS_MAINTENANCE_TITLE_EN", "") or "").strip(),
+            "maintenance_message_ar": str(getattr(settings, "APP_STATUS_MAINTENANCE_MESSAGE_AR", "") or "").strip(),
+            "maintenance_message_en": str(getattr(settings, "APP_STATUS_MAINTENANCE_MESSAGE_EN", "") or "").strip(),
+            "maintenance_window_label_ar": str(getattr(settings, "APP_STATUS_MAINTENANCE_WINDOW_LABEL_AR", "") or "").strip(),
+            "maintenance_window_label_en": str(getattr(settings, "APP_STATUS_MAINTENANCE_WINDOW_LABEL_EN", "") or "").strip(),
+            "show_contact_support": bool(getattr(settings, "APP_STATUS_SHOW_CONTACT_SUPPORT", False)),
+            "support_whatsapp": str(getattr(settings, "APP_STATUS_SUPPORT_WHATSAPP", "") or "").strip(),
+            "estimated_minutes": getattr(settings, "APP_STATUS_ESTIMATED_MINUTES", None),
+        }
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1, defaults=cls._default_values())
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+
 class ShopCategory(models.Model):
     """نموذج تصنيف المحل (مطعم، صيدلية، ...)."""
 

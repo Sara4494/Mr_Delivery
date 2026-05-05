@@ -42,7 +42,7 @@ from .service import (
     transfer_order_between_drivers,
     update_call_status,
 )
-from ..realtime.driver import sync_driver_order_state
+from ..realtime.driver import emit_order_transferred, sync_driver_order_state
 from ..realtime.presence import format_utc_iso8601
 from ..websocket_auth import ensure_socket_account_active
 
@@ -446,6 +446,14 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
             target_driver=target_driver,
             scope=getattr(self, 'scope', None),
             base_url=getattr(self, 'base_url', None),
+        )
+        emit_order_transferred(
+            source_driver.id,
+            order.id,
+            old_driver_id=source_driver.id,
+            new_driver_id=target_driver.id,
+            transferred_by='store',
+            status='transferred',
         )
         sync_driver_order_state(
             order,
