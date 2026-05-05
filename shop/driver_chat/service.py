@@ -1210,6 +1210,8 @@ def _driver_presence_payload(driver: Driver):
         'availability_status': availability.get('status'),
         'can_receive_orders': bool(availability.get('can_receive_orders')),
         'availability_enabled': bool(availability.get('availability_enabled')),
+        'max_active_orders_per_driver': int(availability.get('max_active_orders_per_driver') or 0),
+        'active_orders_count': int(availability.get('active_orders_count') or 0),
         'reason': availability.get('reason'),
         'last_seen_at': format_utc_iso8601(driver.last_seen_at),
         'active_connections_count': int(getattr(driver, 'active_connections_count', 0) or 0),

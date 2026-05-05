@@ -1226,8 +1226,9 @@ def _build_driver_status_panel(driver, active_orders_count):
     is_online = bool(snapshot['presence_online'])
     can_receive_orders = bool(snapshot['can_receive_orders'])
     status_value = snapshot['status']
+    reason = snapshot.get('reason')
 
-    if status_value == 'busy':
+    if status_value == 'busy' and reason == 'max_active_orders':
         title = 'أنت مشغول الآن'
         subtitle = 'لديك طلبات جارية حتى الآن.'
     elif status_value == 'available':
@@ -1252,6 +1253,46 @@ def _build_driver_status_panel(driver, active_orders_count):
         'status_display': status_display_map.get(status_value, driver.get_status_display()),
         'active_orders_count': active_orders_count,
         'reason': snapshot.get('reason'),
+        'title': title,
+        'subtitle': subtitle,
+    }
+
+
+def _build_driver_availability_panel(driver, active_orders_count):
+    snapshot = driver.get_availability_snapshot(active_orders_count=active_orders_count)
+    is_online = bool(snapshot['presence_online'])
+    status_value = snapshot['status']
+    reason = snapshot.get('reason')
+
+    if status_value == 'busy' and reason == 'max_active_orders':
+        title = 'أنت مشغول الآن'
+        subtitle = 'وصلت للحد الأقصى من الطلبات الجارية.'
+    elif status_value == 'available':
+        title = 'أنت متاح الآن'
+        subtitle = 'جاهز لاستقبال الطلبات الجديدة.'
+    elif status_value == 'offline':
+        title = 'أنت غير متصل الآن'
+        subtitle = 'قم بالدخول أو تفعيل الاتصال لاستقبال الطلبات.'
+    else:
+        title = 'أنت غير متاح الآن'
+        subtitle = 'قم بتفعيل حالتك لاستقبال الطلبات الجديدة.'
+
+    status_display_map = {
+        'available': 'متاح',
+        'busy': 'مشغول',
+        'unavailable': 'غير متاح',
+        'offline': 'غير متصل',
+    }
+    return {
+        'presence_online': is_online,
+        'is_online': is_online,
+        'availability_enabled': bool(snapshot['availability_enabled']),
+        'can_receive_orders': bool(snapshot['can_receive_orders']),
+        'status': status_value,
+        'status_display': status_display_map.get(status_value, driver.get_status_display()),
+        'active_orders_count': int(snapshot['active_orders_count'] or 0),
+        'max_active_orders_per_driver': int(snapshot.get('max_active_orders_per_driver') or 0),
+        'reason': reason,
         'title': title,
         'subtitle': subtitle,
     }
@@ -2075,7 +2116,7 @@ def driver_dashboard_view(request):
             'notifications': {
                 'unread_count': unread_notifications_count,
             },
-            'availability': _build_driver_status_panel(driver, active_orders_qs.count()),
+            'availability': _build_driver_availability_panel(driver, active_orders_qs.count()),
             'stats': {
                 'current_deliveries_count': in_delivery_orders_qs.count(),
                 'active_orders_count': active_orders_qs.count(),
@@ -2174,6 +2215,7 @@ def driver_status_view(request):
             'status': snapshot['status'],
             'status_display': status_display_map.get(snapshot['status'], driver.get_status_display()),
             'active_orders_count': int(snapshot['active_orders_count'] or 0),
+            'max_active_orders_per_driver': int(snapshot.get('max_active_orders_per_driver') or 0),
             'reason': snapshot.get('reason'),
         },
         message=t(request, 'driver_status_updated_successfully'),

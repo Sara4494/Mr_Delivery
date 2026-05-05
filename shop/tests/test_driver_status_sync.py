@@ -4,8 +4,10 @@ from unittest.mock import patch
 from datetime import datetime, timezone
 
 from django.test import SimpleTestCase
+from django.test.utils import override_settings
 
 from shop.driver_chat_service import _map_order_status_to_driver_chat_status
+from shop.models import Driver
 from shop.driver_realtime import (
     build_driver_order_payload,
     driver_can_receive_new_orders,
@@ -22,6 +24,40 @@ from shop.driver_realtime import (
 
 
 class DriverStatusSyncTests(SimpleTestCase):
+    @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
+    def test_driver_snapshot_stays_available_below_max_active_orders(self):
+        driver = Driver(
+            name='Driver',
+            phone_number='01000000000',
+            is_verified=True,
+            is_online=True,
+            availability_enabled=True,
+        )
+
+        snapshot = driver.get_availability_snapshot(active_orders_count=1, in_delivery_count=1)
+
+        self.assertEqual(snapshot['status'], 'available')
+        self.assertTrue(snapshot['can_receive_orders'])
+        self.assertEqual(snapshot['reason'], 'available')
+        self.assertEqual(snapshot['max_active_orders_per_driver'], 2)
+
+    @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
+    def test_driver_snapshot_becomes_busy_only_at_max_active_orders(self):
+        driver = Driver(
+            name='Driver',
+            phone_number='01000000001',
+            is_verified=True,
+            is_online=True,
+            availability_enabled=True,
+        )
+
+        snapshot = driver.get_availability_snapshot(active_orders_count=2, in_delivery_count=1)
+
+        self.assertEqual(snapshot['status'], 'busy')
+        self.assertFalse(snapshot['can_receive_orders'])
+        self.assertEqual(snapshot['reason'], 'max_active_orders')
+        self.assertEqual(snapshot['max_active_orders_per_driver'], 2)
+
     def test_targeted_pending_acceptance_is_only_available_for_matching_driver(self):
         driver = SimpleNamespace(id=7)
         other_driver = SimpleNamespace(id=9)
@@ -205,14 +241,37 @@ class DriverStatusSyncTests(SimpleTestCase):
         order = SimpleNamespace(status='new')
         self.assertEqual(_map_order_status_to_driver_chat_status(order), 'waiting_reply')
 
+    @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
     def test_available_driver_without_active_orders_can_receive_new_orders(self):
-        driver = SimpleNamespace(status='available', active_orders_count=0)
+        driver = SimpleNamespace(
+            get_availability_snapshot=lambda: {
+                'can_receive_orders': True,
+            }
+        )
         self.assertTrue(driver_can_receive_new_orders(driver))
 
     def test_busy_driver_cannot_receive_new_orders(self):
-        driver = SimpleNamespace(status='busy', active_orders_count=0)
+        driver = SimpleNamespace(
+            get_availability_snapshot=lambda: {
+                'can_receive_orders': False,
+            }
+        )
         self.assertFalse(driver_can_receive_new_orders(driver))
 
-    def test_available_driver_with_active_orders_cannot_receive_new_orders(self):
-        driver = SimpleNamespace(status='available', active_orders_count=2)
+    @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
+    def test_available_driver_with_active_orders_below_limit_can_receive_new_orders(self):
+        driver = SimpleNamespace(
+            get_availability_snapshot=lambda: {
+                'can_receive_orders': True,
+            }
+        )
+        self.assertTrue(driver_can_receive_new_orders(driver))
+
+    @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
+    def test_driver_at_max_active_orders_cannot_receive_new_orders(self):
+        driver = SimpleNamespace(
+            get_availability_snapshot=lambda: {
+                'can_receive_orders': False,
+            }
+        )
         self.assertFalse(driver_can_receive_new_orders(driver))

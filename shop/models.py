@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
@@ -306,9 +307,18 @@ class Driver(models.Model):
             return 0
         return orders_manager.filter(status__in=['preparing', 'on_way']).count()
 
+    def get_max_active_orders_limit(self):
+        raw_value = getattr(settings, 'MAX_ACTIVE_ORDERS_PER_DRIVER', 2)
+        try:
+            limit = int(raw_value)
+        except (TypeError, ValueError):
+            limit = 2
+        return max(limit, 1)
+
     def get_availability_snapshot(self, *, active_orders_count=None, in_delivery_count=None):
         active_orders_count = self.get_active_orders_count() if active_orders_count is None else int(active_orders_count or 0)
         in_delivery_count = self.get_in_delivery_orders_count() if in_delivery_count is None else int(in_delivery_count or 0)
+        max_active_orders = self.get_max_active_orders_limit()
 
         moderation = None
         try:
@@ -325,16 +335,22 @@ class Driver(models.Model):
             status = 'unavailable'
             can_receive_orders = False
             reason = 'account_restricted'
+        elif not presence_online:
+            status = 'offline'
+            can_receive_orders = False
+            reason = 'offline'
         elif not availability_enabled:
             status = 'unavailable'
             can_receive_orders = False
-        elif active_orders_count > 0:
+            reason = 'availability_disabled'
+        elif active_orders_count >= max_active_orders:
             status = 'busy'
             can_receive_orders = False
-            reason = 'active_orders'
+            reason = 'max_active_orders'
         else:
             status = 'available'
             can_receive_orders = True
+            reason = 'available'
 
         return {
             'presence_online': presence_online,
@@ -344,6 +360,7 @@ class Driver(models.Model):
             'status': status,
             'active_orders_count': active_orders_count,
             'in_delivery_count': in_delivery_count,
+            'max_active_orders_per_driver': max_active_orders,
             'reason': reason,
         }
 

@@ -103,6 +103,7 @@ CORS_ALLOW_HEADERS = [
     "Accept-Language",
 ]
 CORS_PREFLIGHT_MAX_AGE = int(os.environ.get("CORS_PREFLIGHT_MAX_AGE", "86400"))
+MAX_ACTIVE_ORDERS_PER_DRIVER = _env_int("MAX_ACTIVE_ORDERS_PER_DRIVER", default=2)
 
 
 # Application definition
