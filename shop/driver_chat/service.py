@@ -1464,6 +1464,7 @@ def start_call(*, conversation: DriverChatConversation, initiated_by='store'):
 
 
 def update_call_status(call: DriverChatCall, *, status_value, reason=None):
+    previous_status = call.status
     call.status = status_value
     if reason:
         call.reason = reason
@@ -1485,7 +1486,7 @@ def update_call_status(call: DriverChatCall, *, status_value, reason=None):
         conversation=call.conversation,
         driver=call.conversation.driver,
     )
-    if status_value == 'ringing' and call.initiated_by == 'store':
+    if previous_status != 'ringing' and status_value == 'ringing' and call.initiated_by == 'store':
         try:
             from ..fcm.service import send_driver_chat_call_ringing_push_fallback
             send_driver_chat_call_ringing_push_fallback(call.conversation, call)

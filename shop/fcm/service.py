@@ -183,9 +183,9 @@ def _driver_has_active_socket(driver_id):
 
 def _driver_urgent_ring_profile():
     return {
-        'channel_id': getattr(settings, 'FCM_DRIVER_URGENT_CHANNEL_ID', 'delivery_orders_urgent'),
-        'sound': getattr(settings, 'FCM_DRIVER_ORDER_SOUND', 'order_ring'),
-        'ios_sound': getattr(settings, 'FCM_DRIVER_ORDER_IOS_SOUND', 'order_ring.mp3'),
+        'channel_id': getattr(settings, 'FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID', 'delivery_incoming_calls_v2'),
+        'sound': getattr(settings, 'FCM_DRIVER_INCOMING_CALL_SOUND', 'incoming_call'),
+        'ios_sound': getattr(settings, 'FCM_DRIVER_INCOMING_CALL_IOS_SOUND', 'incoming_call.mp3'),
         'high_priority': True,
         'ttl': '60s',
         'notification_priority': 'max',
@@ -683,11 +683,23 @@ def _filter_token_records(token_records, *, exclude_tokens=None, exclude_device_
     exclude_tokens = _normalize_excluded(exclude_tokens)
     exclude_device_ids = _normalize_excluded(exclude_device_ids)
     filtered_records = []
+    seen_tokens = set()
+    seen_devices = set()
     for token_record in token_records:
         if token_record.fcm_token in exclude_tokens:
             continue
         if token_record.device_id in exclude_device_ids:
             continue
+        token_key = str(token_record.fcm_token or '').strip()
+        device_key = str(token_record.device_id or '').strip()
+        if token_key and token_key in seen_tokens:
+            continue
+        if device_key and device_key in seen_devices:
+            continue
+        if token_key:
+            seen_tokens.add(token_key)
+        if device_key:
+            seen_devices.add(device_key)
         filtered_records.append(token_record)
     return filtered_records
 
@@ -1739,7 +1751,14 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
         return {'users_targeted': 0, 'tokens_total': 0, 'tokens_sent': 0, 'tokens_failed': 0, 'tokens_invalidated': 0}
 
     raw_targets = (ring_payload or {}).get('targets') or [ring_payload.get('target')]
-    targets = [str(item).strip().lower() for item in raw_targets if str(item or '').strip()]
+    targets = []
+    seen_targets = set()
+    for item in raw_targets:
+        normalized_target = str(item or '').strip().lower()
+        if not normalized_target or normalized_target in seen_targets:
+            continue
+        seen_targets.add(normalized_target)
+        targets.append(normalized_target)
     shop_name = _trim_text((ring_payload or {}).get('shop_name') or getattr(order.shop_owner, 'shop_name', ''), default='Mr Delivery', max_length=120)
     shop_profile_image_url = build_absolute_file_url(
         getattr(order.shop_owner, 'profile_image', None),
@@ -1998,12 +2017,14 @@ def build_driver_customer_ring_payload(*, order, ring_payload):
     )
     profile = _driver_urgent_ring_profile()
     return {
-        'type': 'ring',
+        'type': 'driver_customer.call_ringing',
         'chat_type': 'driver_customer',
         'order_id': str(order.id),
+        'customer_id': str(getattr(customer, 'id', '') or ''),
         'ring_id': str(ring_payload.get('ring_id') or ''),
+        'conversation_id': str(ring_payload.get('conversation_id') or f'order_{order.id}_driver_customer'),
         'customer_name': customer_name,
-        'title': 'العميل يتصل بك',
+        'title': f'{customer_name} يتصل بك',
         'body': 'اضغط لفتح محادثة العميل',
         'sound': profile['sound'],
         'channel_id': profile['channel_id'],
@@ -2013,14 +2034,17 @@ def build_driver_customer_ring_payload(*, order, ring_payload):
 def build_driver_shop_call_ringing_payload(*, conversation, call):
     shop_owner = getattr(conversation, 'shop_owner', None)
     profile = _driver_urgent_ring_profile()
+    store_name = _trim_text(getattr(shop_owner, 'shop_name', None), default='Mr Delivery', max_length=120)
     return {
         'type': 'driver_chat.call_ringing',
-        'chat_type': 'driver_shop',
+        'chat_type': 'driver_store',
         'call_id': str(getattr(call, 'public_id', '') or ''),
         'conversation_id': str(getattr(conversation, 'public_id', '') or ''),
         'shop_id': str(getattr(shop_owner, 'id', '') or ''),
-        'shop_name': _trim_text(getattr(shop_owner, 'shop_name', None), default='Mr Delivery', max_length=120),
-        'title': 'المحل يتصل بك',
+        'store_id': str(getattr(shop_owner, 'id', '') or ''),
+        'store_name': store_name,
+        'shop_name': store_name,
+        'title': f'{store_name} يتصل بك',
         'body': 'اضغط لفتح محادثة المحل',
         'sound': profile['sound'],
         'channel_id': profile['channel_id'],

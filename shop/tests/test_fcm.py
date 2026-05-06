@@ -501,16 +501,50 @@ class FCMFallbackDispatchTests(TestCase):
         target_record = mock_send.call_args[0][0]
         self.assertEqual(target_record.user_type, 'driver')
         self.assertEqual(target_record.user_id, self.driver.id)
-        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'delivery_orders_urgent')
-        self.assertEqual(mock_send.call_args.kwargs['sound'], 'order_ring')
+        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'delivery_incoming_calls_v2')
+        self.assertEqual(mock_send.call_args.kwargs['sound'], 'incoming_call')
         self.assertTrue(mock_send.call_args.kwargs['high_priority'])
-        self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'ring')
+        self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'driver_customer.call_ringing')
         self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'driver_customer')
         self.assertEqual(mock_send.call_args.kwargs['data']['order_id'], str(self.order.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['customer_id'], str(self.customer.id))
         self.assertEqual(mock_send.call_args.kwargs['data']['ring_id'], 'ring-194')
+        self.assertEqual(
+            mock_send.call_args.kwargs['data']['conversation_id'],
+            f'order_{self.order.id}_driver_customer',
+        )
         self.assertEqual(mock_send.call_args.kwargs['data']['customer_name'], 'Mohammed Eltony')
-        self.assertEqual(mock_send.call_args.kwargs['data']['title'], 'العميل يتصل بك')
+        self.assertEqual(mock_send.call_args.kwargs['data']['title'], 'Mohammed Eltony يتصل بك')
         self.assertEqual(mock_send.call_args.kwargs['data']['body'], 'اضغط لفتح محادثة العميل')
+        self.assertEqual(mock_send.call_args.kwargs['data']['sound'], 'incoming_call')
+        self.assertEqual(mock_send.call_args.kwargs['data']['channel_id'], 'delivery_incoming_calls_v2')
+
+    @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
+    def test_ring_fallback_deduplicates_repeated_driver_target_entries(self, mock_send):
+        FCMDeviceToken.objects.create(
+            user_type='driver',
+            user_id=self.driver.id,
+            device_id='driver-device-dedup-target',
+            platform='android',
+            fcm_token='driver-token-dedup-target',
+            is_active=True,
+        )
+
+        summary = send_ring_push_fallback(
+            self.order.id,
+            {
+                'ring_id': 'ring-dedup-target',
+                'sender_type': 'customer',
+                'sender_name': 'Mohammed Eltony',
+                'customer_name': 'Mohammed Eltony',
+                'targets': ['driver', 'driver'],
+                'chat_type': 'driver_customer',
+            },
+        )
+
+        self.assertEqual(summary['tokens_total'], 1)
+        self.assertEqual(summary['tokens_sent'], 1)
+        self.assertEqual(mock_send.call_count, 1)
 
     @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
     def test_ring_fallback_skips_driver_push_when_driver_has_active_socket(self, mock_send):
@@ -569,17 +603,21 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(summary['tokens_total'], 1)
         self.assertEqual(summary['tokens_sent'], 1)
         self.assertEqual(mock_send.call_count, 1)
-        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'delivery_orders_urgent')
-        self.assertEqual(mock_send.call_args.kwargs['sound'], 'order_ring')
+        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'delivery_incoming_calls_v2')
+        self.assertEqual(mock_send.call_args.kwargs['sound'], 'incoming_call')
         self.assertTrue(mock_send.call_args.kwargs['high_priority'])
         self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'driver_chat.call_ringing')
-        self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'driver_shop')
+        self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'driver_store')
         self.assertEqual(mock_send.call_args.kwargs['data']['call_id'], call.public_id)
         self.assertEqual(mock_send.call_args.kwargs['data']['conversation_id'], conversation.public_id)
         self.assertEqual(mock_send.call_args.kwargs['data']['shop_id'], str(self.shop.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['store_id'], str(self.shop.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['store_name'], self.shop.shop_name)
         self.assertEqual(mock_send.call_args.kwargs['data']['shop_name'], self.shop.shop_name)
-        self.assertEqual(mock_send.call_args.kwargs['data']['title'], 'المحل يتصل بك')
+        self.assertEqual(mock_send.call_args.kwargs['data']['title'], f'{self.shop.shop_name} يتصل بك')
         self.assertEqual(mock_send.call_args.kwargs['data']['body'], 'اضغط لفتح محادثة المحل')
+        self.assertEqual(mock_send.call_args.kwargs['data']['sound'], 'incoming_call')
+        self.assertEqual(mock_send.call_args.kwargs['data']['channel_id'], 'delivery_incoming_calls_v2')
 
     def test_incoming_ring_payload_includes_driver_image_url_for_driver_sender(self):
         payload = build_incoming_ring_payload(
@@ -668,6 +706,40 @@ class FCMServiceTests(TestCase):
         self.assertEqual(summary['tokens_total'], 2)
         self.assertEqual(summary['tokens_sent'], 2)
         self.assertEqual(mock_send.call_count, 2)
+
+    @patch('shop.fcm_service._firebase_modules', side_effect=Exception('mock firebase unavailable'))
+    @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
+    def test_send_push_to_user_deduplicates_same_fcm_token(self, mock_send, mock_firebase_modules):
+        FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-dedup-a',
+            platform='android',
+            fcm_token='shared-token',
+            is_active=True,
+        )
+        FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='device-dedup-b',
+            platform='ios',
+            fcm_token='shared-token',
+            is_active=True,
+        )
+
+        summary = send_push_to_user(
+            user_type='customer',
+            user_id=self.customer.id,
+            title='رسالة جديدة',
+            body='لديك رسالة جديدة',
+            data={'type': 'chat_message'},
+            channel_id='chat_channel',
+            sound='default',
+        )
+
+        self.assertEqual(summary['tokens_total'], 1)
+        self.assertEqual(summary['tokens_sent'], 1)
+        self.assertEqual(mock_send.call_count, 1)
 
     @patch('shop.fcm_service._send_push_to_fcm_token', side_effect=Exception('UNREGISTERED'))
     def test_send_push_to_token_record_deletes_invalid_tokens(self, mock_send):
