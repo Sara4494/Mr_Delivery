@@ -10,6 +10,7 @@ from shop.fcm_service import (
     _stringify_payload,
     build_driver_inbox_notification_payload,
     build_incoming_ring_payload,
+    send_driver_chat_call_ringing_push_fallback,
     send_order_chat_push_fallback,
     send_driver_new_order_notification,
     send_driver_store_invite_notification,
@@ -31,6 +32,8 @@ from shop.models import (
     Customer,
     Driver,
     DriverChatConversation,
+    DriverChatCall,
+    DriverPresenceConnection,
     Employee,
     FCMDeviceToken,
     Notification,
@@ -468,6 +471,115 @@ class FCMFallbackDispatchTests(TestCase):
         for call in mock_send.call_args_list:
             self.assertEqual(call.kwargs['channel_id'], 'incoming_ring_channel')
             self.assertTrue(call.kwargs['high_priority'])
+
+    @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
+    def test_ring_fallback_targets_driver_with_urgent_payload_when_driver_has_no_active_socket(self, mock_send):
+        FCMDeviceToken.objects.create(
+            user_type='driver',
+            user_id=self.driver.id,
+            device_id='driver-device',
+            platform='android',
+            fcm_token='driver-token',
+            is_active=True,
+        )
+
+        summary = send_ring_push_fallback(
+            self.order.id,
+            {
+                'ring_id': 'ring-194',
+                'sender_type': 'customer',
+                'sender_name': 'Mohammed Eltony',
+                'customer_name': 'Mohammed Eltony',
+                'targets': ['driver'],
+                'chat_type': 'driver_customer',
+            },
+        )
+
+        self.assertEqual(summary['tokens_total'], 1)
+        self.assertEqual(summary['tokens_sent'], 1)
+        self.assertEqual(mock_send.call_count, 1)
+        target_record = mock_send.call_args[0][0]
+        self.assertEqual(target_record.user_type, 'driver')
+        self.assertEqual(target_record.user_id, self.driver.id)
+        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'delivery_orders_urgent')
+        self.assertEqual(mock_send.call_args.kwargs['sound'], 'order_ring')
+        self.assertTrue(mock_send.call_args.kwargs['high_priority'])
+        self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'ring')
+        self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'driver_customer')
+        self.assertEqual(mock_send.call_args.kwargs['data']['order_id'], str(self.order.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['ring_id'], 'ring-194')
+        self.assertEqual(mock_send.call_args.kwargs['data']['customer_name'], 'Mohammed Eltony')
+        self.assertEqual(mock_send.call_args.kwargs['data']['title'], 'العميل يتصل بك')
+        self.assertEqual(mock_send.call_args.kwargs['data']['body'], 'اضغط لفتح محادثة العميل')
+
+    @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
+    def test_ring_fallback_skips_driver_push_when_driver_has_active_socket(self, mock_send):
+        FCMDeviceToken.objects.create(
+            user_type='driver',
+            user_id=self.driver.id,
+            device_id='driver-device-2',
+            platform='android',
+            fcm_token='driver-token-2',
+            is_active=True,
+        )
+        DriverPresenceConnection.objects.create(
+            driver=self.driver,
+            channel_name='driver-online-channel',
+            connection_type='driver_socket',
+        )
+
+        summary = send_ring_push_fallback(
+            self.order.id,
+            {
+                'ring_id': 'ring-online',
+                'sender_type': 'customer',
+                'sender_name': 'Mohammed Eltony',
+                'targets': ['driver'],
+                'chat_type': 'driver_customer',
+            },
+        )
+
+        self.assertEqual(summary['tokens_total'], 0)
+        self.assertEqual(summary['tokens_sent'], 0)
+        self.assertEqual(mock_send.call_count, 0)
+
+    @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
+    def test_driver_chat_call_ringing_fallback_targets_driver_when_store_calls_and_driver_offline(self, mock_send):
+        FCMDeviceToken.objects.create(
+            user_type='driver',
+            user_id=self.driver.id,
+            device_id='driver-device-3',
+            platform='android',
+            fcm_token='driver-token-3',
+            is_active=True,
+        )
+        conversation = DriverChatConversation.objects.create(
+            shop_owner=self.shop,
+            driver=self.driver,
+        )
+        call = DriverChatCall.objects.create(
+            conversation=conversation,
+            status='ringing',
+            initiated_by='store',
+            channel_name='call-room',
+        )
+
+        summary = send_driver_chat_call_ringing_push_fallback(conversation, call)
+
+        self.assertEqual(summary['tokens_total'], 1)
+        self.assertEqual(summary['tokens_sent'], 1)
+        self.assertEqual(mock_send.call_count, 1)
+        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'delivery_orders_urgent')
+        self.assertEqual(mock_send.call_args.kwargs['sound'], 'order_ring')
+        self.assertTrue(mock_send.call_args.kwargs['high_priority'])
+        self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'driver_chat.call_ringing')
+        self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'driver_shop')
+        self.assertEqual(mock_send.call_args.kwargs['data']['call_id'], call.public_id)
+        self.assertEqual(mock_send.call_args.kwargs['data']['conversation_id'], conversation.public_id)
+        self.assertEqual(mock_send.call_args.kwargs['data']['shop_id'], str(self.shop.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['shop_name'], self.shop.shop_name)
+        self.assertEqual(mock_send.call_args.kwargs['data']['title'], 'المحل يتصل بك')
+        self.assertEqual(mock_send.call_args.kwargs['data']['body'], 'اضغط لفتح محادثة المحل')
 
     def test_incoming_ring_payload_includes_driver_image_url_for_driver_sender(self):
         payload = build_incoming_ring_payload(

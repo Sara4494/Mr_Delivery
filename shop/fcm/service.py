@@ -12,7 +12,7 @@ from django.utils import timezone
 from user.models import ShopOwner
 from user.utils import build_absolute_file_url
 
-from ..models import Customer, Driver, Employee, FCMDeviceToken, Notification, Order
+from ..models import Customer, Driver, DriverPresenceConnection, Employee, FCMDeviceToken, Notification, Order
 
 
 logger = logging.getLogger(__name__)
@@ -173,6 +173,23 @@ def _ring_target_identities(order, target):
     if target == 'shop':
         return _get_shop_identities(order.shop_owner_id)
     return []
+
+
+def _driver_has_active_socket(driver_id):
+    if not driver_id:
+        return False
+    return DriverPresenceConnection.objects.filter(driver_id=driver_id).exists()
+
+
+def _driver_urgent_ring_profile():
+    return {
+        'channel_id': getattr(settings, 'FCM_DRIVER_URGENT_CHANNEL_ID', 'delivery_orders_urgent'),
+        'sound': getattr(settings, 'FCM_DRIVER_ORDER_SOUND', 'order_ring'),
+        'ios_sound': getattr(settings, 'FCM_DRIVER_ORDER_IOS_SOUND', 'order_ring.mp3'),
+        'high_priority': True,
+        'ttl': '60s',
+        'notification_priority': 'max',
+    }
 
 
 def _firebase_modules():
@@ -1741,13 +1758,35 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
 
     for target in targets:
         recipient_identities = _ring_target_identities(order, target)
-        payload = build_incoming_ring_payload(
-            order=order,
-            ring_payload=ring_payload,
-            target=target,
-            shop_name=shop_name,
-            shop_profile_image_url=shop_profile_image_url,
-        )
+        if target == 'driver':
+            if not order.driver_id or _driver_has_active_socket(order.driver_id):
+                continue
+            payload = build_driver_customer_ring_payload(order=order, ring_payload=ring_payload)
+            profile = _driver_urgent_ring_profile()
+            title = payload['title']
+            body = payload['body']
+            channel_id = profile['channel_id']
+            sound = profile['sound']
+            ios_sound = profile['ios_sound']
+            high_priority = profile['high_priority']
+            ttl = profile['ttl']
+            notification_priority = profile['notification_priority']
+        else:
+            payload = build_incoming_ring_payload(
+                order=order,
+                ring_payload=ring_payload,
+                target=target,
+                shop_name=shop_name,
+                shop_profile_image_url=shop_profile_image_url,
+            )
+            title = shop_name
+            body = _trim_text(_ring_notification_body(order, ring_payload, target), max_length=180)
+            channel_id = getattr(settings, 'FCM_RING_CHANNEL_ID', 'incoming_ring_channel')
+            sound = getattr(settings, 'FCM_RING_SOUND', 'incoming_call')
+            ios_sound = getattr(settings, 'FCM_RING_IOS_SOUND', 'incoming_call.mp3')
+            high_priority = True
+            ttl = None
+            notification_priority = None
 
         logger.info(
             'fcm.ring.dispatch order_id=%s target=%s sender_type=%s recipients=%s',
@@ -1758,13 +1797,17 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
         )
         target_summary = send_push_to_identities(
             recipient_identities,
-            title=shop_name,
-            body=_trim_text(_ring_notification_body(order, ring_payload, target), max_length=180),
+            title=title,
+            body=body,
             data=payload,
-            channel_id=getattr(settings, 'FCM_RING_CHANNEL_ID', 'incoming_ring_channel'),
-            sound=getattr(settings, 'FCM_RING_SOUND', 'incoming_call'),
-            ios_sound=getattr(settings, 'FCM_RING_IOS_SOUND', 'incoming_call.mp3'),
-            high_priority=True,
+            channel_id=channel_id,
+            sound=sound,
+            ios_sound=ios_sound,
+            high_priority=high_priority,
+            ttl=ttl,
+            notification_priority=notification_priority,
+            click_action='FLUTTER_NOTIFICATION_CLICK',
+            tag=str(payload.get('ring_id') or f'ring_{order.id}_{target}'),
         )
         summary['users_targeted'] += target_summary['users_targeted']
         summary['tokens_total'] += target_summary['tokens_total']
@@ -1873,6 +1916,51 @@ def send_driver_chat_push_fallback(conversation, message_payload, *, request=Non
     return summary
 
 
+def send_driver_chat_call_ringing_push_fallback(conversation, call, *, request=None, scope=None, base_url=None):
+    if not conversation or not getattr(conversation, 'driver_id', None):
+        return {'users_targeted': 0, 'tokens_total': 0, 'tokens_sent': 0, 'tokens_failed': 0, 'tokens_invalidated': 0}
+
+    if getattr(call, 'initiated_by', '') != 'store':
+        return {'users_targeted': 0, 'tokens_total': 0, 'tokens_sent': 0, 'tokens_failed': 0, 'tokens_invalidated': 0}
+
+    if _driver_has_active_socket(conversation.driver_id):
+        return {'users_targeted': 0, 'tokens_total': 0, 'tokens_sent': 0, 'tokens_failed': 0, 'tokens_invalidated': 0}
+
+    payload = build_driver_shop_call_ringing_payload(conversation=conversation, call=call)
+    profile = _driver_urgent_ring_profile()
+    logger.info(
+        'fcm.driver_chat.call_ringing.dispatch conversation_id=%s driver_id=%s call_id=%s',
+        conversation.public_id,
+        conversation.driver_id,
+        getattr(call, 'public_id', None),
+    )
+    summary = send_push_to_user(
+        user_type='driver',
+        user_id=conversation.driver_id,
+        title=payload['title'],
+        body=payload['body'],
+        data=payload,
+        channel_id=profile['channel_id'],
+        sound=profile['sound'],
+        ios_sound=profile['ios_sound'],
+        high_priority=profile['high_priority'],
+        ttl=profile['ttl'],
+        click_action='FLUTTER_NOTIFICATION_CLICK',
+        notification_priority=profile['notification_priority'],
+        tag=str(payload.get('call_id') or f'call_{conversation.public_id}'),
+    )
+    logger.info(
+        'fcm.driver_chat.call_ringing.result conversation_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+        conversation.public_id,
+        summary['users_targeted'],
+        summary['tokens_total'],
+        summary['tokens_sent'],
+        summary['tokens_failed'],
+        summary['tokens_invalidated'],
+    )
+    return summary
+
+
 def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, shop_profile_image_url=None):
     ring_payload = ring_payload or {}
     driver_image_url = ring_payload.get('driver_image_url')
@@ -1897,6 +1985,45 @@ def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, 
         'caller_name': ring_payload.get('caller_name') or ring_payload.get('sender_name') or '',
         'route': '/incoming-ring',
         'click_action': 'OPEN_CHAT',
+    }
+
+
+def build_driver_customer_ring_payload(*, order, ring_payload):
+    ring_payload = ring_payload or {}
+    customer = getattr(order, 'customer', None)
+    customer_name = _trim_text(
+        ring_payload.get('customer_name') or ring_payload.get('sender_name') or getattr(customer, 'name', None),
+        default='العميل',
+        max_length=120,
+    )
+    profile = _driver_urgent_ring_profile()
+    return {
+        'type': 'ring',
+        'chat_type': 'driver_customer',
+        'order_id': str(order.id),
+        'ring_id': str(ring_payload.get('ring_id') or ''),
+        'customer_name': customer_name,
+        'title': 'العميل يتصل بك',
+        'body': 'اضغط لفتح محادثة العميل',
+        'sound': profile['sound'],
+        'channel_id': profile['channel_id'],
+    }
+
+
+def build_driver_shop_call_ringing_payload(*, conversation, call):
+    shop_owner = getattr(conversation, 'shop_owner', None)
+    profile = _driver_urgent_ring_profile()
+    return {
+        'type': 'driver_chat.call_ringing',
+        'chat_type': 'driver_shop',
+        'call_id': str(getattr(call, 'public_id', '') or ''),
+        'conversation_id': str(getattr(conversation, 'public_id', '') or ''),
+        'shop_id': str(getattr(shop_owner, 'id', '') or ''),
+        'shop_name': _trim_text(getattr(shop_owner, 'shop_name', None), default='Mr Delivery', max_length=120),
+        'title': 'المحل يتصل بك',
+        'body': 'اضغط لفتح محادثة المحل',
+        'sound': profile['sound'],
+        'channel_id': profile['channel_id'],
     }
 
 

@@ -1202,17 +1202,39 @@ def get_resync_events(shop_owner, last_event_id):
 
 def _driver_presence_payload(driver: Driver):
     availability = driver.get_availability_snapshot()
+    availability_status = availability.get('status')
+    can_receive_orders = bool(availability.get('can_receive_orders'))
+    if availability_status == 'available':
+        title = 'أنت متاح الآن'
+        subtitle = 'جاهز لاستقبال الطلبات الجديدة.' if can_receive_orders else 'جاهز للعمل واستكمال الطلبات الحالية.'
+    elif availability_status == 'offline':
+        title = 'أنت غير متصل الآن'
+        subtitle = 'قم بالدخول أو تفعيل الاتصال لاستقبال الطلبات.'
+    else:
+        title = 'أنت غير متاح الآن'
+        subtitle = 'قم بتفعيل حالتك لاستقبال الطلبات الجديدة.'
+
+    status_display_map = {
+        'available': 'متاح',
+        'busy': 'مشغول',
+        'unavailable': 'غير متاح',
+        'offline': 'غير متصل',
+    }
     return {
         'driver_id': str(driver.id),
         'is_online': _driver_is_online(driver),
         'presence_status': _driver_presence_status(driver),
         'presence_online': bool(availability.get('presence_online')),
-        'availability_status': availability.get('status'),
-        'can_receive_orders': bool(availability.get('can_receive_orders')),
+        'availability_status': availability_status,
+        'status': availability_status,
+        'status_display': status_display_map.get(availability_status, availability_status),
+        'can_receive_orders': can_receive_orders,
         'availability_enabled': bool(availability.get('availability_enabled')),
         'max_active_orders_per_driver': int(availability.get('max_active_orders_per_driver') or 0),
         'active_orders_count': int(availability.get('active_orders_count') or 0),
         'reason': availability.get('reason'),
+        'title': title,
+        'subtitle': subtitle,
         'last_seen_at': format_utc_iso8601(driver.last_seen_at),
         'active_connections_count': int(getattr(driver, 'active_connections_count', 0) or 0),
         'driver': serialize_driver_chat_driver(driver),
@@ -1463,6 +1485,17 @@ def update_call_status(call: DriverChatCall, *, status_value, reason=None):
         conversation=call.conversation,
         driver=call.conversation.driver,
     )
+    if status_value == 'ringing' and call.initiated_by == 'store':
+        try:
+            from ..fcm.service import send_driver_chat_call_ringing_push_fallback
+            send_driver_chat_call_ringing_push_fallback(call.conversation, call)
+        except Exception:
+            logger.exception(
+                'fcm driver chat call ringing fallback failed conversation_id=%s driver_id=%s call_id=%s',
+                call.conversation.public_id,
+                call.conversation.driver_id,
+                call.public_id,
+            )
     _log_sensitive(f'call_{status_value}', conversation_id=call.conversation.public_id, driver_id=call.conversation.driver_id, call_id=call.public_id, reason=reason)
     return call
 

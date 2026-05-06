@@ -40,7 +40,7 @@ from .approval_requests import (
     serialize_admin_approval_request_detail,
     review_approval_request,
 )
-from .utils import success_response, error_response, t, localize_message
+from .utils import success_response, error_response, t, localize_message, resolve_customer_profile_image_url
 from .otp_service import (
     send_otp as otp_send,
     verify_otp as otp_verify,
@@ -264,7 +264,7 @@ def _normalize_admin_desktop_permissions(role, permissions):
     return normalized
 
 
-def _build_customer_auth_payload(customer):
+def _build_customer_auth_payload(customer, request=None):
     refresh = RefreshToken()
     refresh['customer_id'] = customer.id
     refresh['phone_number'] = customer.phone_number
@@ -278,6 +278,7 @@ def _build_customer_auth_payload(customer):
             'name': customer.name,
             'email': customer.email,
             'phone_number': customer.phone_number,
+            'profile_image_url': resolve_customer_profile_image_url(customer, request=request),
             'is_verified': customer.is_verified,
         },
         'role': 'customer',
@@ -4177,7 +4178,7 @@ def google_customer_auth_view(request):
             customer.save(update_fields=update_fields)
 
         token_record = _register_google_customer_fcm(customer=customer, request=request)
-        payload = _build_customer_auth_payload(customer)
+        payload = _build_customer_auth_payload(customer, request=request)
         if token_record:
             payload['fcm_device'] = {
                 'device_id': token_record.device_id,
@@ -4243,7 +4244,7 @@ def google_customer_auth_view(request):
         )
 
     token_record = _register_google_customer_fcm(customer=customer, request=request)
-    payload = _build_customer_auth_payload(customer)
+    payload = _build_customer_auth_payload(customer, request=request)
     payload['registration_completed'] = True
     payload['is_new_user'] = True
     if token_record:
@@ -4449,9 +4450,7 @@ def unified_register_view(request):
         customer.set_password(password)
         customer.save()
 
-        profile_image_url = None
-        if customer.profile_image:
-            profile_image_url = request.build_absolute_uri(customer.profile_image.url)
+        profile_image_url = resolve_customer_profile_image_url(customer, request=request)
 
         return success_response(
             data={

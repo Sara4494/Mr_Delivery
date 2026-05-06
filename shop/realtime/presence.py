@@ -3,6 +3,8 @@ from datetime import timezone as dt_timezone
 from django.db import transaction
 from django.utils import timezone
 
+from user.utils import resolve_customer_profile_image_url
+
 from ..models import Customer, CustomerPresenceConnection, Order
 
 
@@ -41,6 +43,7 @@ def serialize_customer_presence(customer, order_id=None):
         'customer_id': customer.id,
         'is_online': bool(customer.is_online),
         'last_seen': format_utc_iso8601(customer.last_seen),
+        'profile_image_url': resolve_customer_profile_image_url(customer),
     }
     if order_id is not None:
         payload['order_id'] = order_id

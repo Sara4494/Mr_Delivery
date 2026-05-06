@@ -342,8 +342,13 @@ class GoogleCustomerAuthTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["data"]["role"], "customer")
         self.assertIn("access", response.data["data"])
+        self.assertEqual(
+            response.data["data"]["user"]["profile_image_url"],
+            "https://example.com/pic.jpg",
+        )
         customer.refresh_from_db()
         self.assertEqual(customer.name, "Existing Customer Updated")
+        self.assertEqual(customer.google_profile_image_url, "https://example.com/pic.jpg")
 
     @patch("user.views._verify_google_identity_token")
     def test_new_google_user_without_phone_gets_completion_payload(self, mock_verify):
@@ -396,6 +401,37 @@ class GoogleCustomerAuthTests(TestCase):
         created_customer = Customer.objects.get(email="signup@example.com")
         self.assertEqual(created_customer.phone_number, "+201012345678")
         self.assertTrue(created_customer.is_verified)
+
+    @patch("user.views._verify_google_identity_token")
+    def test_new_google_user_with_phone_returns_google_profile_image_url(self, mock_verify):
+        mock_verify.return_value = {
+            "email": "signup2@example.com",
+            "email_verified": True,
+            "name": "Signup Customer 2",
+            "picture": "https://lh3.googleusercontent.com/signup2-photo",
+        }
+
+        response = self.client.post(
+            "/api/auth/google/",
+            {
+                "idToken": "mock-google-token",
+                "email": "signup2@example.com",
+                "name": "Signup Customer 2",
+                "phone_number": "01012345679",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["data"]["user"]["profile_image_url"],
+            "https://lh3.googleusercontent.com/signup2-photo",
+        )
+        created_customer = Customer.objects.get(email="signup2@example.com")
+        self.assertEqual(
+            created_customer.google_profile_image_url,
+            "https://lh3.googleusercontent.com/signup2-photo",
+        )
 
 
 class SupportActionsEndpointsTests(TestCase):

@@ -5,7 +5,7 @@ from channels.layers import get_channel_layer
 from django.utils import timezone
 from django.db.models import Q
 
-from user.utils import build_absolute_file_url, resolve_base_url
+from user.utils import build_absolute_file_url, resolve_base_url, resolve_customer_profile_image_url
 
 from ..models import Driver, DriverOrderRejection, Order, ShopDriver
 from ..fcm.service import send_driver_new_order_notification, send_driver_order_update_notification
@@ -249,8 +249,8 @@ def build_driver_order_payload(order, *, request=None, scope=None, base_url=None
             'id': getattr(customer, 'id', None),
             'name': getattr(customer, 'name', None),
             'phone_number': getattr(customer, 'phone_number', None),
-            'profile_image_url': build_absolute_file_url(
-                getattr(customer, 'profile_image', None),
+            'profile_image_url': resolve_customer_profile_image_url(
+                customer,
                 request=request,
                 scope=scope,
                 base_url=base_url,

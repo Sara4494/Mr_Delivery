@@ -100,7 +100,7 @@ from user.models import (
     WORK_SCHEDULE_DAY_LABELS,
     default_work_schedule,
 )
-from user.utils import success_response, error_response, build_message_fields, t, localize_message, build_absolute_file_url
+from user.utils import success_response, error_response, build_message_fields, t, localize_message, build_absolute_file_url, resolve_customer_profile_image_url
 from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_email, normalize_phone
 from .websocket_utils import (
     notify_order_update,
@@ -1298,6 +1298,77 @@ def _build_driver_availability_panel(driver, active_orders_count):
     }
 
 
+def _build_driver_status_panel(driver, active_orders_count):
+    snapshot = driver.get_availability_snapshot(active_orders_count=active_orders_count)
+    is_online = bool(snapshot['presence_online'])
+    can_receive_orders = bool(snapshot['can_receive_orders'])
+    status_value = snapshot['status']
+
+    if status_value == 'available':
+        title = 'أنت متاح الآن'
+        subtitle = 'جاهز لاستقبال الطلبات الجديدة.' if can_receive_orders else 'جاهز للعمل واستكمال الطلبات الحالية.'
+    else:
+        title = 'أنت غير متاح الآن'
+        subtitle = 'قم بتفعيل حالتك لاستقبال الطلبات الجديدة.'
+
+    status_display_map = {
+        'available': 'متاح',
+        'busy': 'مشغول',
+        'unavailable': 'غير متاح',
+        'offline': 'غير متصل',
+    }
+    return {
+        'presence_online': is_online,
+        'is_online': is_online,
+        'availability_enabled': bool(snapshot['availability_enabled']),
+        'can_receive_orders': can_receive_orders,
+        'status': status_value,
+        'status_display': status_display_map.get(status_value, driver.get_status_display()),
+        'active_orders_count': active_orders_count,
+        'reason': snapshot.get('reason'),
+        'title': title,
+        'subtitle': subtitle,
+    }
+
+
+def _build_driver_availability_panel(driver, active_orders_count):
+    snapshot = driver.get_availability_snapshot(active_orders_count=active_orders_count)
+    is_online = bool(snapshot['presence_online'])
+    status_value = snapshot['status']
+    reason = snapshot.get('reason')
+    can_receive_orders = bool(snapshot['can_receive_orders'])
+
+    if status_value == 'available':
+        title = 'أنت متاح الآن'
+        subtitle = 'جاهز لاستقبال الطلبات الجديدة.' if can_receive_orders else 'جاهز للعمل واستكمال الطلبات الحالية.'
+    elif status_value == 'offline':
+        title = 'أنت غير متصل الآن'
+        subtitle = 'قم بالدخول أو تفعيل الاتصال لاستقبال الطلبات.'
+    else:
+        title = 'أنت غير متاح الآن'
+        subtitle = 'قم بتفعيل حالتك لاستقبال الطلبات الجديدة.'
+
+    status_display_map = {
+        'available': 'متاح',
+        'busy': 'مشغول',
+        'unavailable': 'غير متاح',
+        'offline': 'غير متصل',
+    }
+    return {
+        'presence_online': is_online,
+        'is_online': is_online,
+        'availability_enabled': bool(snapshot['availability_enabled']),
+        'can_receive_orders': can_receive_orders,
+        'status': status_value,
+        'status_display': status_display_map.get(status_value, driver.get_status_display()),
+        'active_orders_count': int(snapshot['active_orders_count'] or 0),
+        'max_active_orders_per_driver': int(snapshot.get('max_active_orders_per_driver') or 0),
+        'reason': reason,
+        'title': title,
+        'subtitle': subtitle,
+    }
+
+
 def _sync_driver_availability_status(driver, *, active_orders_count=None, in_delivery_count=None):
     snapshot = driver.get_availability_snapshot(
         active_orders_count=active_orders_count,
@@ -2205,6 +2276,8 @@ def driver_status_view(request):
         'offline': 'غير متصل',
     }
 
+    status_panel = _build_driver_status_panel(driver, int(snapshot['active_orders_count'] or 0))
+
     return success_response(
         data={
             'driver_id': driver.id,
@@ -2217,6 +2290,8 @@ def driver_status_view(request):
             'active_orders_count': int(snapshot['active_orders_count'] or 0),
             'max_active_orders_per_driver': int(snapshot.get('max_active_orders_per_driver') or 0),
             'reason': snapshot.get('reason'),
+            'title': status_panel['title'],
+            'subtitle': status_panel['subtitle'],
         },
         message=t(request, 'driver_status_updated_successfully'),
         status_code=status.HTTP_200_OK,
@@ -4768,6 +4843,7 @@ def customer_register_view(request):
                     'id': customer.id,
                     'name': customer.name,
                     'phone_number': customer.phone_number,
+                    'profile_image_url': resolve_customer_profile_image_url(customer, request=request),
                     'is_online': bool(customer.is_online),
                     'last_seen': format_utc_iso8601(customer.last_seen),
                 }
@@ -4790,7 +4866,7 @@ def customer_login_view(request):
     POST /api/customer/login/
     Body: { "phone_number": "...", "password": "..." }
     """
-    serializer = CustomerTokenObtainPairSerializer(data=request.data)
+    serializer = CustomerTokenObtainPairSerializer(data=request.data, context={'request': request})
     try:
         serializer.is_valid(raise_exception=True)
     except Exception as e:

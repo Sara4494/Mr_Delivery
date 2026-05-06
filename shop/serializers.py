@@ -18,7 +18,7 @@ from .support_center.serializers import (
     ShopSupportTicketSerializer,
 )
 from user.models import ShopOwner, ShopCategory, AdminApprovalRequest
-from user.utils import t, build_absolute_file_url
+from user.utils import t, build_absolute_file_url, resolve_customer_profile_image_url
 from user.otp_service import normalize_phone
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -141,10 +141,12 @@ def _context_file_url(serializer, file_field):
 
 
 def _customer_profile_image_url(serializer, obj):
-    if obj.profile_image:
-        return _context_file_url(serializer, obj.profile_image)
-    google_image_url = str(getattr(obj, 'google_profile_image_url', '') or '').strip()
-    return google_image_url or None
+    return resolve_customer_profile_image_url(
+        obj,
+        request=serializer.context.get('request'),
+        scope=serializer.context.get('scope'),
+        base_url=serializer.context.get('base_url'),
+    )
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -924,10 +926,12 @@ class ShopOrderListSerializer(serializers.ModelSerializer):
 
     def get_customer_profile_image_url(self, obj):
         customer = getattr(obj, 'customer', None)
-        if not customer or not customer.profile_image:
-            return None
-
-        return _context_file_url(self, customer.profile_image)
+        return resolve_customer_profile_image_url(
+            customer,
+            request=self.context.get('request'),
+            scope=self.context.get('scope'),
+            base_url=self.context.get('base_url'),
+        )
 
     class Meta:
         model = Order
@@ -1811,6 +1815,12 @@ class CustomerTokenObtainPairSerializer(serializers.Serializer):
                 'id': customer.id,
                 'name': customer.name,
                 'phone_number': customer.phone_number,
+                'profile_image_url': resolve_customer_profile_image_url(
+                    customer,
+                    request=self.context.get('request'),
+                    scope=self.context.get('scope'),
+                    base_url=self.context.get('base_url'),
+                ),
                 'is_online': bool(customer.is_online),
                 'last_seen': format_utc_iso8601(customer.last_seen),
                 'is_verified': customer.is_verified,

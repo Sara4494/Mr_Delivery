@@ -8,6 +8,7 @@ from django.test.utils import override_settings
 
 from shop.driver_chat_service import _map_order_status_to_driver_chat_status
 from shop.models import Driver
+from shop.views import _build_driver_availability_panel, _build_driver_status_panel
 from shop.driver_realtime import (
     build_driver_order_payload,
     driver_can_receive_new_orders,
@@ -42,7 +43,7 @@ class DriverStatusSyncTests(SimpleTestCase):
         self.assertEqual(snapshot['max_active_orders_per_driver'], 2)
 
     @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
-    def test_driver_snapshot_becomes_busy_only_at_max_active_orders(self):
+    def test_driver_snapshot_stays_available_at_max_active_orders_but_blocks_new_orders(self):
         driver = Driver(
             name='Driver',
             phone_number='01000000001',
@@ -53,10 +54,37 @@ class DriverStatusSyncTests(SimpleTestCase):
 
         snapshot = driver.get_availability_snapshot(active_orders_count=2, in_delivery_count=1)
 
-        self.assertEqual(snapshot['status'], 'busy')
+        self.assertEqual(snapshot['status'], 'available')
         self.assertFalse(snapshot['can_receive_orders'])
         self.assertEqual(snapshot['reason'], 'max_active_orders')
         self.assertEqual(snapshot['max_active_orders_per_driver'], 2)
+
+    @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
+    def test_driver_panels_keep_available_copy_at_max_active_orders(self):
+        driver = Driver(
+            name='Driver',
+            phone_number='01000000002',
+            is_verified=True,
+            is_online=True,
+            availability_enabled=True,
+        )
+
+        status_panel = _build_driver_status_panel(driver, active_orders_count=2)
+        availability_panel = _build_driver_availability_panel(driver, active_orders_count=2)
+
+        self.assertEqual(status_panel['status'], 'available')
+        self.assertEqual(status_panel['status_display'], 'متاح')
+        self.assertEqual(status_panel['title'], 'أنت متاح الآن')
+        self.assertEqual(status_panel['subtitle'], 'جاهز للعمل واستكمال الطلبات الحالية.')
+        self.assertFalse(status_panel['can_receive_orders'])
+        self.assertEqual(status_panel['reason'], 'max_active_orders')
+
+        self.assertEqual(availability_panel['status'], 'available')
+        self.assertEqual(availability_panel['status_display'], 'متاح')
+        self.assertEqual(availability_panel['title'], 'أنت متاح الآن')
+        self.assertEqual(availability_panel['subtitle'], 'جاهز للعمل واستكمال الطلبات الحالية.')
+        self.assertFalse(availability_panel['can_receive_orders'])
+        self.assertEqual(availability_panel['reason'], 'max_active_orders')
 
     def test_targeted_pending_acceptance_is_only_available_for_matching_driver(self):
         driver = SimpleNamespace(id=7)
@@ -122,6 +150,43 @@ class DriverStatusSyncTests(SimpleTestCase):
         self.assertIsNone(payload['accepted_at'])
         self.assertFalse(payload['chat']['can_open'])
         self.assertFalse(payload['transfer']['can_transfer'])
+
+    def test_driver_order_payload_uses_google_customer_profile_image_url(self):
+        customer = SimpleNamespace(
+            id=14,
+            name='Mohammed Eltony',
+            phone_number='+201069646239',
+            profile_image=None,
+            google_profile_image_url='https://lh3.googleusercontent.com/example-photo',
+            is_online=True,
+            last_seen=None,
+        )
+        order = SimpleNamespace(
+            id=124,
+            order_number='A124',
+            status='confirmed',
+            driver_id=7,
+            driver_accepted_at=None,
+            driver_assigned_at=None,
+            created_at=datetime(2026, 4, 14, 18, 50, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 4, 14, 18, 55, tzinfo=timezone.utc),
+            items=[],
+            total_amount=150,
+            delivery_fee=20,
+            payment_method='cash',
+            customer=customer,
+            shop_owner=None,
+            delivery_address=None,
+            notes='',
+            address='Test Address',
+        )
+
+        payload = build_driver_order_payload(order)
+
+        self.assertEqual(
+            payload['customer']['profile_image_url'],
+            'https://lh3.googleusercontent.com/example-photo',
+        )
 
     @patch('shop.driver_realtime.emit_available_order_upsert')
     @patch('shop.driver_realtime.get_shop_receiving_driver_ids')

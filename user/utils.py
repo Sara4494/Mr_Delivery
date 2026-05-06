@@ -235,6 +235,23 @@ def build_absolute_file_url(file_field_or_url, request=None, scope=None, base_ur
     return f"{resolved_base_url}{normalized_path}"
 
 
+def resolve_customer_profile_image_url(customer, request=None, scope=None, base_url=None):
+    if not customer:
+        return None
+
+    profile_image = getattr(customer, "profile_image", None)
+    if profile_image:
+        return build_absolute_file_url(
+            profile_image,
+            request=request,
+            scope=scope,
+            base_url=base_url,
+        )
+
+    google_image_url = str(getattr(customer, "google_profile_image_url", "") or "").strip()
+    return google_image_url or None
+
+
 def success_response(data=None, message="", status_code=http_status.HTTP_200_OK, request=None, lang=None):
     """
     إنشاء response ناجح
