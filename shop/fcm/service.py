@@ -683,23 +683,11 @@ def _filter_token_records(token_records, *, exclude_tokens=None, exclude_device_
     exclude_tokens = _normalize_excluded(exclude_tokens)
     exclude_device_ids = _normalize_excluded(exclude_device_ids)
     filtered_records = []
-    seen_tokens = set()
-    seen_devices = set()
     for token_record in token_records:
         if token_record.fcm_token in exclude_tokens:
             continue
         if token_record.device_id in exclude_device_ids:
             continue
-        token_key = str(token_record.fcm_token or '').strip()
-        device_key = str(token_record.device_id or '').strip()
-        if token_key and token_key in seen_tokens:
-            continue
-        if device_key and device_key in seen_devices:
-            continue
-        if token_key:
-            seen_tokens.add(token_key)
-        if device_key:
-            seen_devices.add(device_key)
         filtered_records.append(token_record)
     return filtered_records
 
@@ -1806,6 +1794,10 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
             high_priority = True
             ttl = None
             notification_priority = None
+            payload['title'] = title
+            payload['body'] = body
+            payload['sound'] = sound
+            payload['channel_id'] = channel_id
 
         logger.info(
             'fcm.ring.dispatch order_id=%s target=%s sender_type=%s recipients=%s',
@@ -1982,9 +1974,17 @@ def send_driver_chat_call_ringing_push_fallback(conversation, call, *, request=N
 
 def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, shop_profile_image_url=None):
     ring_payload = ring_payload or {}
+    resolved_shop_name = shop_name or getattr(order.shop_owner, 'shop_name', '') or 'Mr Delivery'
     driver_image_url = ring_payload.get('driver_image_url')
     if driver_image_url is None and ring_payload.get('sender_type') == 'driver':
         driver_image_url = build_absolute_file_url(getattr(order.driver, 'profile_image', None))
+    customer = getattr(order, 'customer', None)
+    customer_name = _trim_text(getattr(customer, 'name', None), default='العميل', max_length=120)
+    sender_name = _trim_text(ring_payload.get('sender_name'), default='طرف آخر', max_length=120)
+    conversation_id = ring_payload.get('conversation_id')
+    chat_type = ring_payload.get('chat_type') or ''
+    if not conversation_id and chat_type in {'shop_customer', 'driver_customer'}:
+        conversation_id = f'order_{order.id}_{chat_type}'
 
     return {
         'type': 'incoming_ring',
@@ -1993,15 +1993,25 @@ def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, 
         'order_id': order.id,
         'order_number': order.order_number,
         'shop_id': order.shop_owner_id,
-        'shop_name': shop_name or getattr(order.shop_owner, 'shop_name', '') or 'Mr Delivery',
+        'store_id': order.shop_owner_id,
+        'shop_name': resolved_shop_name,
+        'store_name': resolved_shop_name,
         'shop_profile_image_url': shop_profile_image_url or '',
         'target': target,
-        'chat_type': ring_payload.get('chat_type') or '',
+        'targets': ring_payload.get('targets') or ([target] if target else []),
+        'chat_type': chat_type,
+        'conversation_id': conversation_id or '',
         'sender_id': ring_payload.get('sender_id') or '',
         'sender_type': ring_payload.get('sender_type') or '',
-        'sender_name': ring_payload.get('sender_name') or '',
+        'sender_name': sender_name,
+        'customer_id': getattr(customer, 'id', '') or '',
+        'customer_name': customer_name,
+        'driver_id': getattr(order, 'driver_id', '') or '',
         'driver_image_url': driver_image_url,
-        'caller_name': ring_payload.get('caller_name') or ring_payload.get('sender_name') or '',
+        'caller_name': ring_payload.get('caller_name') or sender_name,
+        'notification_kind': ring_payload.get('notification_kind') or 'ring',
+        'play_sound_on_frontend': ring_payload.get('play_sound_on_frontend', True),
+        'created_at': ring_payload.get('created_at') or '',
         'route': '/incoming-ring',
         'click_action': 'OPEN_CHAT',
     }
