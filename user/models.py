@@ -333,29 +333,25 @@ class AppStatusSettings(models.Model):
 
     @classmethod
     def _default_values(cls):
-        from django.conf import settings
-
         return {
-            "maintenance_mode": bool(getattr(settings, "APP_STATUS_MAINTENANCE_MODE", False)),
-            "update_enabled": bool(
-                getattr(settings, "APP_STATUS_UPDATE_ENABLED", getattr(settings, "APP_STATUS_FORCE_UPDATE_ENABLED", False))
-            ),
-            "force_update": bool(getattr(settings, "APP_STATUS_UPDATE_FORCE_UPDATE", False)),
-            "android_min_version": str(getattr(settings, "APP_STATUS_ANDROID_MIN_VERSION", "") or "").strip(),
-            "android_store_url": str(getattr(settings, "APP_STATUS_ANDROID_STORE_URL", "") or "").strip(),
-            "ios_min_version": str(getattr(settings, "APP_STATUS_IOS_MIN_VERSION", "") or "").strip(),
-            "ios_store_url": str(getattr(settings, "APP_STATUS_IOS_STORE_URL", "") or "").strip(),
-            "windows_min_version": str(getattr(settings, "APP_STATUS_WINDOWS_MIN_VERSION", "") or "").strip(),
-            "windows_download_url": str(getattr(settings, "APP_STATUS_WINDOWS_DOWNLOAD_URL", "") or "").strip(),
-            "maintenance_title_ar": str(getattr(settings, "APP_STATUS_MAINTENANCE_TITLE_AR", "") or "").strip(),
-            "maintenance_title_en": str(getattr(settings, "APP_STATUS_MAINTENANCE_TITLE_EN", "") or "").strip(),
-            "maintenance_message_ar": str(getattr(settings, "APP_STATUS_MAINTENANCE_MESSAGE_AR", "") or "").strip(),
-            "maintenance_message_en": str(getattr(settings, "APP_STATUS_MAINTENANCE_MESSAGE_EN", "") or "").strip(),
-            "maintenance_window_label_ar": str(getattr(settings, "APP_STATUS_MAINTENANCE_WINDOW_LABEL_AR", "") or "").strip(),
-            "maintenance_window_label_en": str(getattr(settings, "APP_STATUS_MAINTENANCE_WINDOW_LABEL_EN", "") or "").strip(),
-            "show_contact_support": bool(getattr(settings, "APP_STATUS_SHOW_CONTACT_SUPPORT", False)),
-            "support_whatsapp": str(getattr(settings, "APP_STATUS_SUPPORT_WHATSAPP", "") or "").strip(),
-            "estimated_minutes": getattr(settings, "APP_STATUS_ESTIMATED_MINUTES", None),
+            "maintenance_mode": False,
+            "update_enabled": False,
+            "force_update": False,
+            "android_min_version": "",
+            "android_store_url": "",
+            "ios_min_version": "",
+            "ios_store_url": "",
+            "windows_min_version": "",
+            "windows_download_url": "",
+            "maintenance_title_ar": "",
+            "maintenance_title_en": "",
+            "maintenance_message_ar": "",
+            "maintenance_message_en": "",
+            "maintenance_window_label_ar": "",
+            "maintenance_window_label_en": "",
+            "show_contact_support": False,
+            "support_whatsapp": "",
+            "estimated_minutes": None,
         }
 
     @classmethod

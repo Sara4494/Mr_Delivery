@@ -205,6 +205,8 @@ def _serialize_app_status_datetime(value):
 
 
 def _build_app_status_payload(request):
+    return _build_public_app_status_payload_from_model(request)
+
     maintenance = AppMaintenanceSettings.get_solo()
     app_status = AppStatusSettings.get_solo()
     lang = getattr(request, 'api_lang', None) or request.query_params.get('lang')
@@ -344,6 +346,8 @@ def _build_public_app_status_payload_from_model(request):
 
 
 def _build_public_app_status_payload(request):
+    return _build_public_app_status_payload_from_model(request)
+
     maintenance_payload = _build_public_maintenance_status_payload(request).get('maintenance', {})
     maintenance_mode = bool(
         _app_status_bool(getattr(settings, 'APP_STATUS_MAINTENANCE_MODE', False))
