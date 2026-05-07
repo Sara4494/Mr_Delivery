@@ -11,7 +11,7 @@ from user.models import (
     ShopOwner,
     get_admin_desktop_role_permissions,
 )
-from shop.models import AbuseReport, AccountModerationStatus, Customer, Driver, Order
+from shop.models import AbuseReport, AccountModerationStatus, Customer, Driver, FCMDeviceToken, Order
 from user.views import (
     _admin_desktop_role_catalog,
     _can_manage_admin_desktop_users,
@@ -432,6 +432,43 @@ class GoogleCustomerAuthTests(TestCase):
             created_customer.google_profile_image_url,
             "https://lh3.googleusercontent.com/signup2-photo",
         )
+
+
+class CustomerAuthFcmRegistrationTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+
+    def test_email_password_customer_login_registers_fcm_device_when_payload_present(self):
+        customer = Customer.objects.create(
+            name="Email Customer",
+            email="email@example.com",
+            phone_number="+201055555555",
+            password="",
+            is_verified=True,
+        )
+        customer.set_password("secret123")
+        customer.save(update_fields=["password", "updated_at"])
+
+        response = self.client.post(
+            "/api/auth/login/",
+            {
+                "role": "customer",
+                "email": "email@example.com",
+                "password": "secret123",
+                "fcm_token": "customer-token-1",
+                "device_id": "customer-device-1",
+                "platform": "android",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["role"], "customer")
+        self.assertEqual(response.data["data"]["fcm_device"]["device_id"], "customer-device-1")
+        token = FCMDeviceToken.objects.get(user_type="customer", user_id=customer.id, device_id="customer-device-1")
+        self.assertEqual(token.fcm_token, "customer-token-1")
+        self.assertTrue(token.is_active)
 
 
 class SupportActionsEndpointsTests(TestCase):

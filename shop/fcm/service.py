@@ -192,6 +192,16 @@ def _driver_urgent_ring_profile():
     }
 
 
+def _infer_customer_provider(customer):
+    if not customer:
+        return 'unknown'
+    if str(getattr(customer, 'google_profile_image_url', '') or '').strip():
+        return 'google'
+    if str(getattr(customer, 'password', '') or '').strip():
+        return 'email_password'
+    return 'unknown'
+
+
 def _firebase_modules():
     try:
         import firebase_admin
@@ -279,6 +289,7 @@ def _firebase_app(user_type=None):
 
 def register_device_token(*, user, device_id, platform, fcm_token, app_version=_UNSET, action='register'):
     user_type, user_id = resolve_user_identity(user)
+    customer_provider = _infer_customer_provider(user) if user_type == 'customer' else None
     now = timezone.now()
 
     with transaction.atomic():
@@ -326,7 +337,7 @@ def register_device_token(*, user, device_id, platform, fcm_token, app_version=_
                 token_record.save(update_fields=changed_fields)
 
     logger.info(
-        'fcm.token.%s user_type=%s user_id=%s device_id=%s platform=%s token=%s created=%s',
+        'fcm.token.%s user_type=%s user_id=%s device_id=%s platform=%s token=%s created=%s customer_provider=%s',
         action,
         user_type,
         user_id,
@@ -334,6 +345,7 @@ def register_device_token(*, user, device_id, platform, fcm_token, app_version=_
         platform,
         _mask_token(fcm_token),
         created,
+        customer_provider,
     )
     return token_record
 
@@ -1107,10 +1119,22 @@ def send_push_to_user(
             is_active=True,
         ).order_by('-updated_at')
     )
+    logger.info(
+        'fcm.user.lookup user_type=%s user_id=%s active_tokens=%s',
+        user_type,
+        user_id,
+        len(token_records),
+    )
     token_records = _filter_token_records(
         token_records,
         exclude_tokens=exclude_tokens,
         exclude_device_ids=exclude_device_ids,
+    )
+    logger.info(
+        'fcm.user.lookup.filtered user_type=%s user_id=%s tokens_after_filter=%s',
+        user_type,
+        user_id,
+        len(token_records),
     )
     summary = _send_push_to_token_records(
         token_records,
@@ -1762,6 +1786,7 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
         'tokens_failed': 0,
         'tokens_invalidated': 0,
     }
+    customer_provider = _infer_customer_provider(getattr(order, 'customer', None))
 
     for target in targets:
         recipient_identities = _ring_target_identities(order, target)
@@ -1800,11 +1825,17 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
             payload['channel_id'] = channel_id
 
         logger.info(
-            'fcm.ring.dispatch order_id=%s target=%s sender_type=%s recipients=%s',
+            'fcm.ring.dispatch order_id=%s target=%s sender_type=%s recipients=%s customer_id=%s customer_provider=%s payload_type=%s chat_type=%s conversation_id=%s ring_id=%s',
             order.id,
             target,
             (ring_payload or {}).get('sender_type'),
             recipient_identities,
+            getattr(order, 'customer_id', None),
+            customer_provider,
+            payload.get('type'),
+            payload.get('chat_type'),
+            payload.get('conversation_id'),
+            payload.get('ring_id'),
         )
         target_summary = send_push_to_identities(
             recipient_identities,
@@ -1825,6 +1856,18 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
         summary['tokens_sent'] += target_summary['tokens_sent']
         summary['tokens_failed'] += target_summary['tokens_failed']
         summary['tokens_invalidated'] += target_summary['tokens_invalidated']
+        logger.info(
+            'fcm.ring.result order_id=%s target=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s customer_id=%s customer_provider=%s',
+            order.id,
+            target,
+            target_summary['users_targeted'],
+            target_summary['tokens_total'],
+            target_summary['tokens_sent'],
+            target_summary['tokens_failed'],
+            target_summary['tokens_invalidated'],
+            getattr(order, 'customer_id', None),
+            customer_provider,
+        )
 
     return summary
 

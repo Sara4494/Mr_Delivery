@@ -378,6 +378,31 @@ def _register_google_customer_fcm(*, customer, request):
     )
 
 
+def _register_customer_fcm(*, customer, request):
+    fcm_token = str(
+        request.data.get('fcm_token')
+        or request.data.get('fcmToken')
+        or ''
+    ).strip()
+    device_id = str(request.data.get('device_id') or request.data.get('deviceId') or '').strip()
+    platform = str(request.data.get('platform') or '').strip().lower()
+    app_version = request.data.get('app_version') or request.data.get('appVersion')
+
+    if not (fcm_token and device_id and platform in {'android', 'ios'}):
+        return None
+
+    from shop.fcm.service import register_device_token
+
+    return register_device_token(
+        user=customer,
+        device_id=device_id,
+        platform=platform,
+        fcm_token=fcm_token,
+        app_version=app_version,
+        action='register',
+    )
+
+
 def _can_view_admin_desktop_users(user):
     if not user:
         return False
@@ -3950,21 +3975,29 @@ def unified_login_view(request):
             refresh['phone_number'] = customer.phone_number
             refresh['email'] = customer.email
             refresh['user_type'] = 'customer'
-            
-            return success_response(
-                data={
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token),
-                    'user': {
-                        'id': customer.id,
-                        'name': customer.name,
-                        'email': customer.email,
-                        'phone_number': customer.phone_number,
-                    
-                        'is_verified': customer.is_verified,
-                    },
-                    'role': 'customer'
+            token_record = _register_customer_fcm(customer=customer, request=request)
+
+            payload = {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'id': customer.id,
+                    'name': customer.name,
+                    'email': customer.email,
+                    'phone_number': customer.phone_number,
+                
+                    'is_verified': customer.is_verified,
                 },
+                'role': 'customer'
+            }
+            if token_record:
+                payload['fcm_device'] = {
+                    'device_id': token_record.device_id,
+                    'platform': token_record.platform,
+                }
+
+            return success_response(
+                data=payload,
                 message=t(request, 'login_successful')
             )
         except Customer.DoesNotExist:
@@ -4653,23 +4686,31 @@ def verify_otp_login_view(request):
     refresh['phone_number'] = customer.phone_number
     refresh['email'] = customer.email
     refresh['user_type'] = 'customer'
+    token_record = _register_customer_fcm(customer=customer, request=request)
 
     success_message = t(request, 'verification_successful') if purpose == 'register' else t(request, 'login_successful')
 
-    return success_response(
-        data={
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': {
-                'id': customer.id,
-                'name': customer.name,
-                'email': customer.email,
-                'phone_number': customer.phone_number,
-        
-                'is_verified': customer.is_verified,
-            },
-            'role': 'customer'
+    payload = {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+        'user': {
+            'id': customer.id,
+            'name': customer.name,
+            'email': customer.email,
+            'phone_number': customer.phone_number,
+    
+            'is_verified': customer.is_verified,
         },
+        'role': 'customer'
+    }
+    if token_record:
+        payload['fcm_device'] = {
+            'device_id': token_record.device_id,
+            'platform': token_record.platform,
+        }
+
+    return success_response(
+        data=payload,
         message=success_message
     )
 
