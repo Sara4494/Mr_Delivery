@@ -376,12 +376,24 @@ FCM_ENABLED = _env_bool(
         or FCM_CUSTOMER_SERVICE_ACCOUNT_JSON
     ),
 )
-FCM_RING_CHANNEL_ID = os.environ.get("FCM_RING_CHANNEL_ID", "incoming_ring_channel").strip() or "incoming_ring_channel"
-FCM_CHAT_CHANNEL_ID = os.environ.get("FCM_CHAT_CHANNEL_ID", "chat_channel").strip() or "chat_channel"
-FCM_RING_SOUND = os.environ.get("FCM_RING_SOUND", "incoming_call").strip() or "incoming_call"
-FCM_RING_IOS_SOUND = os.environ.get("FCM_RING_IOS_SOUND", "incoming_call.mp3").strip() or "incoming_call.mp3"
+FCM_RING_CHANNEL_ID = os.environ.get("FCM_RING_CHANNEL_ID", "delivery_general").strip() or "delivery_general"
+FCM_CHAT_CHANNEL_ID = os.environ.get("FCM_CHAT_CHANNEL_ID", "delivery_general").strip() or "delivery_general"
+FCM_RING_SOUND = os.environ.get("FCM_RING_SOUND", "default").strip() or "default"
+FCM_RING_IOS_SOUND = os.environ.get("FCM_RING_IOS_SOUND", "default").strip() or "default"
 FCM_CHAT_SOUND = os.environ.get("FCM_CHAT_SOUND", "default").strip() or "default"
 FCM_CHAT_IOS_SOUND = os.environ.get("FCM_CHAT_IOS_SOUND", "default").strip() or "default"
+FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID = (
+    os.environ.get("FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID", "delivery_incoming_calls_v3").strip()
+    or "delivery_incoming_calls_v3"
+)
+FCM_DRIVER_INCOMING_CALL_SOUND = (
+    os.environ.get("FCM_DRIVER_INCOMING_CALL_SOUND", "incoming_call").strip()
+    or "incoming_call"
+)
+FCM_DRIVER_INCOMING_CALL_IOS_SOUND = (
+    os.environ.get("FCM_DRIVER_INCOMING_CALL_IOS_SOUND", "incoming_call.mp3").strip()
+    or "incoming_call.mp3"
+)
 
 FCM_DRIVER_URGENT_CHANNEL_ID = (
     os.environ.get("FCM_DRIVER_URGENT_CHANNEL_ID", "delivery_orders_urgent").strip()

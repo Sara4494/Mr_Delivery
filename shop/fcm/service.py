@@ -183,7 +183,7 @@ def _driver_has_active_socket(driver_id):
 
 def _driver_urgent_ring_profile():
     return {
-        'channel_id': getattr(settings, 'FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID', 'delivery_incoming_calls_v2'),
+        'channel_id': getattr(settings, 'FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID', 'delivery_incoming_calls_v3'),
         'sound': getattr(settings, 'FCM_DRIVER_INCOMING_CALL_SOUND', 'incoming_call'),
         'ios_sound': getattr(settings, 'FCM_DRIVER_INCOMING_CALL_IOS_SOUND', 'incoming_call.mp3'),
         'high_priority': True,
@@ -194,7 +194,7 @@ def _driver_urgent_ring_profile():
 
 def _customer_driver_chat_ring_profile():
     return {
-        'channel_id': getattr(settings, 'FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID', 'delivery_incoming_calls_v2'),
+        'channel_id': getattr(settings, 'FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID', 'delivery_incoming_calls_v3'),
         'sound': getattr(settings, 'FCM_DRIVER_INCOMING_CALL_SOUND', 'incoming_call'),
         'ios_sound': getattr(settings, 'FCM_DRIVER_INCOMING_CALL_IOS_SOUND', 'incoming_call.mp3'),
         'high_priority': True,
@@ -993,7 +993,7 @@ def send_to_token(
         title=title,
         body=body,
         data=data or {},
-        channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'chat_channel'),
+        channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
         sound=sound,
         ios_sound=ios_sound,
         high_priority=high_priority,
@@ -1092,7 +1092,7 @@ def send_to_user(
         title=title,
         body=body,
         data=data or {},
-        channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'chat_channel'),
+        channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
         sound=sound,
         ios_sound=ios_sound,
         high_priority=high_priority,
@@ -1188,7 +1188,7 @@ def send_to_users(
         title=title,
         body=body,
         data=data or {},
-        channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'chat_channel'),
+        channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
         sound=sound,
         ios_sound=ios_sound,
         high_priority=high_priority,
@@ -1277,7 +1277,7 @@ def send_to_topic(
             title=title,
             body=body,
             data=data or {},
-            channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'chat_channel'),
+            channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
             sound=sound,
             ios_sound=ios_sound,
             high_priority=high_priority,
@@ -1345,7 +1345,7 @@ def broadcast_to_all(
         title=title,
         body=body,
         data=data or {},
-        channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'chat_channel'),
+        channel_id=channel_id or getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
         sound=sound,
         ios_sound=ios_sound,
         high_priority=high_priority,
@@ -1739,7 +1739,7 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
         title=_trim_text(shop_name, default='Mr Delivery', max_length=120),
         body=_trim_text(message_preview, default='رسالة جديدة', max_length=180),
         data=payload,
-        channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'chat_channel'),
+        channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
         sound=getattr(settings, 'FCM_CHAT_SOUND', 'default'),
         ios_sound=getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default'),
         high_priority=False,
@@ -1841,9 +1841,9 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
                 )
                 title = shop_name
                 body = _trim_text(_ring_notification_body(order, ring_payload, target), max_length=180)
-                channel_id = getattr(settings, 'FCM_RING_CHANNEL_ID', 'incoming_ring_channel')
-                sound = getattr(settings, 'FCM_RING_SOUND', 'incoming_call')
-                ios_sound = getattr(settings, 'FCM_RING_IOS_SOUND', 'incoming_call.mp3')
+                channel_id = getattr(settings, 'FCM_RING_CHANNEL_ID', 'delivery_general')
+                sound = getattr(settings, 'FCM_RING_SOUND', 'default')
+                ios_sound = getattr(settings, 'FCM_RING_IOS_SOUND', 'default')
                 high_priority = True
                 ttl = None
                 notification_priority = None
@@ -1981,7 +1981,7 @@ def send_driver_chat_push_fallback(conversation, message_payload, *, request=Non
         title=_trim_text(shop_name, default='Mr Delivery', max_length=120),
         body=_trim_text(_message_preview(message_payload), default='لديك رسالة جديدة', max_length=180),
         data=payload,
-        channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'chat_channel'),
+        channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
         sound=getattr(settings, 'FCM_CHAT_SOUND', 'default'),
         ios_sound=getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default'),
         high_priority=False,

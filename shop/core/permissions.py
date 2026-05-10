@@ -6,7 +6,7 @@ from rest_framework.permissions import BasePermission
 
 from user.maintenance_exceptions import MaintenanceModeError
 from user.account_status import ensure_account_is_active
-from user.models import AppMaintenanceSettings, ShopOwner
+from user.models import AdminDesktopUser, AppMaintenanceSettings, ShopOwner
 from user.utils import t
 
 from ..models import Customer, Driver, Employee
@@ -68,6 +68,17 @@ def _resolve_maintenance_user_type(request):
     return None
 
 
+def _is_admin_desktop_request(request):
+    token_user_type = str(_token_user_type(request) or "").strip().lower()
+    if token_user_type == "admin_desktop":
+        return True
+
+    user = getattr(request, "user", None)
+    if getattr(user, "user_type", None) == "admin_desktop":
+        return True
+    return isinstance(user, AdminDesktopUser)
+
+
 class EnsureActiveAccountPermission(BasePermission):
     def has_permission(self, request, view):
         user = getattr(request, "user", None)
@@ -88,6 +99,9 @@ class MaintenanceModePermission(BasePermission):
 
         user = getattr(request, "user", None)
         if not user or not getattr(user, "is_authenticated", False):
+            return True
+
+        if _is_admin_desktop_request(request):
             return True
 
         maintenance = AppMaintenanceSettings.get_solo()
