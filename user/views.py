@@ -364,11 +364,18 @@ def _register_google_customer_fcm(*, customer, request):
     app_version = request.data.get('app_version') or request.data.get('appVersion')
 
     if not (fcm_token and device_id and platform in {'android', 'ios'}):
+        logger.info(
+            'customer.auth.fcm.skip customer_id=%s provider=google has_token=%s has_device_id=%s platform=%s',
+            getattr(customer, 'id', None),
+            bool(fcm_token),
+            bool(device_id),
+            platform or '',
+        )
         return None
 
     from shop.fcm.service import register_device_token
 
-    return register_device_token(
+    token_record = register_device_token(
         user=customer,
         device_id=device_id,
         platform=platform,
@@ -376,6 +383,13 @@ def _register_google_customer_fcm(*, customer, request):
         app_version=app_version,
         action='register',
     )
+    logger.info(
+        'customer.auth.fcm.registered customer_id=%s provider=google device_id=%s platform=%s',
+        getattr(customer, 'id', None),
+        token_record.device_id,
+        token_record.platform,
+    )
+    return token_record
 
 
 def _register_customer_fcm(*, customer, request):
@@ -389,11 +403,18 @@ def _register_customer_fcm(*, customer, request):
     app_version = request.data.get('app_version') or request.data.get('appVersion')
 
     if not (fcm_token and device_id and platform in {'android', 'ios'}):
+        logger.info(
+            'customer.auth.fcm.skip customer_id=%s provider=email_password has_token=%s has_device_id=%s platform=%s',
+            getattr(customer, 'id', None),
+            bool(fcm_token),
+            bool(device_id),
+            platform or '',
+        )
         return None
 
     from shop.fcm.service import register_device_token
 
-    return register_device_token(
+    token_record = register_device_token(
         user=customer,
         device_id=device_id,
         platform=platform,
@@ -401,6 +422,13 @@ def _register_customer_fcm(*, customer, request):
         app_version=app_version,
         action='register',
     )
+    logger.info(
+        'customer.auth.fcm.registered customer_id=%s provider=email_password device_id=%s platform=%s',
+        getattr(customer, 'id', None),
+        token_record.device_id,
+        token_record.platform,
+    )
+    return token_record
 
 
 def _can_view_admin_desktop_users(user):

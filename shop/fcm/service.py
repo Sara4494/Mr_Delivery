@@ -192,6 +192,17 @@ def _driver_urgent_ring_profile():
     }
 
 
+def _customer_driver_chat_ring_profile():
+    return {
+        'channel_id': getattr(settings, 'FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID', 'delivery_incoming_calls_v2'),
+        'sound': getattr(settings, 'FCM_DRIVER_INCOMING_CALL_SOUND', 'incoming_call'),
+        'ios_sound': getattr(settings, 'FCM_DRIVER_INCOMING_CALL_IOS_SOUND', 'incoming_call.mp3'),
+        'high_priority': True,
+        'ttl': '60s',
+        'notification_priority': 'max',
+    }
+
+
 def _infer_customer_provider(customer):
     if not customer:
         return 'unknown'
@@ -1804,25 +1815,42 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
             ttl = profile['ttl']
             notification_priority = profile['notification_priority']
         else:
-            payload = build_incoming_ring_payload(
-                order=order,
-                ring_payload=ring_payload,
-                target=target,
-                shop_name=shop_name,
-                shop_profile_image_url=shop_profile_image_url,
-            )
-            title = shop_name
-            body = _trim_text(_ring_notification_body(order, ring_payload, target), max_length=180)
-            channel_id = getattr(settings, 'FCM_RING_CHANNEL_ID', 'incoming_ring_channel')
-            sound = getattr(settings, 'FCM_RING_SOUND', 'incoming_call')
-            ios_sound = getattr(settings, 'FCM_RING_IOS_SOUND', 'incoming_call.mp3')
-            high_priority = True
-            ttl = None
-            notification_priority = None
-            payload['title'] = title
-            payload['body'] = body
-            payload['sound'] = sound
-            payload['channel_id'] = channel_id
+            if target == 'customer' and str((ring_payload or {}).get('chat_type') or '').strip() == 'driver_customer':
+                payload = build_customer_driver_chat_ring_payload(
+                    order=order,
+                    ring_payload=ring_payload,
+                    shop_name=shop_name,
+                    shop_profile_image_url=shop_profile_image_url,
+                )
+                profile = _customer_driver_chat_ring_profile()
+                title = payload['title']
+                body = payload['body']
+                channel_id = profile['channel_id']
+                sound = profile['sound']
+                ios_sound = profile['ios_sound']
+                high_priority = profile['high_priority']
+                ttl = profile['ttl']
+                notification_priority = profile['notification_priority']
+            else:
+                payload = build_incoming_ring_payload(
+                    order=order,
+                    ring_payload=ring_payload,
+                    target=target,
+                    shop_name=shop_name,
+                    shop_profile_image_url=shop_profile_image_url,
+                )
+                title = shop_name
+                body = _trim_text(_ring_notification_body(order, ring_payload, target), max_length=180)
+                channel_id = getattr(settings, 'FCM_RING_CHANNEL_ID', 'incoming_ring_channel')
+                sound = getattr(settings, 'FCM_RING_SOUND', 'incoming_call')
+                ios_sound = getattr(settings, 'FCM_RING_IOS_SOUND', 'incoming_call.mp3')
+                high_priority = True
+                ttl = None
+                notification_priority = None
+                payload['title'] = title
+                payload['body'] = body
+                payload['sound'] = sound
+                payload['channel_id'] = channel_id
 
         logger.info(
             'fcm.ring.dispatch order_id=%s target=%s sender_type=%s recipients=%s customer_id=%s customer_provider=%s payload_type=%s chat_type=%s conversation_id=%s ring_id=%s',
@@ -2082,6 +2110,52 @@ def build_driver_customer_ring_payload(*, order, ring_payload):
         'sound': profile['sound'],
         'channel_id': profile['channel_id'],
     }
+
+
+def build_customer_driver_chat_ring_payload(*, order, ring_payload, shop_name=None, shop_profile_image_url=None):
+    ring_payload = ring_payload or {}
+    customer = getattr(order, 'customer', None)
+    sender_name = _trim_text(
+        ring_payload.get('sender_name') or getattr(order.driver, 'name', None),
+        default='المندوب',
+        max_length=120,
+    )
+    customer_name = _trim_text(getattr(customer, 'name', None), default='العميل', max_length=120)
+    conversation_id = str(ring_payload.get('conversation_id') or f'order_{order.id}_driver_customer')
+    profile = _customer_driver_chat_ring_profile()
+    payload = build_incoming_ring_payload(
+        order=order,
+        ring_payload={
+            **ring_payload,
+            'conversation_id': conversation_id,
+            'chat_type': 'driver_customer',
+        },
+        target='customer',
+        shop_name=shop_name,
+        shop_profile_image_url=shop_profile_image_url,
+    )
+    payload.update({
+        'type': 'driver_customer.call_ringing',
+        'chat_type': 'driver_customer',
+        'order_id': str(order.id),
+        'customer_id': str(getattr(customer, 'id', '') or ''),
+        'customer_name': customer_name,
+        'driver_id': str(getattr(order, 'driver_id', '') or ''),
+        'driver_name': sender_name,
+        'sender_type': ring_payload.get('sender_type') or 'driver',
+        'sender_name': sender_name,
+        'ring_id': str(ring_payload.get('ring_id') or ''),
+        'call_id': str(ring_payload.get('call_id') or ring_payload.get('ring_id') or ''),
+        'conversation_id': conversation_id,
+        'title': f'{sender_name} يتصل بك',
+        'body': 'اضغط لفتح محادثة المندوب',
+        'sound': profile['sound'],
+        'channel_id': profile['channel_id'],
+        'screen': 'chat',
+        'route': '/chat',
+        'click_action': 'OPEN_CHAT',
+    })
+    return payload
 
 
 def build_driver_shop_call_ringing_payload(*, conversation, call):
