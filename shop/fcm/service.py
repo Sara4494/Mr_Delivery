@@ -2056,6 +2056,8 @@ def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, 
     chat_type = ring_payload.get('chat_type') or ''
     if not conversation_id and chat_type in {'shop_customer', 'driver_customer'}:
         conversation_id = f'order_{order.id}_{chat_type}'
+    screen = 'chat' if chat_type in {'shop_customer', 'driver_customer'} else 'incoming_ring'
+    route = '/chat' if screen == 'chat' else '/incoming-ring'
 
     return {
         'type': 'incoming_ring',
@@ -2083,7 +2085,8 @@ def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, 
         'notification_kind': ring_payload.get('notification_kind') or 'ring',
         'play_sound_on_frontend': ring_payload.get('play_sound_on_frontend', True),
         'created_at': ring_payload.get('created_at') or '',
-        'route': '/incoming-ring',
+        'screen': screen,
+        'route': route,
         'click_action': 'OPEN_CHAT',
     }
 
@@ -2165,6 +2168,8 @@ def build_driver_shop_call_ringing_payload(*, conversation, call):
     return {
         'type': 'driver_chat.call_ringing',
         'chat_type': 'driver_store',
+        'screen': 'chat',
+        'route': '/driver-chats',
         'call_id': str(getattr(call, 'public_id', '') or ''),
         'conversation_id': str(getattr(conversation, 'public_id', '') or ''),
         'shop_id': str(getattr(shop_owner, 'id', '') or ''),
