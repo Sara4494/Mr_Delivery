@@ -607,16 +607,33 @@ class FCMFallbackDispatchTests(TestCase):
         target_record = mock_send.call_args[0][0]
         self.assertEqual(target_record.user_type, 'customer')
         self.assertEqual(target_record.user_id, self.customer.id)
+        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'delivery_incoming_calls_v3')
+        self.assertEqual(mock_send.call_args.kwargs['sound'], 'incoming_call')
+        self.assertEqual(mock_send.call_args.kwargs['ios_sound'], 'incoming_call.mp3')
+        self.assertTrue(mock_send.call_args.kwargs['high_priority'])
         self.assertEqual(mock_send.call_args.kwargs['click_action'], 'FLUTTER_NOTIFICATION_CLICK')
-        self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'incoming_ring')
+        self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'shop_customer.call_ringing')
         self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'shop_customer')
         self.assertEqual(mock_send.call_args.kwargs['data']['conversation_id'], f'order_{self.order.id}_shop_customer')
-        self.assertEqual(mock_send.call_args.kwargs['data']['order_id'], self.order.id)
-        self.assertEqual(mock_send.call_args.kwargs['data']['customer_id'], self.customer.id)
-        self.assertEqual(mock_send.call_args.kwargs['data']['shop_id'], self.shop.id)
-        self.assertEqual(mock_send.call_args.kwargs['data']['store_id'], self.shop.id)
+        self.assertEqual(mock_send.call_args.kwargs['data']['order_id'], str(self.order.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['customer_id'], str(self.customer.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['shop_id'], str(self.shop.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['store_id'], str(self.shop.id))
+        self.assertEqual(mock_send.call_args.kwargs['data']['shop_name'], self.shop.shop_name)
+        self.assertEqual(mock_send.call_args.kwargs['data']['store_name'], self.shop.shop_name)
+        self.assertEqual(mock_send.call_args.kwargs['data']['sender_name'], self.shop.shop_name)
+        self.assertEqual(mock_send.call_args.kwargs['data']['ring_id'], 'ring-shop-customer-194')
+        self.assertEqual(mock_send.call_args.kwargs['data']['call_id'], 'ring-shop-customer-194')
         self.assertEqual(mock_send.call_args.kwargs['data']['screen'], 'chat')
         self.assertEqual(mock_send.call_args.kwargs['data']['route'], '/chat')
+        self.assertEqual(mock_send.call_args.kwargs['data']['click_action'], 'open_chat')
+        self.assertEqual(mock_send.call_args.kwargs['data']['sound'], 'incoming_call')
+        self.assertEqual(mock_send.call_args.kwargs['data']['channel_id'], 'delivery_incoming_calls_v3')
+        self.assertEqual(mock_send.call_args.kwargs['data']['title'], self.shop.shop_name)
+        self.assertEqual(
+            mock_send.call_args.kwargs['data']['body'],
+            f'{self.shop.shop_name} بيرن عليك بخصوص الطلب {self.order.id}',
+        )
 
     @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
     def test_ring_fallback_deduplicates_repeated_driver_target_entries(self, mock_send):

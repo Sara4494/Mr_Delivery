@@ -1815,8 +1815,25 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
             ttl = profile['ttl']
             notification_priority = profile['notification_priority']
         else:
-            if target == 'customer' and str((ring_payload or {}).get('chat_type') or '').strip() == 'driver_customer':
+            chat_type = str((ring_payload or {}).get('chat_type') or '').strip()
+            if target == 'customer' and chat_type == 'driver_customer':
                 payload = build_customer_driver_chat_ring_payload(
+                    order=order,
+                    ring_payload=ring_payload,
+                    shop_name=shop_name,
+                    shop_profile_image_url=shop_profile_image_url,
+                )
+                profile = _customer_driver_chat_ring_profile()
+                title = payload['title']
+                body = payload['body']
+                channel_id = profile['channel_id']
+                sound = profile['sound']
+                ios_sound = profile['ios_sound']
+                high_priority = profile['high_priority']
+                ttl = profile['ttl']
+                notification_priority = profile['notification_priority']
+            elif target == 'customer' and chat_type == 'shop_customer':
+                payload = build_customer_shop_chat_ring_payload(
                     order=order,
                     ring_payload=ring_payload,
                     shop_name=shop_name,
@@ -2157,6 +2174,53 @@ def build_customer_driver_chat_ring_payload(*, order, ring_payload, shop_name=No
         'screen': 'chat',
         'route': '/chat',
         'click_action': 'OPEN_CHAT',
+    })
+    return payload
+
+
+def build_customer_shop_chat_ring_payload(*, order, ring_payload, shop_name=None, shop_profile_image_url=None):
+    ring_payload = ring_payload or {}
+    customer = getattr(order, 'customer', None)
+    resolved_shop_name = _trim_text(
+        ring_payload.get('shop_name') or ring_payload.get('sender_name') or shop_name or getattr(order.shop_owner, 'shop_name', None),
+        default='Mr Delivery',
+        max_length=120,
+    )
+    conversation_id = str(ring_payload.get('conversation_id') or f'order_{order.id}_shop_customer')
+    profile = _customer_driver_chat_ring_profile()
+    payload = build_incoming_ring_payload(
+        order=order,
+        ring_payload={
+            **ring_payload,
+            'conversation_id': conversation_id,
+            'chat_type': 'shop_customer',
+            'sender_name': resolved_shop_name,
+        },
+        target='customer',
+        shop_name=resolved_shop_name,
+        shop_profile_image_url=shop_profile_image_url,
+    )
+    payload.update({
+        'type': 'shop_customer.call_ringing',
+        'chat_type': 'shop_customer',
+        'order_id': str(order.id),
+        'customer_id': str(getattr(customer, 'id', '') or ''),
+        'shop_id': str(getattr(order, 'shop_owner_id', '') or ''),
+        'store_id': str(getattr(order, 'shop_owner_id', '') or ''),
+        'shop_name': resolved_shop_name,
+        'store_name': resolved_shop_name,
+        'sender_type': ring_payload.get('sender_type') or 'shop_owner',
+        'sender_name': resolved_shop_name,
+        'ring_id': str(ring_payload.get('ring_id') or ''),
+        'call_id': str(ring_payload.get('call_id') or ring_payload.get('ring_id') or ''),
+        'conversation_id': conversation_id,
+        'title': resolved_shop_name,
+        'body': f'{resolved_shop_name} بيرن عليك بخصوص الطلب {order.id}',
+        'sound': profile['sound'],
+        'channel_id': profile['channel_id'],
+        'screen': 'chat',
+        'route': '/chat',
+        'click_action': 'open_chat',
     })
     return payload
 
