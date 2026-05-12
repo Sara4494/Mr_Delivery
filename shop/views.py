@@ -77,7 +77,13 @@ from .serializers import (
     ChatMessageSerializer,
     AppStatusSerializer,
 )
-from .permissions import IsShopOwner, IsCustomer, IsDriver, IsEmployee, IsShopOwnerOrEmployee
+from .permissions import (
+    IsShopOwner,
+    IsCustomer,
+    IsDriver,
+    IsEmployee,
+    IsShopOwnerOrEmployee,
+)
 from .core.identity import (
     resolve_customer_user as _resolve_customer_user,
     resolve_shop_owner_or_employee_owner as _resolve_shop_owner_or_employee_owner,
@@ -283,7 +289,7 @@ def _build_app_status_payload(request):
 def _build_public_maintenance_status_payload(request):
     maintenance = AppMaintenanceSettings.get_solo()
     lang = getattr(request, 'api_lang', None) or request.query_params.get('lang')
-    user_type = AppMaintenanceSettings.normalize_user_type(request.query_params.get('user_type')) or 'customer'
+    user_type = _resolve_public_app_status_user_type(request)
     platform = AppMaintenanceSettings.normalize_platform(request.query_params.get('platform'))
 
     enabled = maintenance.is_live() and maintenance.matches_target(
@@ -304,6 +310,26 @@ def _build_public_maintenance_status_payload(request):
             'ends_at': _serialize_app_status_datetime(maintenance.ends_at) if enabled else None,
         }
     }
+
+
+def _resolve_public_app_status_user_type(request):
+    query_params = getattr(request, 'query_params', None)
+    if query_params is not None:
+        user_type = AppMaintenanceSettings.normalize_user_type(query_params.get('user_type'))
+        if user_type:
+            return user_type
+
+    auth = getattr(request, 'auth', None)
+    if auth is not None:
+        try:
+            user_type = AppMaintenanceSettings.normalize_user_type(auth.get('user_type'))
+        except Exception:
+            user_type = None
+        if user_type:
+            return user_type
+
+    user = getattr(request, 'user', None)
+    return AppMaintenanceSettings.normalize_user_type(getattr(user, 'user_type', None))
 
 
 def _build_public_app_status_payload_from_model(request):

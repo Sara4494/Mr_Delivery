@@ -131,6 +131,25 @@ class AppStatusEndpointTests(TestCase):
         self.assertTrue(customer_response.json()["data"]["maintenance"]["enabled"])
         self.assertFalse(shop_response.json()["data"]["maintenance"]["enabled"])
 
+    def test_app_status_does_not_default_unknown_requests_to_customer_maintenance(self):
+        self.maintenance.enabled = True
+        self.maintenance.target_user_type = "customer"
+        self.maintenance.target_platform = "android"
+        self.maintenance.starts_at = timezone.now() - timedelta(minutes=5)
+        self.maintenance.ends_at = timezone.now() + timedelta(minutes=5)
+        self.maintenance.save()
+
+        response = self.client.get(
+            "/api/app/status/",
+            {"platform": "android", "lang": "en"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertFalse(payload["maintenance_mode"])
+        self.assertFalse(payload["maintenance"]["enabled"])
+        self.assertIsNone(payload["maintenance"]["code"])
+
     def test_app_status_returns_update_values_from_model(self):
         self.app_status.maintenance_mode = True
         self.app_status.update_enabled = True
