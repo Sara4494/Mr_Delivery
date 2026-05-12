@@ -12,7 +12,7 @@ class AppMaintenanceSettingsAdminForm(forms.ModelForm):
         required=False,
         min_value=1,
         label="مدة الصيانة بالساعات",
-        help_text="عند تفعيل الصيانة من هذه الشاشة ستبدأ فورًا وتستمر لهذه المدة. اتركها فارغة لتبقى الصيانة مفتوحة حتى إيقافها يدويًا.",
+        help_text="اختياري: إذا أدخلتها فسيتم حساب وقت الانتهاء تلقائيًا. وإذا تركتها فارغة يمكنك إدخال وقت البدء والانتهاء يدويًا.",
     )
 
     class Meta:
@@ -100,7 +100,7 @@ class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
     form = AppMaintenanceSettingsAdminForm
     list_display = ("enabled", "target_user_type", "target_platform", "starts_at", "ends_at", "updated_at")
     list_filter = ("enabled", "target_user_type", "target_platform")
-    readonly_fields = ("starts_at", "ends_at", "created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at")
     fieldsets = (
         ("الاستهداف", {
             "fields": ("enabled", "target_user_type", "target_platform")
@@ -134,14 +134,19 @@ class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
         if obj.enabled:
             now = timezone.now()
             duration_hours = form.cleaned_data.get("duration_hours")
-            obj.starts_at = now
+            starts_changed = "starts_at" in form.changed_data
+            ends_changed = "ends_at" in form.changed_data
             if duration_hours:
-                obj.ends_at = now + timedelta(hours=duration_hours)
-            elif "duration_hours" in form.changed_data:
+                base_start = obj.starts_at if starts_changed and obj.starts_at else now
+                obj.starts_at = base_start
+                obj.ends_at = base_start + timedelta(hours=duration_hours)
+            else:
+                if not obj.starts_at:
+                    obj.starts_at = now
+                elif not starts_changed and obj.starts_at > now:
+                    obj.starts_at = now
+            if "duration_hours" in form.changed_data and not duration_hours and not ends_changed:
                 obj.ends_at = None
-        else:
-            obj.starts_at = None
-            obj.ends_at = None
         super().save_model(request, obj, form, change)
 
 

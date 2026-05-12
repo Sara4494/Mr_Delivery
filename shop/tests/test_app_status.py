@@ -396,3 +396,44 @@ class AppMaintenanceAdminFormTests(TestCase):
         self.assertLessEqual(settings_obj.starts_at, timezone.now())
         self.assertIsNotNone(settings_obj.ends_at)
         self.assertGreater(settings_obj.ends_at, settings_obj.starts_at)
+
+    def test_admin_form_respects_manual_start_and_end_datetimes(self):
+        settings_obj = AppMaintenanceSettings.get_solo()
+        settings_obj.enabled = False
+        settings_obj.save()
+
+        start_at = timezone.now() + timedelta(hours=2)
+        end_at = start_at + timedelta(hours=5)
+        form = AppMaintenanceSettingsAdminForm(
+            data={
+                "enabled": "on",
+                "target_user_type": "customer",
+                "target_platform": "android",
+                "duration_hours": "",
+                "retry_after_seconds": "",
+                "starts_at": start_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "ends_at": end_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "title_ar": "Maintenance",
+                "title_en": "Maintenance",
+                "message_ar": "Please try again later.",
+                "message_en": "Please try again later.",
+                "footnote_ar": "",
+                "footnote_en": "",
+                "target_user_types": '["all"]',
+                "target_platforms": '["all"]',
+            },
+            instance=settings_obj,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        obj = form.save(commit=False)
+        request = self.factory.post("/admin/user/appmaintenancesettings/1/change/")
+        self.admin.save_model(request, obj, form, change=True)
+
+        settings_obj.refresh_from_db()
+        self.assertEqual(settings_obj.get_target_user_types(), ["customer"])
+        self.assertEqual(settings_obj.get_target_platforms(), ["android"])
+        self.assertIsNotNone(settings_obj.starts_at)
+        self.assertIsNotNone(settings_obj.ends_at)
+        self.assertEqual(settings_obj.starts_at.replace(microsecond=0), start_at.replace(microsecond=0))
+        self.assertEqual(settings_obj.ends_at.replace(microsecond=0), end_at.replace(microsecond=0))
