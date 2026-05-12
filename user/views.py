@@ -1842,6 +1842,18 @@ def _parse_admin_maintenance_targets(data, plural_key, singular_key, normalizer)
     return None, None
 
 
+def _normalize_immediate_maintenance_window(settings_obj, data):
+    if "enabled" not in data or not settings_obj.enabled:
+        return
+
+    now = timezone.now()
+    if "starts_at" not in data and settings_obj.starts_at and settings_obj.starts_at > now:
+        settings_obj.starts_at = now
+
+    if "ends_at" not in data and settings_obj.ends_at and settings_obj.ends_at <= now:
+        settings_obj.ends_at = None
+
+
 def _log_admin_desktop_activity(
     actor,
     *,
@@ -1972,6 +1984,9 @@ def admin_desktop_app_maintenance_settings_view(request):
             errors["retry_after_seconds"] = [retry_error]
         else:
             settings_obj.retry_after_seconds = retry_after_seconds
+
+    if not errors:
+        _normalize_immediate_maintenance_window(settings_obj, data)
 
     if not errors and settings_obj.starts_at and settings_obj.ends_at and settings_obj.starts_at >= settings_obj.ends_at:
         errors["ends_at"] = ["يجب أن يكون وقت الانتهاء بعد وقت البدء"]
