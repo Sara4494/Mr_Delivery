@@ -1,11 +1,14 @@
 from datetime import timedelta
 
+from django.contrib.admin.sites import AdminSite
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import RequestFactory
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from shop.models import Customer
+from user.admin import AppMaintenanceSettingsAdmin, AppMaintenanceSettingsAdminForm
 from user.models import AdminDesktopUser, AppMaintenanceSettings, AppStatusSettings
 
 
@@ -347,3 +350,49 @@ class AdminDesktopMaintenanceSettingsTests(TestCase):
         self.assertTrue(settings_obj.enabled)
         self.assertTrue(settings_obj.is_live())
         self.assertLessEqual(settings_obj.starts_at, timezone.now())
+
+
+class AppMaintenanceAdminFormTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.factory = RequestFactory()
+        self.site = AdminSite()
+        self.admin = AppMaintenanceSettingsAdmin(AppMaintenanceSettings, self.site)
+
+    def test_admin_form_enables_maintenance_immediately_with_duration_hours(self):
+        settings_obj = AppMaintenanceSettings.get_solo()
+        settings_obj.enabled = False
+        settings_obj.save()
+
+        form = AppMaintenanceSettingsAdminForm(
+            data={
+                "enabled": "on",
+                "target_user_type": "customer",
+                "target_platform": "android",
+                "duration_hours": "6",
+                "retry_after_seconds": "",
+                "title_ar": "Maintenance",
+                "title_en": "Maintenance",
+                "message_ar": "Please try again later.",
+                "message_en": "Please try again later.",
+                "footnote_ar": "",
+                "footnote_en": "",
+                "target_user_types": '["all"]',
+                "target_platforms": '["all"]',
+            },
+            instance=settings_obj,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        obj = form.save(commit=False)
+        request = self.factory.post("/admin/user/appmaintenancesettings/1/change/")
+        self.admin.save_model(request, obj, form, change=True)
+
+        settings_obj.refresh_from_db()
+        self.assertTrue(settings_obj.enabled)
+        self.assertEqual(settings_obj.get_target_user_types(), ["customer"])
+        self.assertEqual(settings_obj.get_target_platforms(), ["android"])
+        self.assertTrue(settings_obj.is_live())
+        self.assertLessEqual(settings_obj.starts_at, timezone.now())
+        self.assertIsNotNone(settings_obj.ends_at)
+        self.assertGreater(settings_obj.ends_at, settings_obj.starts_at)

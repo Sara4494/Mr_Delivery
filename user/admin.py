@@ -1,7 +1,34 @@
+from datetime import timedelta
+
+from django import forms
 from django.contrib import admin
 from django.utils import timezone
 
 from .models import AdminDesktopUser, AppMaintenanceSettings, AppStatusSettings, ShopCategory, ShopOwner
+
+
+class AppMaintenanceSettingsAdminForm(forms.ModelForm):
+    duration_hours = forms.IntegerField(
+        required=False,
+        min_value=1,
+        label="مدة الصيانة بالساعات",
+        help_text="عند تفعيل الصيانة من هذه الشاشة ستبدأ فورًا وتستمر لهذه المدة. اتركها فارغة لتبقى الصيانة مفتوحة حتى إيقافها يدويًا.",
+    )
+
+    class Meta:
+        model = AppMaintenanceSettings
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = getattr(self, "instance", None)
+        if instance and instance.starts_at and instance.ends_at and not self.is_bound:
+            duration = instance.ends_at - instance.starts_at
+            total_hours = int(duration.total_seconds() // 3600)
+            if duration.total_seconds() % 3600:
+                total_hours += 1
+            if total_hours > 0:
+                self.fields["duration_hours"].initial = total_hours
 
 
 @admin.register(ShopCategory)
@@ -70,9 +97,10 @@ class AdminDesktopUserAdmin(admin.ModelAdmin):
 
 @admin.register(AppMaintenanceSettings)
 class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
+    form = AppMaintenanceSettingsAdminForm
     list_display = ("enabled", "target_user_type", "target_platform", "starts_at", "ends_at", "updated_at")
     list_filter = ("enabled", "target_user_type", "target_platform")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("starts_at", "ends_at", "created_at", "updated_at")
     fieldsets = (
         ("الاستهداف", {
             "fields": ("enabled", "target_user_type", "target_platform")
@@ -88,7 +116,7 @@ class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
             )
         }),
         ("الجدولة", {
-            "fields": ("starts_at", "ends_at", "retry_after_seconds")
+            "fields": ("duration_hours", "retry_after_seconds", "starts_at", "ends_at")
         }),
         ("معلومات إضافية", {
             "fields": ("created_at", "updated_at")
@@ -105,10 +133,15 @@ class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
 
         if obj.enabled:
             now = timezone.now()
-            if "starts_at" not in form.changed_data and obj.starts_at and obj.starts_at > now:
-                obj.starts_at = now
-            if "ends_at" not in form.changed_data and obj.ends_at and obj.ends_at <= now:
+            duration_hours = form.cleaned_data.get("duration_hours")
+            obj.starts_at = now
+            if duration_hours:
+                obj.ends_at = now + timedelta(hours=duration_hours)
+            elif "duration_hours" in form.changed_data:
                 obj.ends_at = None
+        else:
+            obj.starts_at = None
+            obj.ends_at = None
         super().save_model(request, obj, form, change)
 
 
