@@ -98,7 +98,7 @@ class AdminDesktopUserAdmin(admin.ModelAdmin):
 @admin.register(AppMaintenanceSettings)
 class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
     form = AppMaintenanceSettingsAdminForm
-    list_display = ("enabled", "target_user_type", "target_platform", "starts_at", "ends_at", "updated_at")
+    list_display = ("enabled", "target_user_type", "target_platform", "starts_at", "ends_at", "display_updated_at")
     list_filter = ("enabled", "target_user_type", "target_platform")
     readonly_fields = ("created_at", "updated_at")
     fieldsets = (
@@ -148,6 +148,10 @@ class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
             if "duration_hours" in form.changed_data and not duration_hours and not ends_changed:
                 obj.ends_at = None
         super().save_model(request, obj, form, change)
+
+    @admin.display(description="تاريخ التحديث", ordering="starts_at")
+    def display_updated_at(self, obj):
+        return obj.starts_at or obj.updated_at
 
 
 @admin.register(AppStatusSettings)
