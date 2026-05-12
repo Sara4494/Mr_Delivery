@@ -319,6 +319,18 @@ def _resolve_public_app_status_user_type(request):
         if user_type:
             return user_type
 
+    headers = getattr(request, 'headers', None) or {}
+    for key in ('x-user-type', 'user-type'):
+        user_type = AppMaintenanceSettings.normalize_user_type(headers.get(key))
+        if user_type:
+            return user_type
+
+    meta = getattr(request, 'META', None) or {}
+    for key in ('HTTP_X_USER_TYPE', 'HTTP_USER_TYPE'):
+        user_type = AppMaintenanceSettings.normalize_user_type(meta.get(key))
+        if user_type:
+            return user_type
+
     auth = getattr(request, 'auth', None)
     if auth is not None:
         try:
@@ -329,7 +341,12 @@ def _resolve_public_app_status_user_type(request):
             return user_type
 
     user = getattr(request, 'user', None)
-    return AppMaintenanceSettings.normalize_user_type(getattr(user, 'user_type', None))
+    user_type = AppMaintenanceSettings.normalize_user_type(getattr(user, 'user_type', None))
+    if user_type:
+        return user_type
+
+    # `/api/app/status/` is the public customer-app status endpoint.
+    return 'customer'
 
 
 def _build_public_app_status_payload_from_model(request):

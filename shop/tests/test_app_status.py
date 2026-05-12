@@ -52,10 +52,10 @@ class AppStatusEndpointTests(TestCase):
         self.assertEqual(payload["data"]["update"]["ios"]["store_url"], "")
         self.assertEqual(payload["data"]["update"]["windows"]["min_version"], "")
         self.assertEqual(payload["data"]["update"]["windows"]["download_url"], "")
-        self.assertFalse(payload["data"]["maintenance"]["enabled"])
-        self.assertIsNone(payload["data"]["maintenance"]["code"])
-        self.assertIsNone(payload["data"]["maintenance"]["title"])
-        self.assertIsNone(payload["data"]["maintenance"]["message"])
+        self.assertEqual(payload["data"]["maintenance"]["title_ar"], "")
+        self.assertEqual(payload["data"]["maintenance"]["title_en"], "")
+        self.assertEqual(payload["data"]["maintenance"]["message_ar"], "")
+        self.assertEqual(payload["data"]["maintenance"]["message_en"], "")
 
     def test_app_status_returns_localized_maintenance_payload_when_live(self):
         self.maintenance.enabled = True
@@ -86,8 +86,7 @@ class AppStatusEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         maintenance = payload["data"]["maintenance"]
-        self.assertTrue(maintenance["enabled"])
-        self.assertEqual(maintenance["code"], "maintenance_mode")
+        self.assertTrue(payload["data"]["maintenance_mode"])
         self.assertEqual(maintenance["title"], "نقوم حاليًا بأعمال صيانة")
         self.assertEqual(maintenance["message"], "نعمل الآن على تحسين الخدمة وتجهيز تحديثات مهمة للتطبيق. يرجى المحاولة مرة أخرى بعد قليل.")
         self.assertEqual(maintenance["footnote"], "شكرًا لصبرك. سنعود إليك في أقرب وقت ممكن.")
@@ -131,7 +130,7 @@ class AppStatusEndpointTests(TestCase):
         self.assertTrue(customer_response.json()["data"]["maintenance"]["enabled"])
         self.assertFalse(shop_response.json()["data"]["maintenance"]["enabled"])
 
-    def test_app_status_does_not_default_unknown_requests_to_customer_maintenance(self):
+    def test_app_status_defaults_public_status_endpoint_to_customer(self):
         self.maintenance.enabled = True
         self.maintenance.target_user_type = "customer"
         self.maintenance.target_platform = "android"
@@ -142,6 +141,25 @@ class AppStatusEndpointTests(TestCase):
         response = self.client.get(
             "/api/app/status/",
             {"platform": "android", "lang": "en"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertTrue(payload["maintenance_mode"])
+        self.assertTrue(payload["maintenance"]["enabled"])
+        self.assertEqual(payload["maintenance"]["code"], "maintenance_mode")
+
+    def test_app_status_respects_explicit_shop_user_type_even_when_customer_maintenance_is_live(self):
+        self.maintenance.enabled = True
+        self.maintenance.target_user_type = "customer"
+        self.maintenance.target_platform = "android"
+        self.maintenance.starts_at = timezone.now() - timedelta(minutes=5)
+        self.maintenance.ends_at = timezone.now() + timedelta(minutes=5)
+        self.maintenance.save()
+
+        response = self.client.get(
+            "/api/app/status/",
+            {"platform": "android", "user_type": "shop", "lang": "en"},
         )
 
         self.assertEqual(response.status_code, 200)
