@@ -2051,6 +2051,14 @@ class UpdateCartItemSerializer(serializers.Serializer):
 
 
 class AppStatusMaintenanceSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField(required=False)
+    code = serializers.CharField(allow_null=True, required=False)
+    title = serializers.CharField(allow_null=True, required=False)
+    message = serializers.CharField(allow_null=True, required=False)
+    footnote = serializers.CharField(allow_null=True, required=False)
+    retry_after_seconds = serializers.IntegerField(allow_null=True, required=False)
+    starts_at = serializers.CharField(allow_null=True, required=False)
+    ends_at = serializers.CharField(allow_null=True, required=False)
     title_ar = serializers.CharField(allow_blank=True)
     title_en = serializers.CharField(allow_blank=True)
     message_ar = serializers.CharField(allow_blank=True)

@@ -359,6 +359,28 @@ def _build_public_app_status_payload_from_model(request):
     maintenance_mode = bool(
         _app_status_bool(app_status.maintenance_mode) or maintenance_payload.get('enabled')
     )
+    maintenance_enabled = bool(maintenance_payload.get('enabled'))
+    title_ar = _app_status_text(app_status.maintenance_title_ar, '') if maintenance_mode else ''
+    title_en = _app_status_text(app_status.maintenance_title_en, '') if maintenance_mode else ''
+    message_ar = _app_status_text(app_status.maintenance_message_ar, '') if maintenance_mode else ''
+    message_en = _app_status_text(app_status.maintenance_message_en, '') if maintenance_mode else ''
+    window_label_ar = _app_status_text(app_status.maintenance_window_label_ar, '') if maintenance_mode else ''
+    window_label_en = _app_status_text(app_status.maintenance_window_label_en, '') if maintenance_mode else ''
+
+    if maintenance_enabled:
+        lang = getattr(request, 'api_lang', None) or request.query_params.get('lang')
+        localized_title = maintenance_payload.get('title')
+        localized_message = maintenance_payload.get('message')
+        localized_footnote = maintenance_payload.get('footnote')
+        if str(lang or '').strip().lower() == 'en':
+            title_en = localized_title or title_en
+            message_en = localized_message or message_en
+            window_label_en = localized_footnote or window_label_en
+        else:
+            title_ar = localized_title or title_ar
+            message_ar = localized_message or message_ar
+            window_label_ar = localized_footnote or window_label_ar
+
     return {
         'maintenance_mode': maintenance_mode,
         'update': {
@@ -378,12 +400,20 @@ def _build_public_app_status_payload_from_model(request):
             },
         },
         'maintenance': {
-            'title_ar': _app_status_text(app_status.maintenance_title_ar, '') if maintenance_mode else '',
-            'title_en': _app_status_text(app_status.maintenance_title_en, '') if maintenance_mode else '',
-            'message_ar': _app_status_text(app_status.maintenance_message_ar, '') if maintenance_mode else '',
-            'message_en': _app_status_text(app_status.maintenance_message_en, '') if maintenance_mode else '',
-            'window_label_ar': _app_status_text(app_status.maintenance_window_label_ar, '') if maintenance_mode else '',
-            'window_label_en': _app_status_text(app_status.maintenance_window_label_en, '') if maintenance_mode else '',
+            'enabled': maintenance_enabled,
+            'code': maintenance_payload.get('code'),
+            'title': maintenance_payload.get('title'),
+            'message': maintenance_payload.get('message'),
+            'footnote': maintenance_payload.get('footnote'),
+            'retry_after_seconds': maintenance_payload.get('retry_after_seconds'),
+            'starts_at': maintenance_payload.get('starts_at'),
+            'ends_at': maintenance_payload.get('ends_at'),
+            'title_ar': title_ar,
+            'title_en': title_en,
+            'message_ar': message_ar,
+            'message_en': message_en,
+            'window_label_ar': window_label_ar,
+            'window_label_en': window_label_en,
         },
     }
 

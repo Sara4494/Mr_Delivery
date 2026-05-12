@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils import timezone
 
 from .models import AdminDesktopUser, AppMaintenanceSettings, AppStatusSettings, ShopCategory, ShopOwner
 
@@ -93,6 +94,22 @@ class AppMaintenanceSettingsAdmin(admin.ModelAdmin):
             "fields": ("created_at", "updated_at")
         }),
     )
+
+    def save_model(self, request, obj, form, change):
+        # Django admin edits only the legacy single-value fields, so keep
+        # the JSON target lists in sync before the model normalizes them.
+        if obj.target_user_type:
+            obj.set_target_user_types([obj.target_user_type])
+        if obj.target_platform:
+            obj.set_target_platforms([obj.target_platform])
+
+        if obj.enabled:
+            now = timezone.now()
+            if "starts_at" not in form.changed_data and obj.starts_at and obj.starts_at > now:
+                obj.starts_at = now
+            if "ends_at" not in form.changed_data and obj.ends_at and obj.ends_at <= now:
+                obj.ends_at = None
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(AppStatusSettings)
