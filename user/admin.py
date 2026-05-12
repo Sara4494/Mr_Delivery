@@ -4,7 +4,7 @@ from django import forms
 from django.contrib import admin
 from django.utils import timezone
 
-from .models import AdminDesktopUser, AppMaintenanceSettings, AppStatusSettings, ShopCategory, ShopOwner
+from .models import AppVersion, AdminDesktopUser, AppMaintenanceSettings, AppStatusSettings, ShopCategory, ShopOwner
 
 
 class AppMaintenanceSettingsAdminForm(forms.ModelForm):
@@ -188,5 +188,25 @@ class AppStatusSettingsAdmin(admin.ModelAdmin):
         }),
         ("معلومات إضافية", {
             "fields": ("created_at", "updated_at")
+        }),
+    )
+
+
+@admin.register(AppVersion)
+class AppVersionAdmin(admin.ModelAdmin):
+    list_display = ("version_name", "version_code", "is_force_update", "created_at")
+    list_filter = ("is_force_update", "created_at")
+    search_fields = ("version_name", "version_code", "release_notes")
+    readonly_fields = ("created_at",)
+    ordering = ("-version_code", "-created_at")
+    fieldsets = (
+        ("بيانات الإصدار", {
+            "fields": ("version_code", "version_name", "apk_file", "is_force_update")
+        }),
+        ("تفاصيل التحديث", {
+            "fields": ("release_notes",)
+        }),
+        ("معلومات إضافية", {
+            "fields": ("created_at",)
         }),
     )

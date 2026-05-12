@@ -364,6 +364,24 @@ class AppStatusSettings(models.Model):
         super().save(*args, **kwargs)
 
 
+class AppVersion(models.Model):
+    version_code = models.PositiveIntegerField(unique=True, verbose_name="رقم الإصدار")
+    version_name = models.CharField(max_length=50, verbose_name="اسم الإصدار")
+    apk_file = models.FileField(upload_to="downloads/zaygo_driver/", verbose_name="ملف APK")
+    is_force_update = models.BooleanField(default=False, verbose_name="إجبار التحديث")
+    release_notes = models.TextField(blank=True, default="", verbose_name="ملاحظات الإصدار")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+
+    class Meta:
+        verbose_name = "إصدار تطبيق المناديب"
+        verbose_name_plural = "إصدارات تطبيق المناديب"
+        ordering = ["-version_code", "-created_at"]
+        get_latest_by = "version_code"
+
+    def __str__(self):
+        return f"{self.version_name} ({self.version_code})"
+
+
 class ShopCategory(models.Model):
     """نموذج تصنيف المحل (مطعم، صيدلية، ...)."""
 

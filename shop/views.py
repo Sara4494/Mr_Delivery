@@ -76,6 +76,7 @@ from .serializers import (
     UpdateCartItemSerializer,
     ChatMessageSerializer,
     AppStatusSerializer,
+    DriverAppVersionSerializer,
 )
 from .permissions import (
     IsShopOwner,
@@ -97,6 +98,7 @@ from .support_center.api import (
 )
 from user.models import (
     AdminApprovalRequest,
+    AppVersion,
     APP_MAINTENANCE_RESPONSE_CODE,
     AppMaintenanceSettings,
     AppStatusSettings,
@@ -509,6 +511,31 @@ def app_status_view(request):
     )
     response['Cache-Control'] = 'no-store'
     return response
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def driver_app_version_view(request):
+    latest_version = AppVersion.objects.order_by('-version_code', '-created_at').first()
+    if latest_version is None:
+        return Response(
+            {
+                "status": False,
+                "message": "No app version found",
+                "data": None,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    serializer = DriverAppVersionSerializer(latest_version, context={"request": request})
+    return Response(
+        {
+            "status": True,
+            "message": "Success",
+            "data": serializer.data,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 class OrderPagination(PageNumberPagination):

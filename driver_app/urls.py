@@ -6,6 +6,7 @@ from shop import driver_chat_views, views
 app_name = 'driver_app'
 
 urlpatterns = [
+    path('driver/app-version/', views.driver_app_version_view, name='driver_app_version'),
     path('driver/dashboard-ui/', views.driver_dashboard_ui_view, name='driver_dashboard_ui'),
     path('driver/store-chats-ui/', views.driver_store_chats_ui_view, name='driver_store_chats_ui'),
     path('driver/register/', views.driver_register_view, name='driver_register'),

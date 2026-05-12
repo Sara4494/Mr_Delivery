@@ -17,7 +17,7 @@ from .support_center.serializers import (
     ShopSupportTicketMessageSerializer,
     ShopSupportTicketSerializer,
 )
-from user.models import ShopOwner, ShopCategory, AdminApprovalRequest
+from user.models import AppVersion, ShopOwner, ShopCategory, AdminApprovalRequest
 from user.utils import t, build_absolute_file_url, resolve_customer_profile_image_url
 from user.otp_service import normalize_phone
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -2085,3 +2085,25 @@ class AppStatusSerializer(serializers.Serializer):
     maintenance_mode = serializers.BooleanField()
     update = AppStatusUpdateSerializer()
     maintenance = AppStatusMaintenanceSerializer(required=False)
+
+
+class DriverAppVersionSerializer(serializers.ModelSerializer):
+    apk_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AppVersion
+        fields = [
+            "version_code",
+            "version_name",
+            "apk_url",
+            "is_force_update",
+            "release_notes",
+        ]
+
+    def get_apk_url(self, obj):
+        return build_absolute_file_url(
+            obj.apk_file,
+            request=self.context.get("request"),
+            scope=self.context.get("scope"),
+            base_url=self.context.get("base_url"),
+        )
