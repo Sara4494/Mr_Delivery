@@ -1,8 +1,8 @@
 from datetime import timedelta
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
-from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 from shop.models import Customer
@@ -61,11 +61,11 @@ class AppStatusEndpointTests(TestCase):
         self.maintenance.enabled = True
         self.maintenance.target_user_type = "customer"
         self.maintenance.target_platform = "android"
-        self.maintenance.title_ar = "نقوم حاليًا بأعمال صيانة"
+        self.maintenance.title_ar = "Ù†Ù‚ÙˆÙ… Ø­Ø§Ù„ÙŠÙ‹Ø§ Ø¨Ø£Ø¹Ù…Ø§Ù„ ØµÙŠØ§Ù†Ø©"
         self.maintenance.title_en = "We are currently performing maintenance"
-        self.maintenance.message_ar = "نعمل الآن على تحسين الخدمة وتجهيز تحديثات مهمة للتطبيق. يرجى المحاولة مرة أخرى بعد قليل."
+        self.maintenance.message_ar = "Ù†Ø¹Ù…Ù„ Ø§Ù„Ø¢Ù† Ø¹Ù„Ù‰ ØªØ­Ø³ÙŠÙ† Ø§Ù„Ø®Ø¯Ù…Ø© ÙˆØªØ¬Ù‡ÙŠØ² ØªØ­Ø¯ÙŠØ«Ø§Øª Ù…Ù‡Ù…Ø© Ù„Ù„ØªØ·Ø¨ÙŠÙ‚. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ Ø¨Ø¹Ø¯ Ù‚Ù„ÙŠÙ„."
         self.maintenance.message_en = "We are improving the service and preparing important app updates. Please try again shortly."
-        self.maintenance.footnote_ar = "شكرًا لصبرك. سنعود إليك في أقرب وقت ممكن."
+        self.maintenance.footnote_ar = "Ø´ÙƒØ±Ù‹Ø§ Ù„ØµØ¨Ø±Ùƒ. Ø³Ù†Ø¹ÙˆØ¯ Ø¥Ù„ÙŠÙƒ ÙÙŠ Ø£Ù‚Ø±Ø¨ ÙˆÙ‚Øª Ù…Ù…ÙƒÙ†."
         self.maintenance.footnote_en = "Thank you for your patience. We will be back as soon as possible."
         self.maintenance.retry_after_seconds = 300
         self.maintenance.starts_at = timezone.now() - timedelta(minutes=10)
@@ -87,9 +87,9 @@ class AppStatusEndpointTests(TestCase):
         payload = response.json()
         maintenance = payload["data"]["maintenance"]
         self.assertTrue(payload["data"]["maintenance_mode"])
-        self.assertEqual(maintenance["title"], "نقوم حاليًا بأعمال صيانة")
-        self.assertEqual(maintenance["message"], "نعمل الآن على تحسين الخدمة وتجهيز تحديثات مهمة للتطبيق. يرجى المحاولة مرة أخرى بعد قليل.")
-        self.assertEqual(maintenance["footnote"], "شكرًا لصبرك. سنعود إليك في أقرب وقت ممكن.")
+        self.assertEqual(maintenance["title"], "Ù†Ù‚ÙˆÙ… Ø­Ø§Ù„ÙŠÙ‹Ø§ Ø¨Ø£Ø¹Ù…Ø§Ù„ ØµÙŠØ§Ù†Ø©")
+        self.assertEqual(maintenance["message"], "Ù†Ø¹Ù…Ù„ Ø§Ù„Ø¢Ù† Ø¹Ù„Ù‰ ØªØ­Ø³ÙŠÙ† Ø§Ù„Ø®Ø¯Ù…Ø© ÙˆØªØ¬Ù‡ÙŠØ² ØªØ­Ø¯ÙŠØ«Ø§Øª Ù…Ù‡Ù…Ø© Ù„Ù„ØªØ·Ø¨ÙŠÙ‚. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ Ø¨Ø¹Ø¯ Ù‚Ù„ÙŠÙ„.")
+        self.assertEqual(maintenance["footnote"], "Ø´ÙƒØ±Ù‹Ø§ Ù„ØµØ¨Ø±Ùƒ. Ø³Ù†Ø¹ÙˆØ¯ Ø¥Ù„ÙŠÙƒ ÙÙŠ Ø£Ù‚Ø±Ø¨ ÙˆÙ‚Øª Ù…Ù…ÙƒÙ†.")
         self.assertEqual(maintenance["retry_after_seconds"], 300)
         self.assertTrue(maintenance["starts_at"].endswith("Z"))
         self.assertTrue(maintenance["ends_at"].endswith("Z"))
@@ -178,11 +178,11 @@ class AppStatusEndpointTests(TestCase):
         self.app_status.ios_store_url = "https://apps.apple.com/app/id123456789"
         self.app_status.windows_min_version = "1.5.0"
         self.app_status.windows_download_url = "https://example.com/windows.exe"
-        self.app_status.maintenance_title_ar = "تحديث مهم"
+        self.app_status.maintenance_title_ar = "ØªØ­Ø¯ÙŠØ« Ù…Ù‡Ù…"
         self.app_status.maintenance_title_en = "Important update"
-        self.app_status.maintenance_message_ar = "يرجى تحديث التطبيق"
+        self.app_status.maintenance_message_ar = "ÙŠØ±Ø¬Ù‰ ØªØ­Ø¯ÙŠØ« Ø§Ù„ØªØ·Ø¨ÙŠÙ‚"
         self.app_status.maintenance_message_en = "Please update the app"
-        self.app_status.maintenance_window_label_ar = "الآن"
+        self.app_status.maintenance_window_label_ar = "Ø§Ù„Ø¢Ù†"
         self.app_status.maintenance_window_label_en = "Now"
         self.app_status.save()
 
@@ -199,9 +199,9 @@ class AppStatusEndpointTests(TestCase):
         self.assertEqual(payload["update"]["android"]["min_version"], "2.1.0")
         self.assertEqual(payload["update"]["ios"]["min_version"], "2.2.0")
         self.assertEqual(payload["update"]["windows"]["download_url"], "https://example.com/windows.exe")
-        self.assertEqual(payload["maintenance"]["title_ar"], "تحديث مهم")
-        self.assertEqual(payload["maintenance"]["message_ar"], "يرجى تحديث التطبيق")
-        self.assertEqual(payload["maintenance"]["window_label_ar"], "الآن")
+        self.assertEqual(payload["maintenance"]["title_ar"], "ØªØ­Ø¯ÙŠØ« Ù…Ù‡Ù…")
+        self.assertEqual(payload["maintenance"]["message_ar"], "ÙŠØ±Ø¬Ù‰ ØªØ­Ø¯ÙŠØ« Ø§Ù„ØªØ·Ø¨ÙŠÙ‚")
+        self.assertEqual(payload["maintenance"]["window_label_ar"], "Ø§Ù„Ø¢Ù†")
 
     def test_app_status_prefers_uploaded_windows_installer_file(self):
         self.app_status.windows_download_url = "https://example.com/old.exe"
@@ -292,11 +292,11 @@ class AdminDesktopMaintenanceSettingsTests(TestCase):
                 "enabled": True,
                 "target_user_types": ["customer", "driver"],
                 "target_platforms": ["android", "ios"],
-                "title_ar": "صيانة مجدولة",
+                "title_ar": "ØµÙŠØ§Ù†Ø© Ù…Ø¬Ø¯ÙˆÙ„Ø©",
                 "title_en": "Scheduled maintenance",
-                "message_ar": "يرجى الانتظار قليلًا.",
+                "message_ar": "ÙŠØ±Ø¬Ù‰ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø± Ù‚Ù„ÙŠÙ„Ù‹Ø§.",
                 "message_en": "Please wait a moment.",
-                "footnote_ar": "شكرًا لتفهمك.",
+                "footnote_ar": "Ø´ÙƒØ±Ù‹Ø§ Ù„ØªÙÙ‡Ù…Ùƒ.",
                 "footnote_en": "Thank you for understanding.",
                 "starts_at": "2026-04-26T20:00:00Z",
                 "ends_at": "2026-04-26T22:00:00Z",
@@ -310,4 +310,31 @@ class AdminDesktopMaintenanceSettingsTests(TestCase):
         self.assertTrue(settings_obj.enabled)
         self.assertEqual(settings_obj.get_target_user_types(), ["customer", "driver"])
         self.assertEqual(settings_obj.get_target_platforms(), ["android", "ios"])
-        self.assertEqual(settings_obj.title_ar, "صيانة مجدولة")
+        self.assertEqual(settings_obj.title_ar, "ØµÙŠØ§Ù†Ø© Ù…Ø¬Ø¯ÙˆÙ„Ø©")
+
+    def test_enabling_maintenance_without_new_schedule_activates_it_immediately(self):
+        settings_obj = AppMaintenanceSettings.get_solo()
+        settings_obj.enabled = False
+        settings_obj.target_user_type = "customer"
+        settings_obj.target_platform = "all"
+        settings_obj.starts_at = timezone.now() + timedelta(hours=10)
+        settings_obj.ends_at = timezone.now() + timedelta(hours=34)
+        settings_obj.title_ar = "ØµÙŠØ§Ù†Ø©"
+        settings_obj.title_en = "Maintenance"
+        settings_obj.message_ar = "Ø¬Ø§Ø±Ù Ø§Ù„Ø¹Ù…Ù„"
+        settings_obj.message_en = "Working on it"
+        settings_obj.save()
+
+        response = self.client.patch(
+            "/api/admin-desktop/app-status/maintenance/",
+            {
+                "enabled": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        settings_obj.refresh_from_db()
+        self.assertTrue(settings_obj.enabled)
+        self.assertTrue(settings_obj.is_live())
+        self.assertLessEqual(settings_obj.starts_at, timezone.now())
