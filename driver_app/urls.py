@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, re_path
 
 from shop import driver_chat_views, views
 
@@ -12,7 +12,7 @@ urlpatterns = [
     path('driver/register/', views.driver_register_view, name='driver_register'),
     path('driver/register/send-otp/', views.driver_register_send_otp_view, name='driver_register_send_otp'),
     path('driver/register/verify-otp/', views.driver_register_verify_otp_view, name='driver_register_verify_otp'),
-    path('driver/login/', views.driver_login_view, name='driver_login'),
+    re_path(r'^driver/login/?$', views.driver_login_view, name='driver_login'),
     path('driver/home/', views.driver_dashboard_view, name='driver_home'),
     path('driver/invitations/', views.driver_invitations_view, name='driver_invitations'),
     path('driver/invitations/<int:invitation_id>/respond/', views.driver_invitation_action_view, name='driver_invitation_action'),

@@ -1,11 +1,11 @@
-from django.urls import path
+from django.urls import path, re_path
 from . import views
 
 app_name = 'user'
 
 urlpatterns = [
     # ==================== Unified Auth ====================
-    path('auth/login/', views.unified_login_view, name='unified_login'),
+    re_path(r'^auth/login/?$', views.unified_login_view, name='unified_login'),
     path('auth/google/', views.google_customer_auth_view, name='google_customer_auth'),
     path('auth/register/', views.unified_register_view, name='unified_register'),
     path('auth/otp/send/', views.send_otp_view, name='send_otp'),

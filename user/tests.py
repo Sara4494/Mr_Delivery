@@ -587,3 +587,89 @@ class AdminDesktopActivityLogsTests(TestCase):
         response = self.client.get("/api/admin-desktop/activity-logs/")
 
         self.assertEqual(response.status_code, 403)
+
+
+class LoginOptionalTrailingSlashTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = AdminDesktopUser.objects.create(
+            name="Admin Login User",
+            phone_number="+201000000051",
+            email="admin-login@example.com",
+            password="secret123",
+            role="dashboard_manager",
+        )
+        self.customer = Customer.objects.create(
+            name="Customer Login User",
+            phone_number="+201000000052",
+            email="customer-login@example.com",
+            password="secret123",
+            is_verified=True,
+        )
+        self.driver = Driver.objects.create(
+            name="Driver Login User",
+            phone_number="+201000000053",
+            password="secret123",
+            is_verified=True,
+            status="available",
+        )
+        self.shop_owner = ShopOwner.objects.create(
+            owner_name="Shop Owner Login User",
+            shop_name="Login Test Shop",
+            shop_number="S9051",
+            phone_number="+201000000054",
+            password="secret123",
+        )
+
+    def test_unified_login_without_trailing_slash_does_not_redirect(self):
+        response = self.client.post(
+            "/api/auth/login",
+            {
+                "role": "shop_owner",
+                "shop_number": self.shop_owner.shop_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.data["data"])
+
+    def test_customer_login_without_trailing_slash_does_not_redirect(self):
+        response = self.client.post(
+            "/api/customer/login",
+            {
+                "phone_number": self.customer.phone_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.data["data"])
+
+    def test_driver_login_without_trailing_slash_does_not_redirect(self):
+        response = self.client.post(
+            "/api/driver/login",
+            {
+                "phone_number": self.driver.phone_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.data["data"])
+
+    def test_admin_desktop_login_without_trailing_slash_does_not_redirect(self):
+        response = self.client.post(
+            "/api/admin-desktop/auth/login",
+            {
+                "phone_number": self.admin_user.phone_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.data["data"])

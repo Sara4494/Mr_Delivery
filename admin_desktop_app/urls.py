@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, re_path
 
 from user import views
 
@@ -6,7 +6,7 @@ from user import views
 app_name = 'admin_desktop_app'
 
 urlpatterns = [
-    path('admin-desktop/auth/login/', views.admin_desktop_login_view, name='admin_desktop_login'),
+    re_path(r'^admin-desktop/auth/login/?$', views.admin_desktop_login_view, name='admin_desktop_login'),
     path('admin-desktop/auth/token/refresh/', views.ShopOwnerTokenRefreshView.as_view(), name='admin_desktop_token_refresh'),
     path('admin-desktop/auth/me/', views.admin_desktop_me_view, name='admin_desktop_me'),
     path('admin-desktop/roles-permissions/', views.admin_desktop_roles_permissions_view, name='admin_desktop_roles_permissions'),

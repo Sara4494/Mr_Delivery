@@ -80,11 +80,11 @@ urlpatterns = [
     path('shop/dashboard/summary/', views.shop_dashboard_summary_view, name='dashboard_summary'),
     
     # ==================== Login APIs ====================
-    path('employee/login/', views.employee_login_view, name='employee_login'),
+    re_path(r'^employee/login/?$', views.employee_login_view, name='employee_login'),
     path('driver/register/', views.driver_register_view, name='driver_register'),
     path('driver/register/send-otp/', views.driver_register_send_otp_view, name='driver_register_send_otp'),
     path('driver/register/verify-otp/', views.driver_register_verify_otp_view, name='driver_register_verify_otp'),
-    path('driver/login/', views.driver_login_view, name='driver_login'),
+    re_path(r'^driver/login/?$', views.driver_login_view, name='driver_login'),
     path('driver/home/', views.driver_dashboard_view, name='driver_home'),
     path('driver/invitations/', views.driver_invitations_view, name='driver_invitations'),
     path('driver/invitations/<int:invitation_id>/respond/', views.driver_invitation_action_view, name='driver_invitation_action'),
@@ -111,7 +111,7 @@ urlpatterns = [
     
     # ==================== Customer Auth ====================
     path('customer/register/', views.customer_register_view, name='customer_register'),
-    path('customer/login/', views.customer_login_view, name='customer_login'),
+    re_path(r'^customer/login/?$', views.customer_login_view, name='customer_login'),
     path('customer/profile/', views.customer_profile_view, name='customer_profile'),
     path('customer/profile/phone/send-otp/', views.customer_profile_phone_send_otp_view, name='customer_profile_phone_send_otp'),
     path('customer/profile/phone/verify-otp/', views.customer_profile_phone_verify_otp_view, name='customer_profile_phone_verify_otp'),
