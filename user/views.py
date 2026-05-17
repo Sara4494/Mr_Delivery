@@ -2311,11 +2311,62 @@ def _create_abuse_target_notification(report, title, message, data=None):
     )
 
 
+def _create_abuse_reporter_resolution_notification(report, title, message, data=None):
+    from shop.views import _attach_notification_to_shop_users, _attach_notification_to_user
+    from shop.fcm.service import send_driver_system_notification
+
+    payload = data or {}
+
+    if report.reporter_type in {"shop_owner", "employee"}:
+        shop_owner = report.reporter_shop_owner
+        if report.reporter_type == "employee" and report.reporter_employee_id:
+            shop_owner = getattr(report.reporter_employee, "shop_owner", None)
+        if shop_owner is None:
+            return None
+        return _attach_notification_to_shop_users(
+            shop_owner,
+            title=title,
+            message=message,
+            notification_type="system",
+            reference_id=payload.get("reference_id") or report.public_id,
+            idempotency_key=payload.get("idempotency_key"),
+            data=payload,
+        )
+
+    if report.reporter_type == "driver" and report.reporter_driver_id:
+        return send_driver_system_notification(
+            report.reporter_driver,
+            title=title,
+            body=message,
+            data=payload,
+            notification_type="general_notification",
+            reference_id=payload.get("reference_id") or report.public_id,
+            idempotency_key=payload.get("idempotency_key"),
+        )
+
+    reporter = report.reporter
+    if reporter is None:
+        return None
+
+    return _attach_notification_to_user(
+        report.reporter_type,
+        reporter,
+        title=title,
+        message=message,
+        notification_type="system",
+        reference_id=payload.get("reference_id") or report.public_id,
+        idempotency_key=payload.get("idempotency_key"),
+        data=payload,
+    )
+
+
 def _apply_abuse_report_resolution(report, *, action, admin_user, admin_notes=None):
     moderation = _get_abuse_report_moderation(report)
     now = timezone.now()
     action = str(action or "").strip()
     auto_suspended = False
+    target_name = _admin_abuse_actor_name(report.target, report.target_type) or "الحساب المبلّغ عليه"
+    reporter_title = "متابعة البلاغ من الدعم الفني"
 
     if action == "warning":
         moderation.warnings_count = int(moderation.warnings_count or 0) + 1
@@ -2338,6 +2389,31 @@ def _apply_abuse_report_resolution(report, *, action, admin_user, admin_notes=No
                 "auto_suspended": auto_suspended,
             },
         )
+        reporter_message = (
+            f"راجع الدعم الفني البلاغ {report.public_id}، وتم تسجيل تحذير على {target_name}. "
+            f"إجمالي التحذيرات الحالي: {moderation.warnings_count}."
+        )
+        if auto_suspended:
+            reporter_message = (
+                f"{reporter_message} وتم تعليق الحساب تلقائيًا بعد الوصول إلى 3 تحذيرات."
+            )
+        _create_abuse_reporter_resolution_notification(
+            report,
+            reporter_title,
+            reporter_message,
+            data={
+                "report_id": report.id,
+                "report_number": report.public_id,
+                "action": "warning",
+                "target_type": report.target_type,
+                "target_name": target_name,
+                "warnings_count": moderation.warnings_count,
+                "auto_suspended": auto_suspended,
+                "admin_notes": admin_notes or None,
+                "reference_id": report.public_id,
+                "idempotency_key": f"abuse-report-resolution:{report.id}:warning:{moderation.warnings_count}:{int(auto_suspended)}",
+            },
+        )
         if auto_suspended and report.target_type == "shop_owner" and report.target_shop_owner_id:
             report.target_shop_owner.admin_status = "suspended"
             report.target_shop_owner.is_active = False
@@ -2355,13 +2431,46 @@ def _apply_abuse_report_resolution(report, *, action, admin_user, admin_notes=No
             moderation.suspension_reason,
             data={"report_id": report.id, "report_number": report.public_id},
         )
+        _create_abuse_reporter_resolution_notification(
+            report,
+            reporter_title,
+            f"راجع الدعم الفني البلاغ {report.public_id}، وتم تعليق {target_name}.",
+            data={
+                "report_id": report.id,
+                "report_number": report.public_id,
+                "action": "suspend",
+                "target_type": report.target_type,
+                "target_name": target_name,
+                "warnings_count": moderation.warnings_count,
+                "suspension_reason": moderation.suspension_reason,
+                "admin_notes": admin_notes or None,
+                "reference_id": report.public_id,
+                "idempotency_key": f"abuse-report-resolution:{report.id}:suspend",
+            },
+        )
         if report.target_type == "shop_owner" and report.target_shop_owner_id:
             report.target_shop_owner.admin_status = "suspended"
             report.target_shop_owner.is_active = False
             report.target_shop_owner.suspension_reason = moderation.suspension_reason
             report.target_shop_owner.suspension_started_at = now
             report.target_shop_owner.save(update_fields=["admin_status", "is_active", "suspension_reason", "suspension_started_at", "updated_at"])
-    elif action != "close_no_action":
+    elif action == "close_no_action":
+        _create_abuse_reporter_resolution_notification(
+            report,
+            reporter_title,
+            f"راجع الدعم الفني البلاغ {report.public_id}، وتم إغلاقه بدون إجراء على {target_name}.",
+            data={
+                "report_id": report.id,
+                "report_number": report.public_id,
+                "action": "close_no_action",
+                "target_type": report.target_type,
+                "target_name": target_name,
+                "admin_notes": admin_notes or None,
+                "reference_id": report.public_id,
+                "idempotency_key": f"abuse-report-resolution:{report.id}:close_no_action",
+            },
+        )
+    else:
         raise ValueError("invalid_action")
 
     report.status = "closed"
@@ -3712,11 +3821,23 @@ def _build_admin_dashboard_revenue_analysis(range_key):
 
 
 def _serialize_admin_dashboard_pending_actions():
-    from shop.models import Invoice
+    from shop.models import AbuseReport, Invoice, Order, ShopSupportTicket
 
     pending_approvals = AdminApprovalRequest.objects.filter(status="pending")
     unsent_invoices_count = Invoice.objects.filter(is_sent=False).count()
-    return [
+    support_pending_targets = _get_support_action_pending_targets()
+    waiting_support_tickets_count = ShopSupportTicket.objects.filter(
+        status__in=["open", "waiting_support", "in_progress"]
+    ).count()
+    abuse_pending_count = AbuseReport.objects.filter(status="pending_review").count()
+    abuse_high_risk_count = AbuseReport.objects.filter(status="high_risk").count()
+    support_accounts_count = sum(len(values) for values in support_pending_targets.values())
+    non_invoiced_orders_count = Order.objects.filter(
+        invoice__isnull=True,
+        status__in=["new", "pending_customer_confirm", "confirmed", "preparing", "on_way"],
+    ).count()
+
+    actions = [
         {
             "key": "payment_requests",
             "title": "طلبات الدفع",
@@ -3725,6 +3846,8 @@ def _serialize_admin_dashboard_pending_actions():
             "action_label": "مراجعة",
             "icon_key": "payment",
             "color_key": "amber",
+            "category_key": "company",
+            "category_label": "الشركة",
         },
         {
             "key": "shop_edit_requests",
@@ -3734,6 +3857,8 @@ def _serialize_admin_dashboard_pending_actions():
             "action_label": "مراجعة",
             "icon_key": "shop_edit",
             "color_key": "blue",
+            "category_key": "orders",
+            "category_label": "طلبات الأوردرات",
         },
         {
             "key": "image_publish_requests",
@@ -3743,6 +3868,8 @@ def _serialize_admin_dashboard_pending_actions():
             "action_label": "مراجعة",
             "icon_key": "image_publish",
             "color_key": "pink",
+            "category_key": "orders",
+            "category_label": "طلبات الأوردرات",
         },
         {
             "key": "offer_requests",
@@ -3752,8 +3879,86 @@ def _serialize_admin_dashboard_pending_actions():
             "action_label": "مراجعة",
             "icon_key": "offer",
             "color_key": "purple",
+            "category_key": "orders",
+            "category_label": "طلبات الأوردرات",
+        },
+        {
+            "key": "non_invoiced_orders",
+            "title": "طلبات غير مفوترة",
+            "count": non_invoiced_orders_count,
+            "subtitle": f"{non_invoiced_orders_count} طلب ما زال بدون فاتورة",
+            "action_label": "متابعة",
+            "icon_key": "order",
+            "color_key": "slate",
+            "category_key": "orders",
+            "category_label": "طلبات الأوردرات",
+        },
+        {
+            "key": "support_tickets",
+            "title": "تذاكر دعم بانتظار الشركة",
+            "count": waiting_support_tickets_count,
+            "subtitle": f"{waiting_support_tickets_count} تذكرة تحتاج رد من الدعم الفني",
+            "action_label": "متابعة",
+            "icon_key": "support",
+            "color_key": "teal",
+            "category_key": "support_reports",
+            "category_label": "الدعم والبلاغات",
+        },
+        {
+            "key": "abuse_reports_pending",
+            "title": "بلاغات قيد المراجعة",
+            "count": abuse_pending_count,
+            "subtitle": f"{abuse_pending_count} بلاغ بانتظار قرار من الإدارة",
+            "action_label": "مراجعة",
+            "icon_key": "report",
+            "color_key": "red",
+            "category_key": "support_reports",
+            "category_label": "الدعم والبلاغات",
+        },
+        {
+            "key": "abuse_reports_high_risk",
+            "title": "بلاغات عالية الخطورة",
+            "count": abuse_high_risk_count,
+            "subtitle": f"{abuse_high_risk_count} بلاغ يحتاج تدخل سريع",
+            "action_label": "تدخل فوري",
+            "icon_key": "warning",
+            "color_key": "orange",
+            "category_key": "support_reports",
+            "category_label": "الدعم والبلاغات",
+        },
+        {
+            "key": "support_action_accounts",
+            "title": "حسابات تحتاج متابعة",
+            "count": support_accounts_count,
+            "subtitle": f"{support_accounts_count} حساب مرتبط ببلاغات مفتوحة",
+            "action_label": "متابعة",
+            "icon_key": "company",
+            "color_key": "yellow",
+            "category_key": "company",
+            "category_label": "الشركة",
         },
     ]
+
+    return actions
+
+
+def _serialize_admin_dashboard_pending_action_groups(actions):
+    groups = [
+        {"key": "all", "label": "الكل"},
+        {"key": "orders", "label": "طلبات الأوردرات"},
+        {"key": "company", "label": "الشركة"},
+        {"key": "support_reports", "label": "الدعم والبلاغات"},
+    ]
+    for group in groups:
+        if group["key"] == "all":
+            group["count"] = sum(int(item.get("count") or 0) for item in actions)
+        else:
+            group["count"] = sum(
+                int(item.get("count") or 0)
+                for item in actions
+                if item.get("category_key") == group["key"]
+            )
+    return groups
 
 
 def _serialize_admin_dashboard_recent_activities(limit=10):
@@ -3831,6 +4036,7 @@ def admin_desktop_dashboard_view(request):
         revenue_range = "week"
 
     recent_limit = max(min(int(request.query_params.get("recent_limit", 4) or 4), 20), 1)
+    pending_actions = _serialize_admin_dashboard_pending_actions()
 
     return success_response(
         data={
@@ -3842,7 +4048,8 @@ def admin_desktop_dashboard_view(request):
             "orders_analysis": _build_admin_dashboard_orders_analysis(orders_range),
             "revenue_analysis": _build_admin_dashboard_revenue_analysis(revenue_range),
             "recent_activities": _serialize_admin_dashboard_recent_activities(limit=recent_limit),
-            "pending_actions": _serialize_admin_dashboard_pending_actions(),
+            "pending_actions": pending_actions,
+            "pending_action_groups": _serialize_admin_dashboard_pending_action_groups(pending_actions),
         },
         message="تم جلب لوحة التحكم بنجاح",
         request=request,
@@ -3873,9 +4080,12 @@ def admin_desktop_dashboard_pending_actions_view(request):
     if permission_error:
         return permission_error
 
+    pending_actions = _serialize_admin_dashboard_pending_actions()
+
     return success_response(
         data={
-            "pending_actions": _serialize_admin_dashboard_pending_actions(),
+            "pending_actions": pending_actions,
+            "pending_action_groups": _serialize_admin_dashboard_pending_action_groups(pending_actions),
         },
         message="تم جلب الإجراءات المعلقة بنجاح",
         request=request,

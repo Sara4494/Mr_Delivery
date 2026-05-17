@@ -7,11 +7,12 @@ from user.models import (
     AdminApprovalRequest,
     AdminDesktopActivityLog,
     AdminDesktopUser,
+    Employee,
     ShopCategory,
     ShopOwner,
     get_admin_desktop_role_permissions,
 )
-from shop.models import AbuseReport, AccountModerationStatus, Customer, Driver, FCMDeviceToken, Order
+from shop.models import AbuseReport, AccountModerationStatus, Customer, Driver, FCMDeviceToken, Notification, Order
 from user.views import (
     _admin_desktop_role_catalog,
     _can_manage_admin_desktop_users,
@@ -226,6 +227,14 @@ class AbuseReportsFlowTests(TestCase):
             phone_number="+201000000020",
             password="secret123",
         )
+        self.employee = Employee.objects.create(
+            shop_owner=self.shop_owner,
+            name="Shop Employee",
+            phone_number="+201000000023",
+            password="secret123",
+            role="manager",
+            is_active=True,
+        )
         self.customer = Customer.objects.create(
             name="أحمد العميل",
             phone_number="+201000000021",
@@ -306,6 +315,107 @@ class AbuseReportsFlowTests(TestCase):
         self.assertEqual(report.status, "closed")
         self.assertEqual(report.resolution_action, "warning")
         self.assertTrue(response.data["data"]["auto_suspended"])
+
+    def test_shop_reporter_gets_notification_when_admin_warns_customer(self):
+        report = AbuseReport.objects.create(
+            order=self.order,
+            reporter_shop_owner=self.shop_owner,
+            reporter_type="shop_owner",
+            target_customer=self.customer,
+            target_type="customer",
+            reason="abusive_language",
+            details="customer insulted staff",
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            f"/api/admin-desktop/abuse-reports/{report.id}/resolve/",
+            {
+                "action": "warning",
+                "admin_notes": "first warning",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        owner_notification = Notification.objects.filter(
+            shop_owner=self.shop_owner,
+            reference_id=report.public_id,
+        ).order_by("-created_at").first()
+        employee_notification = Notification.objects.filter(
+            employee=self.employee,
+            reference_id=report.public_id,
+        ).order_by("-created_at").first()
+
+        self.assertIsNotNone(owner_notification)
+        self.assertIsNotNone(employee_notification)
+        self.assertEqual(owner_notification.data["action"], "warning")
+        self.assertEqual(owner_notification.data["target_type"], "customer")
+        self.assertEqual(owner_notification.data["warnings_count"], 1)
+        self.assertIn("الدعم الفني", owner_notification.title)
+        self.assertIn(report.public_id, owner_notification.message)
+
+
+class AdminDesktopDashboardPendingActionsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = AdminDesktopUser.objects.create(
+            name="Dashboard Admin",
+            phone_number="+201000000030",
+            email="dashboard@example.com",
+            password="secret123",
+            role="dashboard_manager",
+        )
+        self.shop_owner = ShopOwner.objects.create(
+            owner_name="Pending Shop Owner",
+            shop_name="متجر المتابعة",
+            shop_number="S7001",
+            phone_number="+201000000031",
+            password="secret123",
+        )
+        self.customer = Customer.objects.create(
+            shop_owner=self.shop_owner,
+            name="عميل متابعة",
+            phone_number="+201000000032",
+            password="secret123",
+            is_verified=True,
+        )
+        self.order = Order.objects.create(
+            shop_owner=self.shop_owner,
+            customer=self.customer,
+            order_number="ORD-PENDING-1",
+            status="confirmed",
+            items='["وجبة"]',
+            total_amount="50.00",
+            delivery_fee="10.00",
+            address="Nasr City",
+            payment_method="cash",
+        )
+        AbuseReport.objects.create(
+            order=self.order,
+            reporter_shop_owner=self.shop_owner,
+            reporter_type="shop_owner",
+            target_customer=self.customer,
+            target_type="customer",
+            reason="abusive_language",
+            details="pending review",
+            status="pending_review",
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_pending_actions_endpoint_returns_grouped_company_and_support_items(self):
+        response = self.client.get("/api/admin-desktop/dashboard/pending-actions/")
+
+        self.assertEqual(response.status_code, 200)
+        groups = {item["key"]: item for item in response.data["data"]["pending_action_groups"]}
+        self.assertIn("company", groups)
+        self.assertIn("support_reports", groups)
+
+        actions = {item["key"]: item for item in response.data["data"]["pending_actions"]}
+        self.assertIn("non_invoiced_orders", actions)
+        self.assertIn("abuse_reports_pending", actions)
+        self.assertEqual(actions["non_invoiced_orders"]["category_key"], "orders")
+        self.assertEqual(actions["abuse_reports_pending"]["category_key"], "support_reports")
 
 
 class GoogleCustomerAuthTests(TestCase):
