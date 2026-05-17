@@ -951,6 +951,17 @@ def driver_accept_order(*, conversation: DriverChatConversation, conversation_or
     conversation_order.save(update_fields=['status', 'transfer_reason', 'updated_at'])
     order.status = 'on_way'
     order.save(update_fields=['status', 'updated_at'])
+    try:
+        from ..views import _notify_shop_about_driver_order_action
+
+        _notify_shop_about_driver_order_action(
+            order,
+            conversation.driver,
+            'accepted',
+            request=request,
+        )
+    except Exception:
+        logger.exception("driver_chat.accept_order.shop_notification_failed order_id=%s", order.id)
     system_message = create_message(
         conversation=conversation,
         sender_type='system',
@@ -1067,6 +1078,26 @@ def driver_mark_busy(*, conversation: DriverChatConversation, conversation_order
     conversation.driver.save(update_fields=['status', 'updated_at'])
     conversation_order.status = 'driver_busy'
     conversation_order.save(update_fields=['status', 'updated_at'])
+    try:
+        from ..views import _attach_notification_to_shop_users
+
+        _attach_notification_to_shop_users(
+            conversation.shop_owner,
+            notification_type='order_status',
+            title='السائق مشغول',
+            message=f'السائق {conversation.driver.name} أبلغ أنه مشغول بخصوص الطلب #{conversation_order.order.order_number}.',
+            reference_id=conversation_order.order_id,
+            idempotency_key=f'driver-chat-busy:{conversation_order.order_id}:{conversation.driver_id}',
+            data={
+                'event': 'driver_marked_busy',
+                'order_id': conversation_order.order_id,
+                'order_number': conversation_order.order.order_number,
+                'driver_id': conversation.driver_id,
+                'driver_name': conversation.driver.name,
+            },
+        )
+    except Exception:
+        logger.exception("driver_chat.mark_busy.shop_notification_failed order_id=%s", conversation_order.order_id)
     system_message = create_message(
         conversation=conversation,
         sender_type='system',
@@ -1086,6 +1117,27 @@ def driver_request_transfer(*, conversation: DriverChatConversation, conversatio
     conversation_order.status = 'transfer_requested'
     conversation_order.transfer_reason = reason
     conversation_order.save(update_fields=['status', 'transfer_reason', 'updated_at'])
+    try:
+        from ..views import _attach_notification_to_shop_users
+
+        _attach_notification_to_shop_users(
+            conversation.shop_owner,
+            notification_type='order_assigned',
+            title='طلب تحويل أوردر',
+            message=f'السائق {conversation.driver.name} طلب تحويل الطلب #{conversation_order.order.order_number}.',
+            reference_id=conversation_order.order_id,
+            idempotency_key=f'driver-chat-transfer-request:{conversation_order.order_id}:{conversation.driver_id}:{reason}',
+            data={
+                'event': 'driver_requested_transfer',
+                'order_id': conversation_order.order_id,
+                'order_number': conversation_order.order.order_number,
+                'driver_id': conversation.driver_id,
+                'driver_name': conversation.driver.name,
+                'reason': reason,
+            },
+        )
+    except Exception:
+        logger.exception("driver_chat.request_transfer.shop_notification_failed order_id=%s", conversation_order.order_id)
     transfer_request_message = create_message(
         conversation=conversation,
         sender_type='driver',

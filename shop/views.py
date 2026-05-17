@@ -2980,6 +2980,11 @@ def driver_order_deliver_view(request, order_id):
     except Exception as e:
         print(f"driver_order_deliver websocket sync error: {e}")
 
+    try:
+        _notify_shop_about_driver_order_delivered(order, driver)
+    except Exception as e:
+        print(f"driver_order_deliver inbox notification error: {e}")
+
     sync_driver_order_state(
         order,
         previous_status=previous_status,
@@ -3068,8 +3073,7 @@ def driver_order_transfer_view(request, order_id):
         except Exception as e:
             print(f"driver_chat transfer request sync error: {e}")
 
-    _attach_notification_to_user(
-        'shop_owner',
+    _attach_notification_to_shop_users(
         order.shop_owner,
         notification_type='order_assigned',
         title='Order reassignment needed',
@@ -3077,6 +3081,7 @@ def driver_order_transfer_view(request, order_id):
         reference_id=order.id,
         idempotency_key=f"order-transfer:{order.id}:{driver.id}:{selected_reason['key']}",
         data={
+            'event': 'driver_transfer_requested',
             'order_id': order.id,
             'order_number': order.order_number,
             'reason_key': selected_reason['key'],
@@ -5051,15 +5056,15 @@ def _notify_shop_about_driver_order_action(order, driver, action, request=None, 
         content = f'{content} السبب: {reason}'
 
     try:
-        _attach_notification_to_user(
-            'shop_owner',
+        _attach_notification_to_shop_users(
             order.shop_owner,
             title='تحديث حالة السائق',
             message=content,
             notification_type='order_status',
             reference_id=order.id,
-            idempotency_key=f'shop-driver-action:{order.id}:{driver.id}:{action}',
+            idempotency_key=f'shop-driver-action:{order.id}:{driver.id}:{action}:{reason or ""}',
             data={
+                'event': f'driver_{action}_order',
                 'order_id': order.id,
                 'order_number': order.order_number,
                 'driver_id': driver.id,
@@ -5453,6 +5458,47 @@ def _notification_queryset_for_user(user):
     return Notification.objects.none()
 
 
+def _shop_notification_recipients(shop_owner):
+    if not shop_owner:
+        return []
+
+    recipients = [('shop_owner', shop_owner)]
+    active_employees = Employee.objects.filter(shop_owner=shop_owner, is_active=True)
+    recipients.extend(('employee', employee) for employee in active_employees)
+    return recipients
+
+
+def _attach_notification_to_shop_users(
+    shop_owner,
+    *,
+    title,
+    message,
+    notification_type='system',
+    reference_id=None,
+    idempotency_key=None,
+    data=None,
+):
+    notifications = []
+    for user_type, recipient in _shop_notification_recipients(shop_owner):
+        recipient_key = getattr(recipient, 'id', None)
+        scoped_idempotency_key = idempotency_key
+        if scoped_idempotency_key and recipient_key:
+            scoped_idempotency_key = f'{scoped_idempotency_key}:{user_type}:{recipient_key}'
+        notification = _attach_notification_to_user(
+            user_type,
+            recipient,
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            reference_id=reference_id,
+            idempotency_key=scoped_idempotency_key,
+            data=data,
+        )
+        if notification is not None:
+            notifications.append(notification)
+    return notifications
+
+
 def _attach_notification_to_user(
     user_type,
     user,
@@ -5489,7 +5535,7 @@ def _attach_notification_to_user(
         if existing:
             return existing
 
-    if payload['reference_id']:
+    if payload['reference_id'] and not payload['idempotency_key']:
         existing = Notification.objects.filter(
             notification_type=notification_type,
             reference_id=payload['reference_id'],
@@ -5513,6 +5559,92 @@ def _attach_notification_to_user(
         transaction.on_commit(lambda: send_driver_notification_from_record(user, notification))
 
     return notification
+
+
+def _notify_shop_about_new_order(order):
+    if not order or not order.shop_owner_id:
+        return
+
+    _attach_notification_to_shop_users(
+        order.shop_owner,
+        notification_type='order_update',
+        title='طلب جديد',
+        message=f'تم استلام طلب جديد رقم #{order.order_number}.',
+        reference_id=order.id,
+        idempotency_key=f'shop-order-created:{order.id}',
+        data={
+            'event': 'order_created',
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'customer_id': order.customer_id,
+            'status': order.status,
+        },
+    )
+
+
+def _notify_shop_about_customer_order_confirmation(order):
+    if not order or not order.shop_owner_id:
+        return
+
+    _attach_notification_to_shop_users(
+        order.shop_owner,
+        notification_type='order_status',
+        title='تأكيد الطلب',
+        message=f'العميل وافق على الطلب رقم #{order.order_number}.',
+        reference_id=order.id,
+        idempotency_key=f'shop-customer-confirmed:{order.id}',
+        data={
+            'event': 'customer_confirmed_order',
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'customer_id': order.customer_id,
+            'status': order.status,
+        },
+    )
+
+
+def _notify_shop_about_customer_order_rejection(order):
+    if not order or not order.shop_owner_id:
+        return
+
+    _attach_notification_to_shop_users(
+        order.shop_owner,
+        notification_type='order_cancelled',
+        title='رفض الطلب',
+        message=f'العميل رفض الطلب رقم #{order.order_number}.',
+        reference_id=order.id,
+        idempotency_key=f'shop-customer-rejected:{order.id}',
+        data={
+            'event': 'customer_rejected_order',
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'customer_id': order.customer_id,
+            'status': order.status,
+        },
+    )
+
+
+def _notify_shop_about_driver_order_delivered(order, driver):
+    if not order or not order.shop_owner_id or not driver:
+        return
+
+    _attach_notification_to_shop_users(
+        order.shop_owner,
+        notification_type='order_status',
+        title='تم التسليم',
+        message=f'السائق {driver.name} سلّم الطلب رقم #{order.order_number}.',
+        reference_id=order.id,
+        idempotency_key=f'shop-driver-delivered:{order.id}:{driver.id}',
+        data={
+            'event': 'driver_delivered_order',
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'driver_id': driver.id,
+            'driver_name': driver.name,
+            'status': order.status,
+            'delivered_at': format_utc_iso8601(getattr(order, 'delivered_at', None)),
+        },
+    )
 
 
 def _validate_abuse_report_target(order, reporter, reporter_type, target_type, target_id):
@@ -7228,6 +7360,11 @@ def customer_orders_list_create_view(request):
             print(f"new_order WebSocket error: {e}")
 
         try:
+            _notify_shop_about_new_order(order)
+        except Exception as e:
+            print(f"new_order inbox notification error: {e}")
+
+        try:
             received_msg = ChatMessage.objects.create(
                 order=order,
                 chat_type='shop_customer',
@@ -7311,6 +7448,11 @@ def customer_order_confirm_view(request, order_id):
     except Exception as e:
         print(f"WebSocket notification error: {e}")
 
+    try:
+        _notify_shop_about_customer_order_confirmation(order)
+    except Exception as e:
+        print(f"customer confirmation inbox notification error: {e}")
+
     sync_driver_order_state(
         order,
         previous_status=old_status,
@@ -7386,6 +7528,11 @@ def customer_order_reject_view(request, order_id):
         )
     except Exception as e:
         print(f"WebSocket notification error: {e}")
+
+    try:
+        _notify_shop_about_customer_order_rejection(order)
+    except Exception as e:
+        print(f"customer rejection inbox notification error: {e}")
 
     sync_driver_order_state(
         order,
