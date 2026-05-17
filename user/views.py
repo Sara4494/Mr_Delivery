@@ -84,6 +84,14 @@ SUSPENDED_ACCOUNT_ERROR_CODES = {
 }
 
 
+def _build_suspended_account_message(reason=None):
+    clean_reason = str(reason or "").strip()
+    base_message = "تم تعليق حسابك من قبل الشركة."
+    if clean_reason:
+        return f"{base_message} سبب التعليق: {clean_reason}"
+    return f"{base_message} برجاء التواصل مع الدعم الفني."
+
+
 def _extract_auth_error_metadata(errors):
     if not isinstance(errors, dict):
         return None, None
@@ -4126,10 +4134,17 @@ def unified_login_view(request):
         )
 
     def _suspended_account_response(message, *, code):
+        resolved_message = _build_suspended_account_message(message)
         return _auth_error_response(
             request,
-            errors={'code': code, 'detail': message},
-            default_message=message,
+            errors={
+                'code': code,
+                'detail': resolved_message,
+                'reason': str(message or '').strip() or None,
+                'title': 'الحساب موقوف',
+                'action_required': 'contact_support',
+            },
+            default_message=resolved_message,
             default_status=status.HTTP_403_FORBIDDEN,
         )
     
@@ -4388,10 +4403,17 @@ def google_customer_auth_view(request):
     from shop.models import Customer
 
     def _suspended_account_response(message, *, code):
+        resolved_message = _build_suspended_account_message(message)
         return _auth_error_response(
             request,
-            errors={'code': code, 'detail': message},
-            default_message=message,
+            errors={
+                'code': code,
+                'detail': resolved_message,
+                'reason': str(message or '').strip() or None,
+                'title': 'الحساب موقوف',
+                'action_required': 'contact_support',
+            },
+            default_message=resolved_message,
             default_status=status.HTTP_403_FORBIDDEN,
         )
 

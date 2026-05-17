@@ -745,6 +745,28 @@ class LoginOptionalTrailingSlashTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("access", response.data["data"])
 
+    def test_suspended_shop_owner_login_returns_clear_company_suspension_message(self):
+        self.shop_owner.admin_status = "suspended"
+        self.shop_owner.suspension_reason = "مخالفة سياسة الاستخدام"
+        self.shop_owner.save(update_fields=["admin_status", "suspension_reason", "updated_at"])
+
+        response = self.client.post(
+            "/api/auth/login",
+            {
+                "role": "shop_owner",
+                "shop_number": self.shop_owner.shop_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data["errors"]["code"], "SHOP_OWNER_ACCOUNT_SUSPENDED")
+        self.assertEqual(response.data["errors"]["title"], "الحساب موقوف")
+        self.assertEqual(response.data["errors"]["reason"], "مخالفة سياسة الاستخدام")
+        self.assertIn("تم تعليق حسابك من قبل الشركة", response.data["message"])
+        self.assertIn("سبب التعليق", response.data["message"])
+
     def test_customer_login_without_trailing_slash_does_not_redirect(self):
         response = self.client.post(
             "/api/customer/login",
