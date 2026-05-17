@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
+    ChatParticipantBlock,
     AbuseReport, AccountModerationStatus,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, ShopReview, PaymentMethod,
@@ -5183,6 +5184,165 @@ def _resolve_user_type(user):
     return _core_resolve_user_type(user)
 
 
+CHAT_BLOCKABLE_USER_TYPES = {'customer', 'shop_owner', 'employee', 'driver'}
+CHAT_BLOCK_ENTITY_TYPES = {'customer', 'shop_owner', 'driver'}
+
+
+def _normalize_chat_actor_type(user_type):
+    if user_type == 'employee':
+        return 'shop_owner'
+    return user_type
+
+
+def _resolve_chat_actor(user, user_type):
+    normalized_type = _normalize_chat_actor_type(user_type)
+    if normalized_type == 'customer':
+        return normalized_type, _resolve_customer_user(user)
+    if normalized_type == 'shop_owner':
+        return normalized_type, _resolve_shop_owner_or_employee_owner(user)
+    if normalized_type == 'driver':
+        if isinstance(user, Driver):
+            return normalized_type, user
+        try:
+            return normalized_type, Driver.objects.get(id=getattr(user, 'id', None))
+        except Driver.DoesNotExist:
+            return normalized_type, None
+    return normalized_type, None
+
+
+def _build_block_side_filter(prefix, actor_type, actor):
+    if not actor_type or not actor:
+        return Q(pk__isnull=True)
+    if actor_type == 'customer':
+        return Q(**{f'{prefix}_type': 'customer', f'{prefix}_customer': actor})
+    if actor_type == 'shop_owner':
+        return Q(**{f'{prefix}_type': 'shop_owner', f'{prefix}_shop_owner': actor})
+    if actor_type == 'driver':
+        return Q(**{f'{prefix}_type': 'driver', f'{prefix}_driver': actor})
+    return Q(pk__isnull=True)
+
+
+def _get_block_target_instance(target_type, target_id):
+    try:
+        target_id = int(target_id)
+    except (TypeError, ValueError):
+        return None
+
+    if target_type == 'customer':
+        return Customer.objects.filter(id=target_id).first()
+    if target_type == 'shop_owner':
+        return ShopOwner.objects.filter(id=target_id).first()
+    if target_type == 'driver':
+        return Driver.objects.filter(id=target_id).first()
+    return None
+
+
+def _chat_block_payload(block, request=None):
+    target = None
+    if block.target_type == 'customer':
+        target = block.target_customer
+    elif block.target_type == 'shop_owner':
+        target = block.target_shop_owner
+    elif block.target_type == 'driver':
+        target = block.target_driver
+
+    image_field = getattr(target, 'profile_image', None) if target else None
+    return {
+        'id': block.id,
+        'target_type': block.target_type,
+        'target_id': block.target_id,
+        'target_name': _actor_name(target, block.target_type) if target else None,
+        'target_image_url': build_absolute_file_url(image_field, request=request),
+        'reason': block.reason,
+        'created_at': format_utc_iso8601(block.created_at),
+    }
+
+
+def _find_chat_block(*, source_type, source_actor, target_type, target_actor):
+    if not source_actor or not target_actor:
+        return None
+    return (
+        ChatParticipantBlock.objects
+        .filter(_build_block_side_filter('source', source_type, source_actor))
+        .filter(_build_block_side_filter('target', target_type, target_actor))
+        .first()
+    )
+
+
+def _is_chat_blocked_between(*, left_type, left_actor, right_type, right_actor):
+    if not left_actor or not right_actor:
+        return None
+    return (
+        _find_chat_block(
+            source_type=left_type,
+            source_actor=left_actor,
+            target_type=right_type,
+            target_actor=right_actor,
+        )
+        or _find_chat_block(
+            source_type=right_type,
+            source_actor=right_actor,
+            target_type=left_type,
+            target_actor=left_actor,
+        )
+    )
+
+
+def _resolve_chat_peer_actor(order, chat_type, actor_type):
+    if chat_type == 'shop_customer':
+        if actor_type == 'customer':
+            return 'shop_owner', order.shop_owner
+        if actor_type == 'shop_owner':
+            return 'customer', order.customer
+    elif chat_type == 'driver_customer':
+        if actor_type == 'customer':
+            return 'driver', order.driver
+        if actor_type == 'driver':
+            return 'customer', order.customer
+    return None, None
+
+
+def _chat_block_for_order(order, chat_type, user, user_type):
+    actor_type, actor = _resolve_chat_actor(user, user_type)
+    peer_type, peer_actor = _resolve_chat_peer_actor(order, chat_type, actor_type)
+    if actor_type not in CHAT_BLOCK_ENTITY_TYPES or not actor or not peer_actor:
+        return None
+    return _is_chat_blocked_between(
+        left_type=actor_type,
+        left_actor=actor,
+        right_type=peer_type,
+        right_actor=peer_actor,
+    )
+
+
+def _can_manage_chat_message_media(message, user, user_type):
+    if message.message_type != 'image':
+        return False
+
+    actor_type, actor = _resolve_chat_actor(user, user_type)
+    if not actor_type or not actor:
+        return False
+
+    if message.chat_type == 'shop_customer':
+        if actor_type == 'customer':
+            return message.sender_type == 'customer' and message.sender_customer_id == actor.id
+        if actor_type == 'shop_owner':
+            if message.sender_type == 'shop_owner':
+                return message.sender_shop_owner_id == actor.id
+            if message.sender_type == 'employee':
+                return getattr(message.sender_employee, 'shop_owner_id', None) == actor.id
+        return False
+
+    if message.chat_type == 'driver_customer':
+        if actor_type == 'customer':
+            return message.sender_type == 'customer' and message.sender_customer_id == actor.id
+        if actor_type == 'driver':
+            return message.sender_type == 'driver' and message.sender_driver_id == actor.id
+        return False
+
+    return False
+
+
 ABUSE_REPORT_REASON_OPTIONS = {
     'customer': [
         {'key': 'abusive_language', 'label': 'ألفاظ أو إساءة'},
@@ -5502,6 +5662,22 @@ def chat_order_media_upload_view(request, order_id):
             status_code=status.HTTP_403_FORBIDDEN
         )
 
+    block = _chat_block_for_order(order, chat_type, user, user_type)
+    if block:
+        return error_response(
+            message='لا يمكن إرسال رسائل لأن أحد الطرفين قام بعمل بلوك للطرف الآخر.',
+            errors={
+                'block': {
+                    'id': block.id,
+                    'source_type': block.source_type,
+                    'source_id': block.source_id,
+                    'target_type': block.target_type,
+                    'target_id': block.target_id,
+                }
+            },
+            status_code=status.HTTP_403_FORBIDDEN
+        )
+
     image_file = request.FILES.get('image_file')
     audio_file = request.FILES.get('audio_file')
     if bool(image_file) == bool(audio_file):
@@ -5561,6 +5737,218 @@ def chat_order_media_upload_view(request, order_id):
         data=serialized,
         message='تم إرسال الوسائط بنجاح',
         status_code=status.HTTP_201_CREATED
+    )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def chat_blocks_view(request):
+    user = request.user
+    user_type = _resolve_user_type(user)
+    if user_type not in CHAT_BLOCKABLE_USER_TYPES:
+        return error_response(
+            message='نوع المستخدم الحالي غير مدعوم في نظام البلوك.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    actor_type, actor = _resolve_chat_actor(user, user_type)
+    if actor_type not in CHAT_BLOCK_ENTITY_TYPES or not actor:
+        return error_response(
+            message='تعذر تحديد الحساب المستخدم في البلوك.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == 'GET':
+        blocks = (
+            ChatParticipantBlock.objects
+            .filter(_build_block_side_filter('source', actor_type, actor))
+            .select_related('target_customer', 'target_shop_owner', 'target_driver')
+            .order_by('-created_at')
+        )
+        return success_response(
+            data=[_chat_block_payload(item, request=request) for item in blocks],
+            message='تم تحميل قائمة البلوك.',
+            status_code=status.HTTP_200_OK,
+        )
+
+    target_type = _normalize_chat_actor_type(str(request.data.get('target_type') or '').strip())
+    if target_type not in CHAT_BLOCK_ENTITY_TYPES:
+        return error_response(
+            message='target_type غير مدعوم.',
+            errors={'target_type': 'target_type must be customer or shop_owner or driver.'},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if target_type == actor_type:
+        return error_response(
+            message='لا يمكن عمل بلوك لنفس نوع الحساب.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    target = _get_block_target_instance(target_type, request.data.get('target_id'))
+    if not target:
+        return error_response(
+            message='الحساب المطلوب غير موجود.',
+            errors={'target_id': 'Invalid target_id.'},
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    reason = str(request.data.get('reason') or '').strip()
+    existing_block = _find_chat_block(
+        source_type=actor_type,
+        source_actor=actor,
+        target_type=target_type,
+        target_actor=target,
+    )
+    if existing_block:
+        if reason and existing_block.reason != reason:
+            existing_block.reason = reason
+            existing_block.save(update_fields=['reason', 'updated_at'])
+        return success_response(
+            data=_chat_block_payload(existing_block, request=request),
+            message='الحساب موجود بالفعل في قائمة البلوك.',
+            status_code=status.HTTP_200_OK,
+        )
+
+    create_kwargs = {
+        'source_type': actor_type,
+        'target_type': target_type,
+        'reason': reason or None,
+    }
+    if actor_type == 'customer':
+        create_kwargs['source_customer'] = actor
+    elif actor_type == 'shop_owner':
+        create_kwargs['source_shop_owner'] = actor
+    elif actor_type == 'driver':
+        create_kwargs['source_driver'] = actor
+
+    if target_type == 'customer':
+        create_kwargs['target_customer'] = target
+    elif target_type == 'shop_owner':
+        create_kwargs['target_shop_owner'] = target
+    elif target_type == 'driver':
+        create_kwargs['target_driver'] = target
+
+    block = ChatParticipantBlock.objects.create(**create_kwargs)
+    return success_response(
+        data=_chat_block_payload(block, request=request),
+        message='تم تنفيذ البلوك بنجاح.',
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def chat_block_detail_view(request, target_type, target_id):
+    user = request.user
+    user_type = _resolve_user_type(user)
+    actor_type, actor = _resolve_chat_actor(user, user_type)
+    target_type = _normalize_chat_actor_type(str(target_type or '').strip())
+
+    if actor_type not in CHAT_BLOCK_ENTITY_TYPES or not actor:
+        return error_response(
+            message='تعذر تحديد الحساب المستخدم في البلوك.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if target_type not in CHAT_BLOCK_ENTITY_TYPES:
+        return error_response(
+            message='target_type غير مدعوم.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    target = _get_block_target_instance(target_type, target_id)
+    if not target:
+        return error_response(
+            message='الحساب المطلوب غير موجود.',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    block = _find_chat_block(
+        source_type=actor_type,
+        source_actor=actor,
+        target_type=target_type,
+        target_actor=target,
+    )
+    if not block:
+        return error_response(
+            message='لا يوجد بلوك لهذا الحساب.',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    block.delete()
+    return success_response(
+        data={'target_type': target_type, 'target_id': int(target_id)},
+        message='تم إلغاء البلوك بنجاح.',
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def chat_message_image_delete_view(request, message_id):
+    user = request.user
+    user_type = _resolve_user_type(user)
+    if user_type not in CHAT_BLOCKABLE_USER_TYPES:
+        return error_response(
+            message='نوع المستخدم الحالي غير مدعوم.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    message = (
+        ChatMessage.objects
+        .select_related('order', 'sender_customer', 'sender_shop_owner', 'sender_employee', 'sender_driver')
+        .filter(id=message_id)
+        .first()
+    )
+    if not message:
+        return error_response(
+            message='الرسالة غير موجودة.',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not _can_user_access_chat(message.order, user, user_type, message.chat_type):
+        return error_response(
+            message='ليس لديك صلاحية للوصول إلى هذه الرسالة.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not _can_manage_chat_message_media(message, user, user_type):
+        return error_response(
+            message='لا يمكنك حذف هذه الصورة.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not message.image_file:
+        return error_response(
+            message='الصورة محذوفة بالفعل أو غير موجودة.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    stored_name = message.image_file.name
+    message.image_file.delete(save=False)
+    metadata = dict(message.metadata or {})
+    metadata['image_deleted'] = True
+    metadata['image_deleted_at'] = format_utc_iso8601(timezone.now())
+    metadata['image_deleted_by_type'] = _normalize_chat_actor_type(user_type)
+    metadata['deleted_image_name'] = stored_name
+    message.content = 'تم حذف الصورة'
+    message.metadata = metadata
+    message.save(update_fields=['image_file', 'content', 'metadata'])
+
+    payload = _chat_message_payload(message, request=request)
+    from .realtime.websocket_utils import broadcast_chat_message_update
+    broadcast_chat_message_update(message.order_id, message.chat_type, payload)
+
+    return success_response(
+        data={
+            'message_id': message.id,
+            'order_id': message.order_id,
+            'chat_type': message.chat_type,
+            'image_deleted': True,
+            'message': ChatMessageSerializer(message, context={'request': request}).data,
+        },
+        message='تم حذف صورة الرسالة بنجاح.',
+        status_code=status.HTTP_200_OK,
     )
 
 

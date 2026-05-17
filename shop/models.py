@@ -830,6 +830,62 @@ class ChatMessage(models.Model):
         return f"رسالة من {self.sender_name} ({self.get_sender_type_display()}) - طلب #{self.order.order_number}"
 
 
+class ChatParticipantBlock(models.Model):
+    """Unified block relationship between customer/shop/driver chat participants."""
+
+    ACTOR_TYPE_CHOICES = [
+        ('customer', 'عميل'),
+        ('shop_owner', 'محل'),
+        ('driver', 'دليفري'),
+    ]
+
+    source_type = models.CharField(max_length=20, choices=ACTOR_TYPE_CHOICES, verbose_name="نوع الحاظر")
+    source_customer = models.ForeignKey(Customer, on_delete=models.CASCADE, null=True, blank=True, related_name='outgoing_chat_blocks', verbose_name="العميل الحاظر")
+    source_shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, null=True, blank=True, related_name='outgoing_chat_blocks', verbose_name="المحل الحاظر")
+    source_driver = models.ForeignKey(Driver, on_delete=models.CASCADE, null=True, blank=True, related_name='outgoing_chat_blocks', verbose_name="الدليفري الحاظر")
+
+    target_type = models.CharField(max_length=20, choices=ACTOR_TYPE_CHOICES, verbose_name="نوع المحظور")
+    target_customer = models.ForeignKey(Customer, on_delete=models.CASCADE, null=True, blank=True, related_name='incoming_chat_blocks', verbose_name="العميل المحظور")
+    target_shop_owner = models.ForeignKey(ShopOwner, on_delete=models.CASCADE, null=True, blank=True, related_name='incoming_chat_blocks', verbose_name="المحل المحظور")
+    target_driver = models.ForeignKey(Driver, on_delete=models.CASCADE, null=True, blank=True, related_name='incoming_chat_blocks', verbose_name="الدليفري المحظور")
+
+    reason = models.TextField(blank=True, null=True, verbose_name="سبب البلوك")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "بلوك محادثة"
+        verbose_name_plural = "بلوكات المحادثات"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['source_type', 'created_at']),
+            models.Index(fields=['target_type', 'created_at']),
+        ]
+
+    @property
+    def source_id(self):
+        if self.source_type == 'customer' and self.source_customer_id:
+            return self.source_customer_id
+        if self.source_type == 'shop_owner' and self.source_shop_owner_id:
+            return self.source_shop_owner_id
+        if self.source_type == 'driver' and self.source_driver_id:
+            return self.source_driver_id
+        return None
+
+    @property
+    def target_id(self):
+        if self.target_type == 'customer' and self.target_customer_id:
+            return self.target_customer_id
+        if self.target_type == 'shop_owner' and self.target_shop_owner_id:
+            return self.target_shop_owner_id
+        if self.target_type == 'driver' and self.target_driver_id:
+            return self.target_driver_id
+        return None
+
+    def __str__(self):
+        return f"{self.source_type}:{self.source_id} -> {self.target_type}:{self.target_id}"
+
+
 class CustomerSupportConversation(models.Model):
     """Standalone customer support chat with a shop without creating an order."""
 

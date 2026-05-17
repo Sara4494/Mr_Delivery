@@ -10,6 +10,7 @@ from django.utils import timezone
 from .models import (
     Order,
     ChatMessage,
+    ChatParticipantBlock,
     Customer,
     Employee,
     Driver,
@@ -125,6 +126,67 @@ def _user_has_order_access(order, user, user_type):
     if user_type == 'customer':
         return order.customer_id == user.id
     return False
+
+
+def _normalize_chat_actor_type(user_type):
+    if user_type == 'employee':
+        return 'shop_owner'
+    return user_type
+
+
+def _resolve_chat_actor_for_order(order, user, user_type, chat_type):
+    actor_type = _normalize_chat_actor_type(user_type)
+    if actor_type == 'customer' and getattr(order, 'customer_id', None) == getattr(user, 'id', None):
+        return actor_type, getattr(order, 'customer', None)
+    if actor_type == 'shop_owner':
+        shop_id = getattr(user, 'shop_owner_id', None) if user_type == 'employee' else getattr(user, 'id', None)
+        if getattr(order, 'shop_owner_id', None) == shop_id:
+            return actor_type, getattr(order, 'shop_owner', None)
+    if actor_type == 'driver' and getattr(order, 'driver_id', None) == getattr(user, 'id', None):
+        return actor_type, getattr(order, 'driver', None)
+    return actor_type, None
+
+
+def _resolve_chat_peer_for_order(order, chat_type, actor_type):
+    if chat_type == 'shop_customer':
+        if actor_type == 'customer':
+            return 'shop_owner', getattr(order, 'shop_owner', None)
+        if actor_type == 'shop_owner':
+            return 'customer', getattr(order, 'customer', None)
+    if chat_type == 'driver_customer':
+        if actor_type == 'customer':
+            return 'driver', getattr(order, 'driver', None)
+        if actor_type == 'driver':
+            return 'customer', getattr(order, 'customer', None)
+    return None, None
+
+
+def _chat_block_exists_between(order, user, user_type, chat_type):
+    actor_type, actor = _resolve_chat_actor_for_order(order, user, user_type, chat_type)
+    peer_type, peer = _resolve_chat_peer_for_order(order, chat_type, actor_type)
+    if not actor_type or not actor or not peer_type or not peer:
+        return None
+
+    side_map = {
+        'customer': ('customer', 'customer_id'),
+        'shop_owner': ('shop_owner', 'shop_owner_id'),
+        'driver': ('driver', 'driver_id'),
+    }
+    left_field, left_id_field = side_map[actor_type]
+    right_field, right_id_field = side_map[peer_type]
+
+    return (
+        ChatParticipantBlock.objects.filter(
+            source_type=actor_type,
+            target_type=peer_type,
+            **{f'source_{left_field}_id': getattr(actor, 'id', None), f'target_{right_field}_id': getattr(peer, 'id', None)}
+        ).first()
+        or ChatParticipantBlock.objects.filter(
+            source_type=peer_type,
+            target_type=actor_type,
+            **{f'source_{right_field}_id': getattr(peer, 'id', None), f'target_{left_field}_id': getattr(actor, 'id', None)}
+        ).first()
+    )
 
 
 def _get_user_display_name(user, user_type):
@@ -567,6 +629,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
         await self._touch_driver_presence()
 
+    @database_sync_to_async
+    def get_chat_block(self):
+        try:
+            order = Order.objects.select_related('customer', 'shop_owner', 'driver').get(id=self.order_id)
+        except Order.DoesNotExist:
+            return None
+        return _chat_block_exists_between(order, self.user, self.user_type, self.chat_type)
+
     def cancel_driver_presence_timeout_task(self):
         task = getattr(self, 'driver_presence_timeout_task', None)
         if task:
@@ -590,6 +660,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """Handle a chat message event."""
         content = data.get('content', '')
         msg_type = data.get('message_type', 'text')
+
+        block = await self.get_chat_block()
+        if block:
+            await self.send_error_event(
+                code='CHAT_BLOCKED',
+                message='لا يمكن إرسال رسائل لأن أحد الطرفين قام بعمل بلوك للطرف الآخر',
+                request_id=request_id,
+                details={
+                    'block_id': block.id,
+                    'source_type': block.source_type,
+                    'target_type': block.target_type,
+                },
+            )
+            return
 
         if msg_type not in ['text', 'location']:
             await self.send_error_event(
@@ -649,6 +733,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
         latitude = data.get('latitude')
         longitude = data.get('longitude')
         content = data.get('content', 'موقعي الحالي')
+
+        block = await self.get_chat_block()
+        if block:
+            await self.send_error_event(
+                code='CHAT_BLOCKED',
+                message='لا يمكن إرسال رسائل لأن أحد الطرفين قام بعمل بلوك للطرف الآخر',
+                request_id=request_id,
+                details={
+                    'block_id': block.id,
+                    'source_type': block.source_type,
+                    'target_type': block.target_type,
+                },
+            )
+            return
         
         if latitude is None or longitude is None:
             await self.send_error_event(
@@ -747,6 +845,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=_json_dumps({
             'type': 'chat_message',
             'data': msg_data
+        }))
+
+    async def chat_message_updated(self, event):
+        from user.utils import localize_message
+        msg_data = dict(event['message'])
+        msg_data['content'] = localize_message(None, msg_data.get('content'), lang=getattr(self, 'lang', 'ar'))
+        await self.send(text_data=_json_dumps({
+            'type': 'chat_message_updated',
+            'data': msg_data,
         }))
     
     async def messages_read(self, event):

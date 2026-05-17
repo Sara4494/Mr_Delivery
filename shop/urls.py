@@ -152,6 +152,9 @@ urlpatterns = [
     path('reports/', views.abuse_reports_view, name='abuse_reports'),
     
     # ==================== Chat ====================
+    path('chat/blocks/', views.chat_blocks_view, name='chat_blocks'),
+    path('chat/blocks/<str:target_type>/<int:target_id>/', views.chat_block_detail_view, name='chat_block_detail'),
+    path('chat/messages/<int:message_id>/delete-image/', views.chat_message_image_delete_view, name='chat_message_image_delete'),
     re_path(r'^chat/order/(?P<conversation_id>support_[\w-]+)/send-media/$', views.support_chat_media_upload_view, name='chat_order_support_media_upload'),
     path('chat/order/<int:order_id>/send-media/', views.chat_order_media_upload_view, name='chat_order_media_upload'),
     path('chat/support/<str:conversation_id>/send-media/', views.support_chat_media_upload_view, name='support_chat_media_upload'),

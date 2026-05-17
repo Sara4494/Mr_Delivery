@@ -164,6 +164,16 @@ def broadcast_chat_message(order_id, chat_type, message_payload, request=None, b
             logger.exception('fcm chat fallback failed for order_id=%s chat_type=%s: %s', order.id, chat_type, exc)
 
 
+def broadcast_chat_message_update(order_id, chat_type, message_payload):
+    """Broadcast a message update/delete event inside the live chat room."""
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            f'chat_order_{order_id}_{chat_type}',
+            {'type': 'chat_message_updated', 'message': message_payload}
+        )
+
+
 def broadcast_chat_message_to_order(order_id, message_payload, request=None, base_url=None, send_push=True):
     """
     إرسال رسالة شات إلى مجموعة طلب (لظهورها فوراً عند العميل والمحل).

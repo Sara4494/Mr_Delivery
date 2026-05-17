@@ -10,9 +10,16 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.middleware import JWTAuthMiddleware
-from shop.models import ChatMessage, Customer, Driver, Order, ShopDriver
+from shop.models import ChatMessage, ChatParticipantBlock, Customer, Driver, Order, ShopDriver
 from shop.routing import websocket_urlpatterns
-from shop.views import chat_order_media_upload_view, customer_order_chat_view, driver_order_chat_view
+from shop.views import (
+    chat_block_detail_view,
+    chat_blocks_view,
+    chat_message_image_delete_view,
+    chat_order_media_upload_view,
+    customer_order_chat_view,
+    driver_order_chat_view,
+)
 from user.models import ShopCategory, ShopOwner
 
 
@@ -211,3 +218,99 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
         response = chat_order_media_upload_view(request, order.id)
 
         self.assertEqual(response.status_code, 403)
+
+    def test_customer_can_block_driver(self):
+        request = self.factory.post(
+            '/api/chat/blocks/',
+            {
+                'target_type': 'driver',
+                'target_id': self.driver.id,
+                'reason': 'spam',
+            },
+            format='json',
+        )
+        force_authenticate(request, user=self.customer)
+
+        response = chat_blocks_view(request)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(
+            ChatParticipantBlock.objects.filter(
+                source_type='customer',
+                source_customer=self.customer,
+                target_type='driver',
+                target_driver=self.driver,
+            ).exists()
+        )
+
+    def test_customer_block_prevents_driver_customer_media_upload(self):
+        order = self._create_order(accepted=True)
+        ChatParticipantBlock.objects.create(
+            source_type='customer',
+            source_customer=self.customer,
+            target_type='driver',
+            target_driver=self.driver,
+            reason='blocked',
+        )
+        image_file = SimpleUploadedFile('chat.jpg', b'fake-image-content', content_type='image/jpeg')
+
+        request = self.factory.post(
+            f'/api/chat/order/{order.id}/send-media/',
+            {
+                'chat_type': 'driver_customer',
+                'message_type': 'image',
+                'image_file': image_file,
+            },
+            format='multipart',
+        )
+        force_authenticate(request, user=self.driver)
+
+        response = chat_order_media_upload_view(request, order.id)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('block', response.data.get('errors', {}))
+
+    def test_customer_can_delete_own_chat_image(self):
+        order = self._create_order(accepted=True)
+        message = ChatMessage.objects.create(
+            order=order,
+            chat_type='driver_customer',
+            sender_type='customer',
+            sender_customer=self.customer,
+            message_type='image',
+            image_file=SimpleUploadedFile('chat.jpg', b'fake-image-content', content_type='image/jpeg'),
+        )
+
+        request = self.factory.delete(f'/api/chat/messages/{message.id}/delete-image/')
+        force_authenticate(request, user=self.customer)
+
+        response = chat_message_image_delete_view(request, message.id)
+
+        self.assertEqual(response.status_code, 200)
+        message.refresh_from_db()
+        self.assertFalse(bool(message.image_file))
+        self.assertEqual(message.content, 'تم حذف الصورة')
+        self.assertTrue(bool((message.metadata or {}).get('image_deleted')))
+
+    def test_customer_can_unblock_driver(self):
+        ChatParticipantBlock.objects.create(
+            source_type='customer',
+            source_customer=self.customer,
+            target_type='driver',
+            target_driver=self.driver,
+        )
+
+        request = self.factory.delete(f'/api/chat/blocks/driver/{self.driver.id}/')
+        force_authenticate(request, user=self.customer)
+
+        response = chat_block_detail_view(request, 'driver', self.driver.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            ChatParticipantBlock.objects.filter(
+                source_type='customer',
+                source_customer=self.customer,
+                target_type='driver',
+                target_driver=self.driver,
+            ).exists()
+        )
