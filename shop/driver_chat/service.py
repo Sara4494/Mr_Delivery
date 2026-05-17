@@ -459,6 +459,50 @@ def ensure_conversation(shop_owner, driver):
     return conversation, created
 
 
+def ensure_shop_driver_welcome_conversation(shop_owner, driver, *, request=None, scope=None, base_url=None):
+    conversation, created = ensure_conversation(shop_owner, driver)
+    welcome_message = (
+        DriverChatMessage.objects
+        .filter(
+            conversation=conversation,
+            sender_type='store',
+            message_type='text',
+            metadata__welcome_key='shop_driver_welcome',
+        )
+        .order_by('created_at', 'pk')
+        .first()
+    )
+
+    if welcome_message is None:
+        welcome_text = f'مرحبًا بك في متجر {shop_owner.shop_name}. تم فتح المحادثة بينكم لبدء التواصل مباشرة.'
+        welcome_message = create_message(
+            conversation=conversation,
+            sender_type='store',
+            message_type='text',
+            text=welcome_text,
+            metadata={
+                'welcome_key': 'shop_driver_welcome',
+                'kind': 'shop_onboarding',
+                'shop_name': shop_owner.shop_name,
+            },
+        )
+        broadcast_message_created(
+            welcome_message,
+            request=request,
+            scope=scope,
+            base_url=base_url,
+        )
+
+    broadcast_conversation_snapshot(
+        conversation,
+        request=request,
+        scope=scope,
+        base_url=base_url,
+        created=created,
+    )
+    return conversation, created, welcome_message
+
+
 def ensure_conversation_order(conversation: DriverChatConversation, order: Order, *, status='waiting_reply', transfer_reason=None, is_active=True):
     link, created = DriverChatOrder.objects.get_or_create(
         conversation=conversation,

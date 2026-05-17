@@ -21,7 +21,7 @@ from shop.fcm_service import (
     send_ring_push_fallback,
 )
 from shop.consumers import _build_ring_dispatch_context
-from shop.views import _attach_notification_to_user
+from shop.views import _attach_notification_to_user, driver_invitation_action_view
 from shop.fcm_views import (
     fcm_refresh_device_view,
     fcm_register_device_view,
@@ -33,6 +33,7 @@ from shop.models import (
     Driver,
     DriverChatConversation,
     DriverChatCall,
+    DriverChatMessage,
     DriverPresenceConnection,
     Employee,
     FCMDeviceToken,
@@ -1026,6 +1027,77 @@ class DriverNotificationModeTests(TestCase):
         self.assertEqual(sent_payload['type'], 'chat_message')
         self.assertEqual(sent_payload['screen'], 'chat')
         self.assertEqual(sent_payload['conversation_id'], conversation.public_id)
+
+
+class DriverInvitationWelcomeChatTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.factory = APIRequestFactory()
+        self.category = ShopCategory.objects.create(name='Groceries')
+        self.shop = ShopOwner.objects.create(
+            owner_name='مالك المتجر',
+            shop_name='متجر الشاورما',
+            shop_number='SHOP-WELCOME-1',
+            phone_number='01010001001',
+            password='secret123',
+            shop_category=self.category,
+        )
+        self.driver = Driver.objects.create(
+            name='محمد السائق',
+            phone_number='01010001002',
+            password='secret123',
+            is_verified=True,
+        )
+        self.invitation = ShopDriver.objects.create(
+            shop_owner=self.shop,
+            driver=self.driver,
+            status='pending',
+        )
+
+    def test_accepting_invitation_creates_welcome_chat_message(self):
+        request = self.factory.post(
+            f'/api/driver/invitations/{self.invitation.id}/respond/',
+            {'action': 'accept'},
+            format='json',
+        )
+        force_authenticate(request, user=self.driver)
+
+        response = driver_invitation_action_view(request, self.invitation.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.invitation.refresh_from_db()
+        self.assertEqual(self.invitation.status, 'active')
+
+        conversation = DriverChatConversation.objects.filter(
+            shop_owner=self.shop,
+            driver=self.driver,
+        ).first()
+        self.assertIsNotNone(conversation)
+
+        welcome_message = DriverChatMessage.objects.filter(
+            conversation=conversation,
+            sender_type='store',
+            message_type='text',
+            metadata__welcome_key='shop_driver_welcome',
+        ).first()
+        self.assertIsNotNone(welcome_message)
+        self.assertIn(self.shop.shop_name, welcome_message.text)
+
+        second_request = self.factory.post(
+            f'/api/driver/invitations/{self.invitation.id}/respond/',
+            {'action': 'accept'},
+            format='json',
+        )
+        force_authenticate(second_request, user=self.driver)
+        second_response = driver_invitation_action_view(second_request, self.invitation.id)
+        self.assertEqual(second_response.status_code, 404)
+        self.assertEqual(
+            DriverChatMessage.objects.filter(
+                conversation=conversation,
+                metadata__welcome_key='shop_driver_welcome',
+            ).count(),
+            1,
+        )
 
     @patch('shop.fcm_service.send_to_user', return_value={'tokens_total': 2, 'tokens_sent': 1, 'tokens_failed': 1, 'tokens_invalidated': 1})
     def test_attach_driver_notification_dispatches_fcm_after_commit(self, mock_send):
