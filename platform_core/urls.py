@@ -10,6 +10,8 @@ urlpatterns = [
     re_path(r'^devices/fcm/register/?$', fcm_views.fcm_register_device_view, name='fcm_register_device'),
     re_path(r'^devices/fcm/refresh/?$', fcm_views.fcm_refresh_device_view, name='fcm_refresh_device'),
     re_path(r'^devices/fcm/unregister/?$', fcm_views.fcm_unregister_device_view, name='fcm_unregister_device'),
+    path('chat/blocks/', views.chat_blocks_view, name='chat_blocks'),
+    path('chat/blocks/<str:target_type>/<int:target_id>/', views.chat_block_detail_view, name='chat_block_detail'),
+    path('chat/messages/<int:message_id>/delete-image/', views.chat_message_image_delete_view, name='chat_message_image_delete'),
     path('chat/order/<int:order_id>/send-media/', views.chat_order_media_upload_view, name='chat_order_media_upload'),
 ]
-
