@@ -33,6 +33,7 @@ from shop.views import (
     customer_order_confirm_view,
     customer_order_reject_view,
     customer_support_conversations_view,
+    driver_order_accept_view,
     order_detail_view,
 )
 from user.utils import localize_message
@@ -803,6 +804,39 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                     {'order_upsert', 'on_way_remove', 'order_history_entry_upsert'},
                 )
                 on_way_event = next(event for event in events if event['type'] == 'on_way_remove')
+                self.assertEqual(on_way_event['data']['order_id'], order.id)
+            finally:
+                await customer_socket.disconnect()
+
+        async_to_sync(run)()
+
+    def test_driver_accept_pushes_on_the_way_order_and_history_before_driver_message(self):
+        async def run():
+            order = self._create_order(status='confirmed', driver=self.driver)
+
+            customer_socket, _ = await self._connect_customer_socket()
+            try:
+                response = self._call_view(
+                    lambda request: driver_order_accept_view(request, order.id),
+                    'POST',
+                    f'/api/driver/orders/{order.id}/accept/',
+                    {},
+                    self.driver,
+                )
+                self.assertEqual(response.status_code, 200)
+
+                events = await self._receive_until_types(
+                    customer_socket,
+                    {'order_upsert', 'shop_upsert', 'on_way_remove', 'order_history_entry_upsert'},
+                )
+                order_event = next(event for event in events if event['type'] == 'order_upsert')
+                history_event = next(event for event in events if event['type'] == 'order_history_entry_upsert')
+                on_way_event = next(event for event in events if event['type'] == 'on_way_remove')
+
+                self.assertEqual(order_event['data']['status'], 'on_the_way')
+                self.assertEqual(order_event['data']['status_display'], 'جاري التوصيل')
+                self.assertEqual(history_event['data']['order']['status_key'], 'on_the_way')
+                self.assertEqual(history_event['data']['order']['status_label'], 'جاري التوصيل')
                 self.assertEqual(on_way_event['data']['order_id'], order.id)
             finally:
                 await customer_socket.disconnect()

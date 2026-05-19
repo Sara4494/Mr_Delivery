@@ -352,12 +352,7 @@ def build_order_delta_events(
 
     context = _serializer_context(lang=lang, scope=scope, base_url=base_url)
     events = []
-    suppress_customer_acceptance_update = bool(
-        getattr(order, 'driver_accepted_at', None)
-        and not has_customer_visible_driver_chat(order)
-    )
-
-    if include_order and not suppress_customer_acceptance_update:
+    if include_order:
         if is_customer_active_order(order):
             events.append(
                 {
@@ -373,7 +368,7 @@ def build_order_delta_events(
                 }
             )
 
-    if include_shop and not suppress_customer_acceptance_update:
+    if include_shop:
         events.append(
             _shop_event_for_shop(
                 customer_id,
@@ -400,7 +395,7 @@ def build_order_delta_events(
                 }
             )
 
-    if include_history and not suppress_customer_acceptance_update:
+    if include_history:
         events.append(
             {
                 'type': 'order_history_entry_upsert',
