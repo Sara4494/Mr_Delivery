@@ -719,8 +719,9 @@ class DriverRegisterSerializer(serializers.ModelSerializer):
 def _build_chat_message_invoice_payload(obj):
     from user.utils import _resolve_message_key
 
+    metadata = obj.metadata if isinstance(getattr(obj, 'metadata', None), dict) else {}
+
     if obj.message_type == 'invoice_card':
-        metadata = obj.metadata if isinstance(getattr(obj, 'metadata', None), dict) else {}
         invoice = metadata.get('invoice')
         if isinstance(invoice, dict) and invoice:
             order = getattr(obj, 'order', None)
@@ -793,6 +794,9 @@ def _build_chat_message_invoice_payload(obj):
             'total': total_amount,
             'items': items,
         }
+
+    if metadata.get('linked_invoice_message_id') or metadata.get('suppress_invoice_payload'):
+        return None
 
     message_key = _resolve_message_key(obj.content)
     if message_key not in {'order_priced_please_confirm', 'invoice_modified_waiting_for_confirmation'}:

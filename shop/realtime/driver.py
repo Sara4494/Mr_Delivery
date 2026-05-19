@@ -174,6 +174,16 @@ def normalize_driver_status(order):
     return order.status
 
 
+def get_driver_status_label(order):
+    driver_status = normalize_driver_status(order)
+    if driver_status in {'assigned', 'in_delivery'}:
+        return 'قيد التوصيل'
+    try:
+        return order.get_status_display()
+    except Exception:
+        return str(getattr(order, 'status', '') or '')
+
+
 def get_assigned_driver_id(order):
     assigned_driver_id = getattr(order, 'assigned_driver_id', None)
     if assigned_driver_id is not None:
@@ -230,6 +240,7 @@ def build_driver_order_payload(order, *, request=None, scope=None, base_url=None
         'order_id': order.id,
         'order_number': order.order_number,
         'status': order.status,
+        'status_label': get_driver_status_label(order),
         'driver_status': normalize_driver_status(order),
         'assigned_driver_id': get_assigned_driver_id(order),
         'accepted_at': format_utc_iso8601(getattr(order, 'driver_accepted_at', None)),

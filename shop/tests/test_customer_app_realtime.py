@@ -24,9 +24,12 @@ from shop.models import (
 from shop.routing import websocket_urlpatterns
 from shop.views import (
     customer_orders_list_create_view,
+    customer_order_confirm_view,
+    customer_order_reject_view,
     customer_support_conversations_view,
     order_detail_view,
 )
+from user.utils import localize_message
 from user.models import ShopCategory, ShopOwner
 
 
@@ -586,6 +589,93 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                 await customer_socket.disconnect()
 
         async_to_sync(run)()
+
+    def test_pricing_creates_invoice_card_before_pricing_message(self):
+        order = self._create_order(status='new')
+
+        response = self._call_view(
+            lambda request: order_detail_view(request, order.id),
+            'PUT',
+            f'/api/shop/orders/{order.id}/',
+            {
+                'status': 'pending_customer_confirm',
+                'total_amount': '150.00',
+                'delivery_fee': '20.00',
+                'items': [
+                    {'name': 'Cola', 'quantity': 1, 'price': 130},
+                ],
+            },
+            self.shop,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        messages = list(ChatMessage.objects.filter(order=order, chat_type='shop_customer').order_by('created_at', 'id'))
+        self.assertEqual([message.message_type for message in messages[-2:]], ['invoice_card', 'text'])
+        self.assertEqual(messages[-1].content, 'order_priced_please_confirm')
+        self.assertEqual(messages[-1].metadata.get('linked_invoice_message_id'), messages[-2].id)
+        self.assertEqual((messages[-2].metadata or {}).get('card_type'), 'invoice_card')
+
+    def test_customer_confirm_adds_preparing_message(self):
+        order = self._create_order(status='pending_customer_confirm')
+
+        response = self._call_view(
+            lambda request: customer_order_confirm_view(request, order.id),
+            'POST',
+            f'/api/customer/orders/{order.id}/confirm/',
+            {},
+            self.customer,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'confirmed')
+
+        messages = list(ChatMessage.objects.filter(order=order, chat_type='shop_customer').order_by('created_at', 'id'))
+        self.assertEqual(messages[-2].sender_type, 'customer')
+        self.assertEqual(messages[-1].sender_type, 'shop_owner')
+        self.assertEqual(messages[-1].content, 'تم تأكيد الطلب و جاري التجهيز')
+
+    def test_customer_reject_adds_cancelled_message(self):
+        order = self._create_order(status='pending_customer_confirm')
+
+        response = self._call_view(
+            lambda request: customer_order_reject_view(request, order.id),
+            'POST',
+            f'/api/customer/orders/{order.id}/reject/',
+            {},
+            self.customer,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'cancelled')
+
+        messages = list(ChatMessage.objects.filter(order=order, chat_type='shop_customer').order_by('created_at', 'id'))
+        self.assertEqual(messages[-2].sender_type, 'customer')
+        self.assertEqual(messages[-1].sender_type, 'shop_owner')
+        self.assertEqual(localize_message(None, messages[-1].content, lang='ar'), 'تم الغاء الطلب بنجاح')
+
+    def test_shop_cancel_pending_invoice_uses_cancelled_message(self):
+        order = self._create_order(status='pending_customer_confirm')
+
+        response = self._call_view(
+            lambda request: order_detail_view(request, order.id),
+            'PUT',
+            f'/api/shop/orders/{order.id}/',
+            {'status': 'cancelled'},
+            self.shop,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        messages = list(ChatMessage.objects.filter(order=order, chat_type='shop_customer').order_by('created_at', 'id'))
+        self.assertEqual(messages[-1].sender_type, 'shop_owner')
+        self.assertEqual(localize_message(None, messages[-1].content, lang='ar'), 'تم الغاء الطلب بنجاح')
+
+    def test_invoice_modified_message_is_localized_with_review_prompt(self):
+        self.assertEqual(
+            localize_message(None, 'invoice_modified_waiting_for_confirmation', lang='ar'),
+            'تم تعديل الفاتورة، يرجى المراجعة والضغط على تأكيد أو إلغاء.',
+        )
 
     def test_accepted_order_on_way_stays_hidden_before_driver_message(self):
         async def run():

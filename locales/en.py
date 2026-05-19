@@ -271,5 +271,5 @@ MESSAGES = {
     'staff_retrieved_successfully': 'Staff and drivers retrieved successfully',
     'staff_block_status_updated_successfully': 'Block status updated successfully',
     'shop_posts_retrieved_successfully': 'Shop posts retrieved successfully',
-    'invoice_modified_waiting_for_confirmation': 'The invoice has been modified and resent to the customer for approval.',
+    'invoice_modified_waiting_for_confirmation': 'The invoice has been updated. Please review it and choose Confirm or Cancel.',
 }

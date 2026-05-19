@@ -146,10 +146,37 @@ class DriverStatusSyncTests(SimpleTestCase):
         payload = build_driver_order_payload(order)
 
         self.assertEqual(payload['driver_status'], 'pending_acceptance')
+        self.assertEqual(payload['status_label'], 'confirmed')
         self.assertEqual(payload['assigned_driver_id'], 7)
         self.assertIsNone(payload['accepted_at'])
         self.assertFalse(payload['chat']['can_open'])
         self.assertFalse(payload['transfer']['can_transfer'])
+
+    def test_payload_shows_in_delivery_label_after_driver_acceptance(self):
+        order = SimpleNamespace(
+            id=125,
+            order_number='A125',
+            status='confirmed',
+            driver_id=7,
+            driver_accepted_at=datetime(2026, 4, 14, 19, 5, tzinfo=timezone.utc),
+            driver_assigned_at=datetime(2026, 4, 14, 18, 55, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 14, 18, 50, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 4, 14, 19, 5, tzinfo=timezone.utc),
+            items=[],
+            total_amount=150,
+            delivery_fee=20,
+            payment_method='cash',
+            customer=None,
+            shop_owner=None,
+            delivery_address=None,
+            notes='',
+            address='Test Address',
+        )
+
+        payload = build_driver_order_payload(order)
+
+        self.assertEqual(payload['driver_status'], 'assigned')
+        self.assertEqual(payload['status_label'], 'قيد التوصيل')
 
     def test_driver_order_payload_uses_google_customer_profile_image_url(self):
         customer = SimpleNamespace(

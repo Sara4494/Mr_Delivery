@@ -137,7 +137,7 @@ MESSAGES = {
     'notification_marked_as_read': 'تم تحديد الإشعار كمقروء',
     'notification_not_found': 'الإشعار غير موجود',
     'notifications_retrieved_successfully': 'تم جلب الإشعارات بنجاح',
-    'order_cancelled_successfully': 'تم الغاء الأوردر بنجاح',
+    'order_cancelled_successfully': 'تم الغاء الطلب بنجاح',
     'order_confirmed_successfully': 'تم تأكيد الطلب وجارٍ التنفيذ',
     'order_created_successfully': 'تم إنشاء الطلب بنجاح',
     'order_data_retrieved_successfully': 'تم جلب بيانات الطلب بنجاح',
@@ -273,5 +273,5 @@ MESSAGES = {
     'staff_retrieved_successfully': 'تم جلب الموظفين والسائقين بنجاح',
     'staff_block_status_updated_successfully': 'تم تحديث حالة الحظر بنجاح',
     'shop_posts_retrieved_successfully': 'تم جلب بوستات المتجر بنجاح',
-    'invoice_modified_waiting_for_confirmation': 'تم تعديل الفاتورة وإعادة إرسالها للعميل بانتظار الموافقة.',
+    'invoice_modified_waiting_for_confirmation': 'تم تعديل الفاتورة، يرجى المراجعة والضغط على تأكيد أو إلغاء.',
 }

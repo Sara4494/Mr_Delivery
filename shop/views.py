@@ -1687,6 +1687,13 @@ def _build_driver_order_invoice_payload(order):
     }
 
 
+def _build_shop_customer_invoice_card_metadata(order):
+    return {
+        'card_type': 'invoice_card',
+        'invoice': _build_driver_order_invoice_payload(order),
+    }
+
+
 def _get_driver_order_or_none(driver, order_id, statuses=None):
     queryset = Order.objects.select_related('shop_owner', 'customer', 'delivery_address').filter(
         id=order_id,
@@ -4193,6 +4200,17 @@ def order_detail_view(request, order_id):
                 )
                 broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg, request=request), request=request)
             elif new_status == 'pending_customer_confirm':
+                invoice_msg = ChatMessage.objects.create(
+                    order=order,
+                    chat_type='shop_customer',
+                    sender_type=sender_type,
+                    sender_shop_owner=shop_owner if sender_type == 'shop_owner' else None,
+                    sender_employee=request.user if sender_type == 'employee' else None,
+                    message_type='invoice_card',
+                    metadata=_build_shop_customer_invoice_card_metadata(order),
+                )
+                broadcast_chat_message_to_order(order.id, _chat_message_payload(invoice_msg, request=request), request=request)
+
                 if old_status == 'pending_customer_confirm':
                     msg_content = 'invoice_modified_waiting_for_confirmation'
                 else:
@@ -4205,6 +4223,7 @@ def order_detail_view(request, order_id):
                     sender_employee=request.user if sender_type == 'employee' else None,
                     message_type='text',
                     content=msg_content,
+                    metadata={'linked_invoice_message_id': invoice_msg.id},
                 )
                 broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg, request=request), request=request)
 
@@ -7443,6 +7462,15 @@ def customer_order_confirm_view(request, order_id):
             content='تمت الموافقة على الفاتورة من العميل',
         )
         broadcast_chat_message_to_order(order.id, _chat_message_payload(accepted_msg, request=request), request=request)
+        preparing_msg = ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='shop_owner',
+            sender_shop_owner=order.shop_owner,
+            message_type='text',
+            content='تم تأكيد الطلب و جاري التجهيز',
+        )
+        broadcast_chat_message_to_order(order.id, _chat_message_payload(preparing_msg, request=request), request=request)
     except Exception as e:
         print(f"confirm order chat message error: {e}")
 
@@ -7524,6 +7552,15 @@ def customer_order_reject_view(request, order_id):
             content='تم رفض الفاتورة من العميل',
         )
         broadcast_chat_message_to_order(order.id, _chat_message_payload(rejected_msg, request=request), request=request)
+        cancelled_msg = ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='shop_owner',
+            sender_shop_owner=order.shop_owner,
+            message_type='text',
+            content='order_cancelled_successfully',
+        )
+        broadcast_chat_message_to_order(order.id, _chat_message_payload(cancelled_msg, request=request), request=request)
     except Exception as e:
         print(f"reject order chat message error: {e}")
 
@@ -7553,10 +7590,9 @@ def customer_order_reject_view(request, order_id):
 
     return success_response(
         data=response_serializer.data,
-        message='تم رفض الفاتورة والطلب',
+        message=t(request, 'order_cancelled_successfully'),
         status_code=status.HTTP_200_OK
     )
-
 
 @api_view(['GET', 'PUT', 'PATCH'])
 @permission_classes([IsCustomer])

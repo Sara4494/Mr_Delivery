@@ -18,6 +18,10 @@ MESSAGES_BY_LANG = {
 ALL_MESSAGE_KEYS = set(AR_MESSAGES.keys()) | set(EN_MESSAGES.keys())
 AR_TEXT_TO_KEY = {value: key for key, value in AR_MESSAGES.items()}
 EN_TEXT_TO_KEY = {value: key for key, value in EN_MESSAGES.items()}
+LEGACY_MESSAGE_KEY_ALIASES = {
+    'تم إلغاء الفاتورة.': 'order_cancelled_successfully',
+    'تم رفض الفاتورة والطلب': 'order_cancelled_successfully',
+}
 
 
 def _normalize_lang(raw_lang):
@@ -95,6 +99,8 @@ def _resolve_message_key(message):
         return AR_TEXT_TO_KEY[text]
     if text in EN_TEXT_TO_KEY:
         return EN_TEXT_TO_KEY[text]
+    if text in LEGACY_MESSAGE_KEY_ALIASES:
+        return LEGACY_MESSAGE_KEY_ALIASES[text]
     return None
 
 
