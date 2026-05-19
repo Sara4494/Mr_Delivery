@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from shop.models import Customer, Driver, Order, ShopDriver
+from shop.models import ChatMessage, Customer, Driver, Order, ShopDriver
 from shop.views import driver_order_transfer_view, order_detail_view
 from user.models import ShopCategory, ShopOwner
 
@@ -155,3 +155,6 @@ class DriverOrderTransferViewTests(TestCase):
         sync_driver_order_state_mock.assert_called_once()
         sync_order_assignment_change_mock.assert_called_once()
         broadcast_chat_message_to_order_mock.assert_called()
+        latest_message = ChatMessage.objects.filter(order=order, chat_type='shop_customer').order_by('-id').first()
+        self.assertIsNotNone(latest_message)
+        self.assertEqual(latest_message.content, f'تم تحويل الطلب إلى مندوب {self.shop.shop_name}.')

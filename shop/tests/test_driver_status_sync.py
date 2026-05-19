@@ -3,12 +3,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from datetime import datetime, timezone
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from django.test.utils import override_settings
+from django.utils import timezone
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from shop.driver_chat_service import _map_order_status_to_driver_chat_status
-from shop.models import Driver
-from shop.views import _build_driver_availability_panel, _build_driver_status_panel
+from shop.models import Customer, Driver, Order, ShopDriver
+from shop.views import _build_driver_availability_panel, _build_driver_status_panel, driver_dashboard_view
 from shop.driver_realtime import (
     build_driver_order_payload,
     driver_can_receive_new_orders,
@@ -22,6 +24,7 @@ from shop.driver_realtime import (
     sync_driver_order_state,
     upsert_available_order_for_all,
 )
+from user.models import ShopCategory, ShopOwner
 
 
 class DriverStatusSyncTests(SimpleTestCase):
@@ -367,3 +370,58 @@ class DriverStatusSyncTests(SimpleTestCase):
             }
         )
         self.assertFalse(driver_can_receive_new_orders(driver))
+
+
+class DriverDashboardStatusCountsTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.factory = APIRequestFactory()
+        self.category = ShopCategory.objects.create(name='Groceries')
+        self.shop = ShopOwner.objects.create(
+            owner_name='Shop Owner',
+            shop_name='Shawarma',
+            shop_number='SHOP-DRIVER-HOME-1',
+            phone_number='01010002001',
+            password='secret123',
+            shop_category=self.category,
+        )
+        self.driver = Driver.objects.create(
+            name='Driver',
+            phone_number='01010002002',
+            password='secret123',
+            is_verified=True,
+            is_online=True,
+            availability_enabled=True,
+        )
+        self.customer = Customer.objects.create(
+            shop_owner=self.shop,
+            name='Customer',
+            phone_number='01010002003',
+            password='secret123',
+        )
+        ShopDriver.objects.create(shop_owner=self.shop, driver=self.driver, status='active')
+
+    def test_home_current_deliveries_count_waits_for_driver_acceptance(self):
+        Order.objects.create(
+            shop_owner=self.shop,
+            customer=self.customer,
+            driver=self.driver,
+            order_number='OD-HOME-1',
+            status='preparing',
+            items='["meal"]',
+            total_amount='60.00',
+            delivery_fee='10.00',
+            address='Tahrir Street',
+            notes='',
+            driver_assigned_at=timezone.now(),
+            driver_accepted_at=None,
+        )
+
+        request = self.factory.get('/api/driver/home/')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_dashboard_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data']['stats']['current_deliveries_count'], 0)
+        self.assertEqual(response.data['data']['stats']['active_orders_count'], 1)

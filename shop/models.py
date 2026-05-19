@@ -305,7 +305,10 @@ class Driver(models.Model):
         orders_manager = getattr(self, 'orders', None)
         if orders_manager is None or not hasattr(orders_manager, 'filter'):
             return 0
-        return orders_manager.filter(status__in=['preparing', 'on_way']).count()
+        return orders_manager.filter(
+            status__in=['preparing', 'on_way'],
+            driver_accepted_at__isnull=False,
+        ).count()
 
     def get_max_active_orders_limit(self):
         raw_value = getattr(settings, 'MAX_ACTIVE_ORDERS_PER_DRIVER', 2)
@@ -823,6 +826,11 @@ class ChatMessage(models.Model):
         elif self.sender_type == 'employee' and self.sender_employee:
             return self.sender_employee.name
         elif self.sender_type == 'driver' and self.sender_driver:
+            if self.chat_type == 'driver_customer':
+                shop_owner = getattr(getattr(self, 'order', None), 'shop_owner', None)
+                shop_name = str(getattr(shop_owner, 'shop_name', '') or '').strip()
+                if shop_name:
+                    return f'مندوب {shop_name}'
             return self.sender_driver.name
         return "غير معروف"
 

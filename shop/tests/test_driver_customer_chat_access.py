@@ -18,6 +18,7 @@ from shop.views import (
     chat_message_image_delete_view,
     chat_order_media_upload_view,
     customer_order_chat_view,
+    driver_order_chat_open_view,
     driver_order_chat_view,
 )
 from user.models import ShopCategory, ShopOwner
@@ -106,6 +107,22 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
 
         order.refresh_from_db()
         self.assertIsNotNone(order.driver_chat_opened_at)
+
+    def test_chat_open_returns_bootstrap_payload_for_new_chat_after_accept(self):
+        order = self._create_order(accepted=True)
+
+        request = self.factory.post(f'/api/driver/orders/{order.id}/chat/open/')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_order_chat_open_view(request, order.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['data']['can_open'])
+        self.assertEqual(response.data['data']['chat_type'], 'driver_customer')
+        self.assertEqual(response.data['data']['messages'], [])
+        self.assertFalse(response.data['data']['is_existing'])
+        self.assertTrue(response.data['data']['is_new'])
+        self.assertEqual(response.data['data']['ws_url'], response.data['data']['ws_path'])
 
     def test_chat_post_is_forbidden_before_accept(self):
         order = self._create_order(accepted=False)
@@ -199,6 +216,19 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['data']['chat_type'], 'driver_customer')
         self.assertEqual(response.data['data']['message_type'], 'image')
+
+    def test_driver_message_sender_name_uses_shop_delegate_label_for_customer_chat(self):
+        order = self._create_order(accepted=True)
+        message = ChatMessage.objects.create(
+            order=order,
+            chat_type='driver_customer',
+            sender_type='driver',
+            sender_driver=self.driver,
+            message_type='text',
+            content='أنا في الطريق',
+        )
+
+        self.assertEqual(message.sender_name, f'مندوب {self.shop.shop_name}')
 
     def test_customer_cannot_upload_driver_chat_image_before_accept(self):
         order = self._create_order(accepted=False)

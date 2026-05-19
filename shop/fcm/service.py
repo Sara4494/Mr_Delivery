@@ -305,6 +305,13 @@ def register_device_token(*, user, device_id, platform, fcm_token, app_version=_
 
     with transaction.atomic():
         FCMDeviceToken.objects.select_for_update().filter(
+            device_id=device_id,
+        ).exclude(
+            user_type=user_type,
+            user_id=user_id,
+        ).delete()
+
+        FCMDeviceToken.objects.select_for_update().filter(
             fcm_token=fcm_token,
         ).exclude(
             user_type=user_type,
@@ -1727,6 +1734,9 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
         shop_name=shop_name,
         shop_profile_image_url=shop_profile_image_url,
     )
+    push_title = shop_name
+    if chat_type == 'driver_customer':
+        push_title = message_payload.get('sender_name') or push_title
     logger.info(
         'fcm.chat.dispatch order_id=%s chat_type=%s sender_type=%s recipients=%s',
         order.id,
@@ -1736,7 +1746,7 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
     )
     summary = send_push_to_identities(
         recipient_identities,
-        title=_trim_text(shop_name, default='Mr Delivery', max_length=120),
+        title=_trim_text(push_title, default='Mr Delivery', max_length=120),
         body=_trim_text(message_preview, default='رسالة جديدة', max_length=180),
         data=payload,
         channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
@@ -2135,8 +2145,11 @@ def build_driver_customer_ring_payload(*, order, ring_payload):
 def build_customer_driver_chat_ring_payload(*, order, ring_payload, shop_name=None, shop_profile_image_url=None):
     ring_payload = ring_payload or {}
     customer = getattr(order, 'customer', None)
+    display_shop_name = str(shop_name or getattr(getattr(order, 'shop_owner', None), 'shop_name', None) or '').strip()
     sender_name = _trim_text(
-        ring_payload.get('sender_name') or getattr(order.driver, 'name', None),
+        (f'مندوب {display_shop_name}' if display_shop_name else None)
+        or ring_payload.get('sender_name')
+        or getattr(order.driver, 'name', None),
         default='المندوب',
         max_length=120,
     )

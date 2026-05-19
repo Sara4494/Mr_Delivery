@@ -2283,7 +2283,10 @@ def driver_dashboard_view(request):
         return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
 
     active_orders_qs = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way'])
-    in_delivery_orders_qs = driver.orders.filter(status__in=['preparing', 'on_way'])
+    in_delivery_orders_qs = driver.orders.filter(
+        status__in=['preparing', 'on_way'],
+        driver_accepted_at__isnull=False,
+    )
     completed_orders_qs = driver.orders.filter(status='delivered')
     _sync_driver_availability_status(
         driver,
@@ -2375,7 +2378,10 @@ def driver_status_view(request):
         target_enabled = bool(requested_online)
 
     active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
-    in_delivery_count = driver.orders.filter(status__in=['preparing', 'on_way']).count()
+    in_delivery_count = driver.orders.filter(
+        status__in=['preparing', 'on_way'],
+        driver_accepted_at__isnull=False,
+    ).count()
     if bool(driver.availability_enabled) != bool(target_enabled):
         driver.availability_enabled = bool(target_enabled)
         driver.save(update_fields=['availability_enabled', 'updated_at'])
@@ -3147,26 +3153,18 @@ def driver_order_chat_open_view(request, order_id):
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    if has_driver_accepted(order):
-        _mark_driver_customer_chat_opened(order)
-
-    conversation_id = f'order_{order.id}_driver_customer'
     has_messages = ChatMessage.objects.filter(order=order, chat_type='driver_customer').exists()
-    ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
-
-    return success_response(
-        data={
-            'conversation_id': conversation_id,
-            'order_id': order.id,
-            'chat_type': 'driver_customer',
-            'is_existing': has_messages,
-            'is_new': not has_messages,
-            'driver_presence': _serialize_driver_presence_response(order.driver) if order.driver_id else None,
-            'ws_url': ws_path,
-        },
-        message=t(request, 'driver_chat_opened_successfully'),
-        status_code=status.HTTP_200_OK,
+    response = _build_driver_customer_chat_bootstrap_response(
+        request,
+        order,
+        mark_as_opened=True,
     )
+    if isinstance(getattr(response, 'data', None), dict):
+        response.data.setdefault('data', {})
+        response.data['data']['is_existing'] = has_messages
+        response.data['data']['is_new'] = not has_messages
+        response.data['data']['ws_url'] = response.data['data'].get('ws_path')
+    return response
 
 
 def _normalize_driver_customer_chat_message_payload(item):
@@ -4228,6 +4226,7 @@ def order_detail_view(request, order_id):
                 broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg, request=request), request=request)
 
             if has_driver_assignment and order.driver and (not old_driver or old_driver.id != order.driver.id):
+                customer_driver_label = _get_customer_facing_driver_label(order, order.driver)
                 driver_msg = ChatMessage.objects.create(
                     order=order,
                     chat_type='shop_customer',
@@ -4235,7 +4234,7 @@ def order_detail_view(request, order_id):
                     sender_shop_owner=shop_owner if sender_type == 'shop_owner' else None,
                     sender_employee=request.user if sender_type == 'employee' else None,
                     message_type='text',
-                    content=f'تم تحويل الأوردر للدليفري {order.driver.name}.',
+                    content=f'تم تحويل الطلب إلى {customer_driver_label}.',
                 )
                 broadcast_chat_message_to_order(order.id, _chat_message_payload(driver_msg, request=request), request=request)
         except Exception as e:
@@ -5115,6 +5114,15 @@ def _notify_shop_about_driver_order_action(order, driver, action, request=None, 
     except Exception as exc:
         print(f"driver action driver chat error: {exc}")
 
+    customer_driver_label = _get_customer_facing_driver_label(order, driver)
+    customer_chat_content = (
+        f'{customer_driver_label} قبل الطلب #{order.order_number}.'
+        if action == 'accepted'
+        else f'{customer_driver_label} رفض الطلب #{order.order_number}.'
+    )
+    if reason and action == 'rejected':
+        customer_chat_content = f'{customer_chat_content} السبب: {reason}'
+
     try:
         msg = ChatMessage.objects.create(
             order=order,
@@ -5122,7 +5130,7 @@ def _notify_shop_about_driver_order_action(order, driver, action, request=None, 
             sender_type='driver',
             sender_driver=driver,
             message_type='text',
-            content=content,
+            content=customer_chat_content,
         )
         broadcast_chat_message_to_order(
             order.id,
@@ -5139,6 +5147,15 @@ def _get_prefetched_latest_message(order):
     if prefetched_messages is not None:
         return prefetched_messages[0] if prefetched_messages else None
     return order.messages.order_by('-created_at').first()
+
+
+def _get_customer_facing_driver_label(order, driver=None):
+    shop_owner = getattr(order, 'shop_owner', None)
+    shop_name = str(getattr(shop_owner, 'shop_name', '') or '').strip()
+    if shop_name:
+        return f'مندوب {shop_name}'
+    fallback_driver = driver or getattr(order, 'driver', None)
+    return str(getattr(fallback_driver, 'name', '') or 'المندوب').strip() or 'المندوب'
 
 
 def _build_customer_shop_summary_payload(shop, request):
