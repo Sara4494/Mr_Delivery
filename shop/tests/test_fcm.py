@@ -7,6 +7,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.fcm_service import (
+    _build_message_kwargs,
     _stringify_payload,
     build_driver_inbox_notification_payload,
     build_incoming_ring_payload,
@@ -580,6 +581,7 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(mock_send.call_args.kwargs['sound'], 'incoming_call')
         self.assertEqual(mock_send.call_args.kwargs['ios_sound'], 'incoming_call.mp3')
         self.assertTrue(mock_send.call_args.kwargs['high_priority'])
+        self.assertTrue(mock_send.call_args.kwargs['data_only'])
         self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'driver_customer.call_ringing')
         self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'driver_customer')
         self.assertEqual(mock_send.call_args.kwargs['data']['order_id'], str(self.order.id))
@@ -628,6 +630,7 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(mock_send.call_args.kwargs['sound'], 'incoming_call')
         self.assertEqual(mock_send.call_args.kwargs['ios_sound'], 'incoming_call.mp3')
         self.assertTrue(mock_send.call_args.kwargs['high_priority'])
+        self.assertTrue(mock_send.call_args.kwargs['data_only'])
         self.assertEqual(mock_send.call_args.kwargs['click_action'], 'FLUTTER_NOTIFICATION_CLICK')
         self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'driver_customer.call_ringing')
         self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'driver_customer')
@@ -680,6 +683,7 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(mock_send.call_args.kwargs['sound'], 'incoming_call')
         self.assertEqual(mock_send.call_args.kwargs['ios_sound'], 'incoming_call.mp3')
         self.assertTrue(mock_send.call_args.kwargs['high_priority'])
+        self.assertTrue(mock_send.call_args.kwargs['data_only'])
         self.assertEqual(mock_send.call_args.kwargs['click_action'], 'FLUTTER_NOTIFICATION_CLICK')
         self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'shop_customer.call_ringing')
         self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'shop_customer')
@@ -792,6 +796,7 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(mock_send.call_args.kwargs['sound'], 'incoming_call')
         self.assertEqual(mock_send.call_args.kwargs['ios_sound'], 'incoming_call.mp3')
         self.assertTrue(mock_send.call_args.kwargs['high_priority'])
+        self.assertTrue(mock_send.call_args.kwargs['data_only'])
         self.assertEqual(mock_send.call_args.kwargs['data']['type'], 'driver_chat.call_ringing')
         self.assertEqual(mock_send.call_args.kwargs['data']['chat_type'], 'driver_store')
         self.assertEqual(mock_send.call_args.kwargs['data']['call_id'], call.public_id)
@@ -957,6 +962,52 @@ class FCMServiceTests(TestCase):
         self.assertEqual(payload['type'], 'chat_message')
         self.assertEqual(payload['is_urgent'], 'true')
         self.assertNotIn('message_type', payload)
+
+    def test_build_message_kwargs_omits_notification_for_data_only_messages(self):
+        class DummyMessaging:
+            class AndroidNotification:
+                def __init__(self, **kwargs):
+                    self.kwargs = kwargs
+
+            class AndroidConfig:
+                def __init__(self, **kwargs):
+                    self.notification = kwargs.get('notification')
+                    self.kwargs = kwargs
+
+            class Notification:
+                def __init__(self, **kwargs):
+                    self.kwargs = kwargs
+
+            class APNSConfig:
+                def __init__(self, **kwargs):
+                    self.headers = kwargs.get('headers')
+                    self.payload = kwargs.get('payload')
+
+            class APNSPayload:
+                def __init__(self, **kwargs):
+                    self.aps = kwargs.get('aps')
+
+            class Aps:
+                def __init__(self, **kwargs):
+                    self.sound = kwargs.get('sound')
+                    self.content_available = kwargs.get('content_available')
+
+        payload = _build_message_kwargs(
+            DummyMessaging,
+            title='Caller',
+            body='Tap to answer',
+            data={'type': 'driver_customer.call_ringing', 'ring_id': 'abc'},
+            channel_id='delivery_incoming_calls_v3',
+            sound='incoming_call',
+            ios_sound='incoming_call.mp3',
+            high_priority=True,
+            data_only=True,
+        )
+
+        self.assertNotIn('notification', payload)
+        self.assertIsNone(payload['android'].notification)
+        self.assertEqual(payload['apns'].headers['apns-push-type'], 'background')
+        self.assertIsNone(payload['apns'].payload.aps.sound)
 
     @override_settings(
         FCM_ENABLED=True,

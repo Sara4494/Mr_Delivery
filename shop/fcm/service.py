@@ -566,29 +566,34 @@ def _build_android_config(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
-    return messaging.AndroidConfig(
-        priority=_android_priority(high_priority),
-        ttl=_coerce_ttl(ttl),
-        notification=messaging.AndroidNotification(
+    notification = None
+    if not data_only:
+        notification = messaging.AndroidNotification(
             channel_id=channel_id,
             sound=sound,
             click_action=click_action,
             priority=notification_priority,
             tag=tag,
-        ),
+        )
+
+    return messaging.AndroidConfig(
+        priority=_android_priority(high_priority),
+        ttl=_coerce_ttl(ttl),
+        notification=notification,
     )
 
 
-def _build_apns_config(messaging, *, sound, ios_sound, high_priority):
+def _build_apns_config(messaging, *, sound, ios_sound, high_priority, data_only=False):
     return messaging.APNSConfig(
         headers={
             'apns-priority': _apns_priority(high_priority),
-            'apns-push-type': 'alert',
+            'apns-push-type': 'background' if data_only else 'alert',
         },
         payload=messaging.APNSPayload(
             aps=messaging.Aps(
-                sound=ios_sound or sound or 'default',
+                sound=None if data_only else (ios_sound or sound or 'default'),
                 content_available=True,
             )
         ),
@@ -609,12 +614,9 @@ def _build_message_kwargs(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
-    return {
-        'notification': messaging.Notification(
-            title=_trim_text(title, max_length=120),
-            body=_trim_text(body, max_length=180),
-        ),
+    message_kwargs = {
         'data': _stringify_payload(data),
         'android': _build_android_config(
             messaging,
@@ -625,14 +627,22 @@ def _build_message_kwargs(
             click_action=click_action,
             notification_priority=notification_priority,
             tag=tag,
+            data_only=data_only,
         ),
         'apns': _build_apns_config(
             messaging,
             sound=sound,
             ios_sound=ios_sound,
             high_priority=high_priority,
+            data_only=data_only,
         ),
     }
+    if not data_only:
+        message_kwargs['notification'] = messaging.Notification(
+            title=_trim_text(title, max_length=120),
+            body=_trim_text(body, max_length=180),
+        )
+    return message_kwargs
 
 
 def _send_push_to_fcm_token(
@@ -650,6 +660,7 @@ def _send_push_to_fcm_token(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
     _, _, messaging = _firebase_modules()
     app = _firebase_app(user_type=user_type)
@@ -668,6 +679,7 @@ def _send_push_to_fcm_token(
             click_action=click_action,
             notification_priority=notification_priority,
             tag=tag,
+            data_only=data_only,
         ),
     )
     return messaging.send(message, app=app)
@@ -736,6 +748,7 @@ def send_push_to_token_record(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
     logger.info(
         'fcm.send.attempt token_id=%s user_type=%s user_id=%s platform=%s token=%s',
@@ -761,6 +774,7 @@ def send_push_to_token_record(
             click_action=click_action,
             notification_priority=notification_priority,
             tag=tag,
+            data_only=data_only,
         )
     except FCMConfigurationError as exc:
         logger.warning('fcm.send.skipped reason=%s', exc)
@@ -827,6 +841,7 @@ def _send_push_to_token_records(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
     token_records = list(token_records)
     summary = {
@@ -869,6 +884,7 @@ def _send_push_to_token_records(
                     click_action=click_action,
                     notification_priority=notification_priority,
                     tag=tag,
+                    data_only=data_only,
                 ),
             )
             try:
@@ -888,6 +904,7 @@ def _send_push_to_token_records(
                     click_action=click_action,
                     notification_priority=notification_priority,
                     tag=tag,
+                    data_only=data_only,
                 )
                     if result.get('success'):
                         summary['tokens_sent'] += 1
@@ -962,6 +979,7 @@ def _send_push_to_token_records(
             click_action=click_action,
             notification_priority=notification_priority,
             tag=tag,
+            data_only=data_only,
         )
         if result.get('success'):
             summary['tokens_sent'] += 1
@@ -1025,6 +1043,7 @@ def send_push_to_token(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
     token_record = FCMDeviceToken.objects.filter(fcm_token=fcm_token).order_by('-updated_at').first()
     if token_record:
@@ -1041,6 +1060,7 @@ def send_push_to_token(
             click_action=click_action,
             notification_priority=notification_priority,
             tag=tag,
+            data_only=data_only,
         )
 
     try:
@@ -1058,6 +1078,7 @@ def send_push_to_token(
             click_action=click_action,
             notification_priority=notification_priority,
             tag=tag,
+            data_only=data_only,
         )
     except Exception as exc:
         logger.exception('fcm.send.failed_raw token=%s', _mask_token(fcm_token))
@@ -1091,6 +1112,7 @@ def send_to_user(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
     user_type, user_id = resolve_user_identity(user)
     return send_push_to_user(
@@ -1109,6 +1131,7 @@ def send_to_user(
         click_action=click_action,
         notification_priority=notification_priority,
         tag=tag,
+        data_only=data_only,
     )
 
 
@@ -1129,6 +1152,7 @@ def send_push_to_user(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
     token_records = list(
         FCMDeviceToken.objects.filter(
@@ -1167,6 +1191,7 @@ def send_push_to_user(
         click_action=click_action,
         notification_priority=notification_priority,
         tag=tag,
+        data_only=data_only,
     )
     summary['users_targeted'] = 1 if token_records else 0
     return summary
@@ -1188,6 +1213,7 @@ def send_to_users(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
     identities = [resolve_user_identity(user) for user in users]
     summary = send_push_to_identities(
@@ -1205,6 +1231,7 @@ def send_to_users(
         click_action=click_action,
         notification_priority=notification_priority,
         tag=tag,
+        data_only=data_only,
     )
 
 
@@ -1224,6 +1251,7 @@ def send_push_to_identities(
     click_action=None,
     notification_priority=None,
     tag=None,
+    data_only=False,
 ):
     summary = {
         'users_targeted': 0,
@@ -1251,6 +1279,7 @@ def send_push_to_identities(
             click_action=click_action,
             notification_priority=notification_priority,
             tag=tag,
+            data_only=data_only,
         )
         summary['tokens_total'] += user_summary['tokens_total']
         summary['tokens_sent'] += user_summary['tokens_sent']
@@ -1905,6 +1934,7 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
             notification_priority=notification_priority,
             click_action='FLUTTER_NOTIFICATION_CLICK',
             tag=str(payload.get('ring_id') or f'ring_{order.id}_{target}'),
+            data_only=True,
         )
         summary['users_targeted'] += target_summary['users_targeted']
         summary['tokens_total'] += target_summary['tokens_total']
@@ -2057,6 +2087,7 @@ def send_driver_chat_call_ringing_push_fallback(conversation, call, *, request=N
         click_action='FLUTTER_NOTIFICATION_CLICK',
         notification_priority=profile['notification_priority'],
         tag=str(payload.get('call_id') or f'call_{conversation.public_id}'),
+        data_only=True,
     )
     logger.info(
         'fcm.driver_chat.call_ringing.result conversation_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
