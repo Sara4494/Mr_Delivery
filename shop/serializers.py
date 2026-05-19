@@ -721,36 +721,24 @@ def _build_chat_message_invoice_payload(obj):
 
     metadata = obj.metadata if isinstance(getattr(obj, 'metadata', None), dict) else {}
 
-    if obj.message_type == 'invoice_card':
-        invoice = metadata.get('invoice')
-        if isinstance(invoice, dict) and invoice:
-            order = getattr(obj, 'order', None)
-            return {
-                'order_id': invoice.get('order_id') or getattr(order, 'id', None),
-                'order_number': invoice.get('order_number') or getattr(order, 'order_number', None),
-                'customer_name': invoice.get('customer_name') or getattr(getattr(order, 'customer', None), 'name', None),
-                'driver_name': invoice.get('driver_name') or getattr(getattr(order, 'driver', None), 'name', None),
-                'currency': invoice.get('currency') or 'جنيه',
-                'payment_method': invoice.get('payment_method'),
-                'collection_amount': invoice.get('collection_amount'),
-                'subtotal': invoice.get('subtotal'),
-                'delivery_fee': invoice.get('delivery_fee'),
-                'total': invoice.get('total'),
-                'items': invoice.get('items') or [],
-            }
+    def _normalize_invoice_items(items_value):
+        if items_value in (None, ''):
+            return []
+        if isinstance(items_value, str):
+            return _normalize_invoice_items(_order_items_to_representation(items_value))
+        if not isinstance(items_value, list):
+            items_value = [items_value]
 
-        order = getattr(obj, 'order', None)
-        if not order:
-            return None
-
-        total_amount = float(order.total_amount or 0)
-        delivery_fee = float(order.delivery_fee or 0)
-        subtotal = round(max(total_amount - delivery_fee, 0), 2)
-        raw_items = _order_items_to_representation(order.items)
-        items = []
-        for index, item in enumerate(raw_items, start=1):
+        normalized_items = []
+        for index, item in enumerate(items_value, start=1):
             if isinstance(item, dict):
-                name = str(item.get('name') or item.get('title') or item.get('product_name') or item.get('item_name') or f'بند {index}').strip()
+                name = str(
+                    item.get('name')
+                    or item.get('title')
+                    or item.get('product_name')
+                    or item.get('item_name')
+                    or f'بند {index}'
+                ).strip()
                 quantity = item.get('quantity', item.get('qty', item.get('count', 1)))
                 try:
                     quantity = int(float(quantity))
@@ -769,31 +757,63 @@ def _build_chat_message_invoice_payload(obj):
                     except (TypeError, ValueError):
                         amount = None
             else:
-                name = str(item).strip()
+                name = str(item or '').strip()
+                if not name:
+                    continue
                 quantity = 1
                 amount = None
-            if name:
-                items.append({
-                    'name': name,
-                    'quantity': quantity,
-                    'amount': amount,
-                })
+
+            normalized_items.append({
+                'name': name,
+                'quantity': quantity,
+                'amount': amount,
+            })
+
+        return normalized_items
+
+    def _string_or_empty(value):
+        if value in (None, ''):
+            return ''
+        return str(value)
+
+    def _build_flutter_invoice_payload(*, order, items, delivery_fee, total_amount):
         return {
-            'order_id': order.id,
-            'order_number': order.order_number,
-            'customer_name': getattr(order.customer, 'name', None),
-            'driver_name': getattr(order.driver, 'name', None),
-            'currency': 'جنيه',
-            'payment_method': {
-                'code': order.payment_method,
-                'label': order.get_payment_method_display(),
-            },
-            'collection_amount': total_amount,
-            'subtotal': subtotal,
-            'delivery_fee': delivery_fee,
-            'total': total_amount,
-            'items': items,
+            'order_id': _string_or_empty(getattr(order, 'id', None) if order else None),
+            'order_number': _string_or_empty(getattr(order, 'order_number', None) if order else None),
+            'status': _string_or_empty(getattr(order, 'status', None) if order else None),
+            'status_display': _string_or_empty(order.get_status_display() if order else None),
+            'items': items or [],
+            'delivery_fee': _string_or_empty(delivery_fee),
+            'total_amount': _string_or_empty(total_amount),
+            'address': _string_or_empty(getattr(order, 'address', None) if order else None),
+            'notes': _string_or_empty(getattr(order, 'notes', None) if order else None),
         }
+
+    if obj.message_type == 'invoice_card':
+        invoice = metadata.get('invoice')
+        if isinstance(invoice, dict) and invoice:
+            order = getattr(obj, 'order', None)
+            total_amount = invoice.get('total_amount', invoice.get('total'))
+            return _build_flutter_invoice_payload(
+                order=order,
+                items=_normalize_invoice_items(invoice.get('items')),
+                delivery_fee=invoice.get('delivery_fee'),
+                total_amount=total_amount,
+            )
+
+        order = getattr(obj, 'order', None)
+        if not order:
+            return None
+
+        total_amount = float(order.total_amount or 0)
+        delivery_fee = float(order.delivery_fee or 0)
+        items = _normalize_invoice_items(order.items)
+        return _build_flutter_invoice_payload(
+            order=order,
+            items=items,
+            delivery_fee=delivery_fee,
+            total_amount=total_amount,
+        )
 
     if metadata.get('linked_invoice_message_id') or metadata.get('suppress_invoice_payload'):
         return None
@@ -806,17 +826,12 @@ def _build_chat_message_invoice_payload(obj):
     if not order:
         return None
 
-    return {
-        'order_id': order.id,
-        'order_number': order.order_number,
-        'status': order.status,
-        'status_display': order.get_status_display(),
-        'items': _order_items_to_representation(order.items),
-        'delivery_fee': str(order.delivery_fee) if order.delivery_fee is not None else None,
-        'total_amount': str(order.total_amount) if order.total_amount is not None else None,
-        'address': order.address,
-        'notes': order.notes,
-    }
+    return _build_flutter_invoice_payload(
+        order=order,
+        items=_normalize_invoice_items(order.items),
+        delivery_fee=order.delivery_fee,
+        total_amount=order.total_amount,
+    )
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):

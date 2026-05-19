@@ -22,6 +22,7 @@ from shop.models import (
     ShopDriver,
 )
 from shop.routing import websocket_urlpatterns
+from shop.serializers import ChatMessageSerializer
 from shop.views import (
     customer_orders_list_create_view,
     customer_order_confirm_view,
@@ -614,6 +615,19 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         self.assertEqual(messages[-1].content, 'order_priced_please_confirm')
         self.assertEqual(messages[-1].metadata.get('linked_invoice_message_id'), messages[-2].id)
         self.assertEqual((messages[-2].metadata or {}).get('card_type'), 'invoice_card')
+
+        serialized_invoice = ChatMessageSerializer(messages[-2]).data['invoice']
+        self.assertEqual(
+            set(serialized_invoice.keys()),
+            {'order_id', 'order_number', 'status', 'status_display', 'items', 'delivery_fee', 'total_amount', 'address', 'notes'},
+        )
+        self.assertEqual(serialized_invoice['order_id'], str(order.id))
+        self.assertEqual(serialized_invoice['status'], 'pending_customer_confirm')
+        self.assertEqual(serialized_invoice['delivery_fee'], '20.0')
+        self.assertEqual(serialized_invoice['total_amount'], '150.0')
+        self.assertEqual(serialized_invoice['items'][0]['name'], 'Cola')
+        self.assertEqual(serialized_invoice['items'][0]['quantity'], 1)
+        self.assertEqual(serialized_invoice['items'][0]['amount'], 130.0)
 
     def test_customer_confirm_adds_preparing_message(self):
         order = self._create_order(status='pending_customer_confirm')
