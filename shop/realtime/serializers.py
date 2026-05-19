@@ -264,6 +264,41 @@ def build_items_summary_and_count(order):
     return ', '.join(parts), count
 
 
+def build_order_items_payload(order):
+    raw_items = _order_items_to_representation(order.items)
+    items = []
+
+    for index, item in enumerate(raw_items, start=1):
+        if isinstance(item, dict):
+            quantity = item.get('quantity', item.get('qty', item.get('count', 1)))
+            try:
+                quantity = int(float(quantity))
+            except (TypeError, ValueError):
+                quantity = 1
+            name = str(
+                item.get('name')
+                or item.get('title')
+                or item.get('product_name')
+                or item.get('item_name')
+                or item.get('item')
+                or item.get('label')
+                or f'Item {index}'
+            ).strip()
+        else:
+            quantity = 1
+            name = str(item or '').strip()
+
+        if not name:
+            continue
+
+        items.append({
+            'name': name,
+            'quantity': max(quantity, 1),
+        })
+
+    return items
+
+
 class CustomerAppRealtimeOrderMessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(read_only=True)
     created_at = serializers.SerializerMethodField()
@@ -299,6 +334,7 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
     shop_logo_url = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    items = serializers.SerializerMethodField()
     item_count = serializers.SerializerMethodField()
     items_summary = serializers.SerializerMethodField()
     total_amount = serializers.SerializerMethodField()
@@ -321,6 +357,7 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
             'shop_logo_url',
             'status',
             'status_display',
+            'items',
             'items_summary',
             'item_count',
             'total_amount',
@@ -338,6 +375,9 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
 
     def get_shop_logo_url(self, obj):
         return _context_file_url(self, getattr(obj.shop_owner, 'profile_image', None))
+
+    def get_items(self, obj):
+        return build_order_items_payload(obj)
 
     def get_item_count(self, obj):
         return build_items_summary_and_count(obj)[1]
@@ -693,6 +733,7 @@ class CustomerAppRealtimeOrderHistoryOrderEntrySerializer(serializers.ModelSeria
         return {
             'order_id': obj.id,
             'order_number': obj.order_number,
+            'items': build_order_items_payload(obj),
             'items_summary': items_summary,
             'item_count': item_count,
             'total_amount': str(obj.total_amount) if obj.total_amount is not None else None,

@@ -892,6 +892,7 @@ def _order_items_to_representation(value):
     """تحويل items من نص/JSON إلى قائمة (بند 1، بند 2، ...) للعرض"""
     if not value:
         return []
+    import ast
     import json
     try:
         parsed = json.loads(value)
@@ -899,7 +900,15 @@ def _order_items_to_representation(value):
             return parsed
         return [value]
     except (TypeError, ValueError):
-        return [value] if isinstance(value, str) else []
+        if isinstance(value, str):
+            try:
+                parsed = ast.literal_eval(value)
+                if isinstance(parsed, list):
+                    return parsed
+                return [parsed]
+            except (ValueError, SyntaxError):
+                return [value]
+        return []
 
 
 class OrderSerializer(serializers.ModelSerializer):

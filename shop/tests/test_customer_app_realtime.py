@@ -21,6 +21,7 @@ from shop.models import (
     Order,
     ShopDriver,
 )
+from shop.realtime.serializers import CustomerAppRealtimeOrderSerializer
 from shop.routing import websocket_urlpatterns
 from shop.serializers import ChatMessageSerializer
 from shop.views import (
@@ -628,6 +629,48 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         self.assertEqual(serialized_invoice['items'][0]['name'], 'Cola')
         self.assertEqual(serialized_invoice['items'][0]['quantity'], 1)
         self.assertEqual(serialized_invoice['items'][0]['amount'], 130.0)
+
+    def test_invoice_payload_parses_legacy_python_like_items_format(self):
+        order = self._create_order(status='pending_customer_confirm')
+        order.items = "[{'name': 'ها', 'quantity': 1, 'price': 50.0}]"
+        order.total_amount = '100.00'
+        order.delivery_fee = '50.00'
+        order.save(update_fields=['items', 'total_amount', 'delivery_fee', 'updated_at'])
+
+        message = ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='shop_owner',
+            message_type='invoice_card',
+            metadata={
+                'card_type': 'invoice_card',
+                'invoice': {
+                    'items': order.items,
+                    'delivery_fee': '50.00',
+                    'total_amount': '100.00',
+                },
+            },
+        )
+
+        serialized_invoice = ChatMessageSerializer(message).data['invoice']
+        self.assertEqual(serialized_invoice['items'][0]['name'], 'ها')
+        self.assertEqual(serialized_invoice['items'][0]['quantity'], 1)
+        self.assertEqual(serialized_invoice['items'][0]['amount'], 50.0)
+
+    def test_customer_realtime_order_serializer_includes_items_array(self):
+        order = self._create_order(status='confirmed')
+        order.items = json.dumps([
+            {'name': 'Burger', 'quantity': 2},
+            {'name': 'Cola', 'quantity': 1},
+        ], ensure_ascii=False)
+        order.save(update_fields=['items', 'updated_at'])
+
+        payload = CustomerAppRealtimeOrderSerializer(order).data
+
+        self.assertEqual(payload['items'], [
+            {'name': 'Burger', 'quantity': 2},
+            {'name': 'Cola', 'quantity': 1},
+        ])
 
     def test_customer_confirm_adds_preparing_message(self):
         order = self._create_order(status='pending_customer_confirm')

@@ -1594,7 +1594,11 @@ def _parse_driver_order_items(items_value):
         try:
             parsed_items = json.loads(items_value)
         except (TypeError, ValueError):
-            parsed_items = [items_value]
+            try:
+                import ast
+                parsed_items = ast.literal_eval(items_value)
+            except (ValueError, SyntaxError):
+                parsed_items = [items_value]
 
     if not isinstance(parsed_items, list):
         parsed_items = [parsed_items]
