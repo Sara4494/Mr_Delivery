@@ -771,10 +771,28 @@ def _build_chat_message_invoice_payload(obj):
 
         return normalized_items
 
+    def _money_string(value):
+        try:
+            if value in (None, ''):
+                return ''
+            return f'{float(value):.2f}'
+        except (TypeError, ValueError):
+            return str(value or '')
+
     def _string_or_empty(value):
         if value in (None, ''):
             return ''
         return str(value)
+
+    def _legacy_invoice_item_lines(items_value):
+        lines = []
+        for item in _normalize_invoice_items(items_value):
+            name = str(item.get('name') or '').strip()
+            if not name:
+                continue
+            price_value = item.get('amount')
+            lines.append(f'{name} - price: {_money_string(price_value)}')
+        return lines
 
     def _build_flutter_invoice_payload(*, order, items, delivery_fee, total_amount):
         return {
@@ -789,14 +807,29 @@ def _build_chat_message_invoice_payload(obj):
             'notes': _string_or_empty(getattr(order, 'notes', None) if order else None),
         }
 
+    def _build_legacy_shop_customer_invoice_payload(*, order, items_value, delivery_fee, total_amount):
+        status_key = 'pending_customer_confirm'
+        status_display = dict(getattr(order, 'STATUS_CHOICES', [])) if order else {}
+        return {
+            'order_id': _string_or_empty(getattr(order, 'id', None) if order else None),
+            'order_number': _string_or_empty(getattr(order, 'order_number', None) if order else None),
+            'status': status_key,
+            'status_display': _string_or_empty(status_display.get(status_key) if order else None),
+            'items': _legacy_invoice_item_lines(items_value),
+            'delivery_fee': _money_string(delivery_fee),
+            'total_amount': _money_string(total_amount),
+            'address': _string_or_empty(getattr(order, 'address', None) if order else None),
+            'notes': _string_or_empty(getattr(order, 'notes', None) if order else None),
+        }
+
     if obj.message_type == 'invoice_card':
         invoice = metadata.get('invoice')
         if isinstance(invoice, dict) and invoice:
             order = getattr(obj, 'order', None)
             total_amount = invoice.get('total_amount', invoice.get('total'))
-            return _build_flutter_invoice_payload(
+            return _build_legacy_shop_customer_invoice_payload(
                 order=order,
-                items=_normalize_invoice_items(invoice.get('items')),
+                items_value=invoice.get('items'),
                 delivery_fee=invoice.get('delivery_fee'),
                 total_amount=total_amount,
             )
@@ -807,10 +840,9 @@ def _build_chat_message_invoice_payload(obj):
 
         total_amount = float(order.total_amount or 0)
         delivery_fee = float(order.delivery_fee or 0)
-        items = _normalize_invoice_items(order.items)
-        return _build_flutter_invoice_payload(
+        return _build_legacy_shop_customer_invoice_payload(
             order=order,
-            items=items,
+            items_value=order.items,
             delivery_fee=delivery_fee,
             total_amount=total_amount,
         )
@@ -826,9 +858,9 @@ def _build_chat_message_invoice_payload(obj):
     if not order:
         return None
 
-    return _build_flutter_invoice_payload(
+    return _build_legacy_shop_customer_invoice_payload(
         order=order,
-        items=_normalize_invoice_items(order.items),
+        items_value=order.items,
         delivery_fee=order.delivery_fee,
         total_amount=order.total_amount,
     )

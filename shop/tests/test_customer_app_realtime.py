@@ -624,11 +624,9 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         )
         self.assertEqual(serialized_invoice['order_id'], str(order.id))
         self.assertEqual(serialized_invoice['status'], 'pending_customer_confirm')
-        self.assertEqual(serialized_invoice['delivery_fee'], '20.0')
-        self.assertEqual(serialized_invoice['total_amount'], '150.0')
-        self.assertEqual(serialized_invoice['items'][0]['name'], 'Cola')
-        self.assertEqual(serialized_invoice['items'][0]['quantity'], 1)
-        self.assertEqual(serialized_invoice['items'][0]['amount'], 130.0)
+        self.assertEqual(serialized_invoice['delivery_fee'], '20.00')
+        self.assertEqual(serialized_invoice['total_amount'], '150.00')
+        self.assertEqual(serialized_invoice['items'], ['Cola - price: 130.00'])
 
     def test_invoice_payload_parses_legacy_python_like_items_format(self):
         order = self._create_order(status='pending_customer_confirm')
@@ -653,9 +651,7 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         )
 
         serialized_invoice = ChatMessageSerializer(message).data['invoice']
-        self.assertEqual(serialized_invoice['items'][0]['name'], 'ها')
-        self.assertEqual(serialized_invoice['items'][0]['quantity'], 1)
-        self.assertEqual(serialized_invoice['items'][0]['amount'], 50.0)
+        self.assertEqual(serialized_invoice['items'], ['ها - price: 50.00'])
 
     def test_customer_realtime_order_serializer_includes_items_array(self):
         order = self._create_order(status='confirmed')
