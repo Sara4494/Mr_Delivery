@@ -23,7 +23,7 @@ from .models import (
     AbuseReport, AccountModerationStatus,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, ShopReview, PaymentMethod,
-    Notification, Cart, CartItem, ShopDriver, DriverPresenceConnection
+    Notification, Cart, CartItem, ShopDriver, DriverPresenceConnection, FCMDeviceToken
 )
 from gallery.models import WorkSchedule, GalleryImage, ImageLike
 from user.approval_requests import create_or_update_offer_request
@@ -5036,6 +5036,53 @@ def _customer_profile_otp_email(customer):
     return normalize_email(getattr(customer, "email", None))
 
 
+CUSTOMER_DELETION_BLOCKING_ORDER_STATUSES = {
+    'new',
+    'pending_customer_confirm',
+    'confirmed',
+    'preparing',
+    'on_way',
+}
+
+
+def _build_deleted_customer_identity(customer):
+    timestamp = int(timezone.now().timestamp())
+    phone_suffix = f"{customer.id}{timestamp}"[-14:]
+    return {
+        'name': f"Deleted Customer #{customer.id}",
+        'phone_number': f"deleted{phone_suffix}"[:20],
+        'email': f"deleted.customer.{customer.id}.{timestamp}@deleted.local",
+    }
+
+
+def _create_deleted_customer_placeholder(customer):
+    identity = _build_deleted_customer_identity(customer)
+    return Customer.objects.create(
+        shop_owner=customer.shop_owner,
+        name=identity['name'],
+        phone_number=identity['phone_number'],
+        email=identity['email'],
+        password=None,
+        is_online=False,
+        last_seen=timezone.now(),
+        is_verified=False,
+    )
+
+
+def _delete_customer_account(customer):
+    placeholder = _create_deleted_customer_placeholder(customer)
+
+    Order.objects.filter(customer=customer).update(customer=placeholder)
+    Invoice.objects.filter(customer=customer).update(customer=placeholder)
+    OrderRating.objects.filter(customer=customer).update(customer=placeholder)
+    ShopReview.objects.filter(customer=customer).update(customer=placeholder)
+    CustomerSupportConversation.objects.filter(customer=customer).update(customer=placeholder)
+
+    FCMDeviceToken.objects.filter(user_type='customer', user_id=customer.id).delete()
+    customer.delete()
+    return placeholder
+
+
 def _normalize_order_items(items):
     normalized_items = []
     for item in items or []:
@@ -7611,12 +7658,12 @@ def customer_order_reject_view(request, order_id):
         status_code=status.HTTP_200_OK
     )
 
-@api_view(['GET', 'PUT', 'PATCH'])
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsCustomer])
 def customer_profile_view(request):
     """
     عرض وتحديث ملف العميل
-    GET/PUT/PATCH /api/customer/profile/
+    GET/PUT/PATCH/DELETE /api/customer/profile/
     """
     # التحقق من أن المستخدم هو عميل
     user = request.user
@@ -7708,6 +7755,43 @@ def customer_profile_view(request):
         serializer.save()
         response_serializer = CustomerAppProfileSerializer(customer, context={'request': request})
         return success_response(data=response_serializer.data, message=t(request, 'profile_updated_successfully'))
+
+    active_orders_exists = customer.orders.filter(
+        status__in=CUSTOMER_DELETION_BLOCKING_ORDER_STATUSES,
+    ).exists()
+    if active_orders_exists:
+        return error_response(
+            message=t(request, 'customer_account_delete_blocked_active_orders'),
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+    current_password = (
+        request.data.get('current_password')
+        or request.data.get('password')
+        or request.data.get('currentPassword')
+    )
+    has_local_password = bool(getattr(customer, 'password', None))
+    if has_local_password and not current_password:
+        return error_response(
+            message=t(request, 'customer_account_delete_password_required'),
+            errors={'current_password': [t(request, 'customer_account_delete_password_required')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if has_local_password and not customer.check_password(current_password):
+        return error_response(
+            message=t(request, 'customer_account_delete_password_incorrect'),
+            errors={'current_password': [t(request, 'customer_account_delete_password_incorrect')]},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        _delete_customer_account(customer)
+
+    return success_response(
+        data={},
+        message=t(request, 'account_deleted_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
 
 
 @api_view(['POST'])
