@@ -149,7 +149,7 @@ class DriverOrderTransferViewTests(TestCase):
             transferred_by='store',
             status='transferred',
         )
-        notify_driver_assigned_mock.assert_called_once()
+        notify_driver_assigned_mock.assert_not_called()
         notify_order_update_mock.assert_called_once()
         notify_driver_status_updated_mock.assert_called()
         sync_driver_order_state_mock.assert_called_once()

@@ -4264,7 +4264,8 @@ def order_detail_view(request, order_id):
 
             # إذا تم تعيين سائق جديد، إشعاره
             if order.driver and (not old_driver or old_driver.id != order.driver.id):
-                notify_driver_assigned(order.driver.id, order_data)
+                if old_driver is None:
+                    notify_driver_assigned(order.driver.id, order_data)
                 if old_driver:
                     emit_order_transferred(
                         old_driver.id,
@@ -5152,34 +5153,6 @@ def _notify_shop_about_driver_order_action(order, driver, action, request=None, 
         )
     except Exception as exc:
         print(f"driver action driver chat error: {exc}")
-
-    customer_driver_label = _get_customer_facing_driver_label(order, driver)
-    customer_chat_content = (
-        f'{customer_driver_label} قبل الطلب #{order.order_number}.'
-        if action == 'accepted'
-        else f'{customer_driver_label} رفض الطلب #{order.order_number}.'
-    )
-    if reason and action == 'rejected':
-        customer_chat_content = f'{customer_chat_content} السبب: {reason}'
-
-    try:
-        msg = ChatMessage.objects.create(
-            order=order,
-            chat_type='shop_customer',
-            sender_type='driver',
-            sender_driver=driver,
-            message_type='text',
-            content=customer_chat_content,
-        )
-        broadcast_chat_message_to_order(
-            order.id,
-            _chat_message_payload(msg, request=request),
-            request=request,
-            send_push=False,
-        )
-    except Exception as exc:
-        print(f"driver action chat message error: {exc}")
-
 
 def _get_prefetched_latest_message(order):
     prefetched_messages = getattr(order, 'prefetched_messages', None)

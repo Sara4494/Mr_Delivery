@@ -287,12 +287,7 @@ class ShopNotificationsApiTests(TestCase):
         self.assertEqual(row["type"], "order_status")
         self.assertEqual(row["reference_id"], str(self.order.id))
 
-    def test_driver_rejection_adds_customer_chat_message_with_delegate_label(self):
+    def test_driver_rejection_does_not_add_customer_chat_message(self):
         _notify_shop_about_driver_order_action(self.order, self.driver, "rejected", reason="ازدحام")
 
-        latest_message = ChatMessage.objects.filter(order=self.order, chat_type="shop_customer").order_by("-id").first()
-        self.assertIsNotNone(latest_message)
-        self.assertEqual(
-            latest_message.content,
-            f"مندوب {self.shop.shop_name} رفض الطلب #{self.order.order_number}. السبب: ازدحام",
-        )
+        self.assertFalse(ChatMessage.objects.filter(order=self.order, chat_type="shop_customer").exists())
