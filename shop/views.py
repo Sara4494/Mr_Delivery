@@ -4229,18 +4229,6 @@ def order_detail_view(request, order_id):
                 )
                 broadcast_chat_message_to_order(order.id, _chat_message_payload(sys_msg, request=request), request=request)
 
-            if has_driver_assignment and order.driver and (not old_driver or old_driver.id != order.driver.id):
-                customer_driver_label = _get_customer_facing_driver_label(order, order.driver)
-                driver_msg = ChatMessage.objects.create(
-                    order=order,
-                    chat_type='shop_customer',
-                    sender_type=sender_type,
-                    sender_shop_owner=shop_owner if sender_type == 'shop_owner' else None,
-                    sender_employee=request.user if sender_type == 'employee' else None,
-                    message_type='text',
-                    content=f'تم تحويل الطلب إلى {customer_driver_label}.',
-                )
-                broadcast_chat_message_to_order(order.id, _chat_message_payload(driver_msg, request=request), request=request)
         except Exception as e:
             print(f"Order system message broadcast error: {e}")
 
