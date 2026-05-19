@@ -4,7 +4,11 @@ from user.utils import build_absolute_file_url, localize_message
 
 from ..models import ChatMessage, CustomerSupportConversation, Order
 from .presence import format_utc_iso8601
-from ..serializers import _order_items_to_representation
+from ..serializers import (
+    _order_items_to_representation,
+    get_order_presentation_status_display,
+    get_order_presentation_status_key,
+)
 
 
 CUSTOMER_ACTIVE_ORDER_STATUSES = frozenset(
@@ -333,7 +337,8 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
     shop_id = serializers.IntegerField(source='shop_owner_id', read_only=True)
     shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
     shop_logo_url = serializers.SerializerMethodField()
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
     items = serializers.SerializerMethodField()
     item_count = serializers.SerializerMethodField()
     items_summary = serializers.SerializerMethodField()
@@ -375,6 +380,12 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
 
     def get_shop_logo_url(self, obj):
         return _context_file_url(self, getattr(obj.shop_owner, 'profile_image', None))
+
+    def get_status(self, obj):
+        return get_order_presentation_status_key(obj)
+
+    def get_status_display(self, obj):
+        return get_order_presentation_status_display(obj)
 
     def get_items(self, obj):
         return build_order_items_payload(obj)
@@ -460,7 +471,7 @@ class CustomerAppRealtimeOrderShopEntrySerializer(serializers.ModelSerializer):
                 latest_message,
                 context=self.context,
             ).data.get('content')
-        return obj.get_status_display()
+        return get_order_presentation_status_display(obj)
 
     def get_subtitle(self, obj):
         return self.get_last_message_preview(obj)
@@ -632,8 +643,8 @@ class CustomerAppRealtimeOnWaySerializer(serializers.ModelSerializer):
     driver_name = serializers.SerializerMethodField()
     driver_image_url = serializers.SerializerMethodField()
     driver_role_label = serializers.SerializerMethodField()
-    status_key = serializers.CharField(source='status', read_only=True)
-    status_label = serializers.CharField(source='get_status_display', read_only=True)
+    status_key = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
     last_delivery_update_at = serializers.SerializerMethodField()
     chat = serializers.SerializerMethodField()
 
@@ -674,6 +685,12 @@ class CustomerAppRealtimeOnWaySerializer(serializers.ModelSerializer):
         if not (obj.driver_id and has_customer_visible_driver_chat(obj)):
             return None
         return 'مندوب'
+
+    def get_status_key(self, obj):
+        return get_order_presentation_status_key(obj)
+
+    def get_status_label(self, obj):
+        return get_order_presentation_status_display(obj)
 
     def get_last_delivery_update_at(self, obj):
         return format_utc_iso8601(get_on_way_sort_key(obj))
@@ -737,8 +754,8 @@ class CustomerAppRealtimeOrderHistoryOrderEntrySerializer(serializers.ModelSeria
             'items_summary': items_summary,
             'item_count': item_count,
             'total_amount': str(obj.total_amount) if obj.total_amount is not None else None,
-            'status_key': obj.status,
-            'status_label': obj.get_status_display(),
+            'status_key': get_order_presentation_status_key(obj),
+            'status_label': get_order_presentation_status_display(obj),
             'history_status': get_order_history_status(obj),
             'chat_type': CUSTOMER_ORDER_CHAT_TYPE,
         }

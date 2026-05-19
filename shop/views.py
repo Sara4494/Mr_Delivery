@@ -78,6 +78,8 @@ from .serializers import (
     ChatMessageSerializer,
     AppStatusSerializer,
     DriverAppVersionSerializer,
+    get_order_presentation_status_display,
+    get_order_presentation_status_key,
 )
 from .permissions import (
     IsShopOwner,
@@ -1577,6 +1579,10 @@ def _get_driver_order_status_label(order):
     if order.status in DRIVER_APP_ORDER_STATUSES:
         return 'قيد التوصيل'
     return order.get_status_display()
+
+
+def _get_customer_friendly_delivery_status(order):
+    return get_order_presentation_status_display(order)
 
 
 def _to_float_or_none(value):
@@ -5221,7 +5227,7 @@ def _build_customer_on_way_order_item(order, request, base_url=None):
 
     return {
         'order_id': order.id,
-        'status_key': order.status,
+        'status_key': get_order_presentation_status_key(order),
         'status_label': _get_customer_friendly_delivery_status(order),
         'shop_id': order.shop_owner_id,
         'shop_name': order.shop_owner.shop_name,
@@ -8551,8 +8557,8 @@ def order_tracking_view(request, order_id):
     return success_response(
         data={
             'order_id': order.id,
-            'order_status': order.status,
-            'order_status_display': order.get_status_display(),
+            'order_status': get_order_presentation_status_key(order),
+            'order_status_display': get_order_presentation_status_display(order),
             'driver': {
                 'id': driver.id,
                 'name': driver.name,

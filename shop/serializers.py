@@ -140,6 +140,35 @@ def _context_file_url(serializer, file_field):
     )
 
 
+ORDER_PRESENTATION_STATUS_DISPLAY = {
+    'on_the_way': 'جاري التوصيل',
+    'delivered': 'تم التوصيل',
+}
+
+
+def get_order_presentation_status_key(order):
+    status = str(getattr(order, 'status', '') or '').strip()
+    if status == 'delivered':
+        return 'delivered'
+    if getattr(order, 'driver_accepted_at', None) and status in {'confirmed', 'preparing', 'on_way'}:
+        return 'on_the_way'
+    return status
+
+
+def get_order_presentation_status_display(order):
+    status_key = get_order_presentation_status_key(order)
+    if status_key in ORDER_PRESENTATION_STATUS_DISPLAY:
+        return ORDER_PRESENTATION_STATUS_DISPLAY[status_key]
+
+    if order is None:
+        return ''
+
+    if hasattr(order, 'get_status_display'):
+        return order.get_status_display()
+
+    return dict(getattr(Order, 'STATUS_CHOICES', [])).get(status_key, status_key)
+
+
 def _customer_profile_image_url(serializer, obj):
     return resolve_customer_profile_image_url(
         obj,
@@ -948,7 +977,8 @@ class OrderSerializer(serializers.ModelSerializer):
     customer = CustomerSerializer(read_only=True)
     employee = serializers.SerializerMethodField()
     driver = DriverSerializer(read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     items = serializers.SerializerMethodField()
 
@@ -962,6 +992,12 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_items(self, obj):
         """عرض الأصناف كقائمة (بند 1، بند 2، ...)"""
         return _order_items_to_representation(obj.items)
+
+    def get_status(self, obj):
+        return get_order_presentation_status_key(obj)
+
+    def get_status_display(self, obj):
+        return get_order_presentation_status_display(obj)
 
     def get_employee(self, obj):
         """الموظف المسؤول (معرف + اسم)"""
@@ -982,7 +1018,8 @@ class ShopOrderListSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     customer_phone_number = serializers.CharField(source='customer.phone_number', read_only=True)
     customer_profile_image_url = serializers.SerializerMethodField()
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
 
     def get_customer_profile_image_url(self, obj):
         customer = getattr(obj, 'customer', None)
@@ -992,6 +1029,12 @@ class ShopOrderListSerializer(serializers.ModelSerializer):
             scope=self.context.get('scope'),
             base_url=self.context.get('base_url'),
         )
+
+    def get_status(self, obj):
+        return get_order_presentation_status_key(obj)
+
+    def get_status_display(self, obj):
+        return get_order_presentation_status_display(obj)
 
     class Meta:
         model = Order

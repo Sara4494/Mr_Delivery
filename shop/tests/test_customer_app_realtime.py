@@ -21,9 +21,13 @@ from shop.models import (
     Order,
     ShopDriver,
 )
-from shop.realtime.serializers import CustomerAppRealtimeOrderSerializer
+from shop.realtime.serializers import (
+    CustomerAppRealtimeOrderHistoryOrderEntrySerializer,
+    CustomerAppRealtimeOnWaySerializer,
+    CustomerAppRealtimeOrderSerializer,
+)
 from shop.routing import websocket_urlpatterns
-from shop.serializers import ChatMessageSerializer
+from shop.serializers import ChatMessageSerializer, OrderSerializer, ShopOrderListSerializer
 from shop.views import (
     customer_orders_list_create_view,
     customer_order_confirm_view,
@@ -585,7 +589,13 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                     customer_socket,
                     {'order_upsert', 'on_way_remove', 'order_history_entry_upsert'},
                 )
+                order_event = next(event for event in events if event['type'] == 'order_upsert')
+                history_event = next(event for event in events if event['type'] == 'order_history_entry_upsert')
                 on_way_event = next(event for event in events if event['type'] == 'on_way_remove')
+                self.assertEqual(order_event['data']['status'], 'on_the_way')
+                self.assertEqual(order_event['data']['status_display'], 'جاري التوصيل')
+                self.assertEqual(history_event['data']['order']['status_key'], 'on_the_way')
+                self.assertEqual(history_event['data']['order']['status_label'], 'جاري التوصيل')
                 self.assertEqual(on_way_event['data']['order_id'], order.id)
             finally:
                 await customer_socket.disconnect()
@@ -667,6 +677,45 @@ class CustomerAppRealtimeTests(TransactionTestCase):
             {'name': 'Burger', 'quantity': 2},
             {'name': 'Cola', 'quantity': 1},
         ])
+
+    def test_order_serializers_present_delivery_stage_consistently(self):
+        order = self._create_order(status='preparing', driver=self.driver)
+
+        order.driver_accepted_at = None
+        order.save(update_fields=['driver_accepted_at', 'updated_at'])
+        self.assertEqual(OrderSerializer(order).data['status'], 'preparing')
+        self.assertEqual(OrderSerializer(order).data['status_display'], 'قيد التحضير')
+
+        order.driver_accepted_at = timezone.now()
+        order.save(update_fields=['driver_accepted_at', 'updated_at'])
+
+        order_payload = OrderSerializer(order).data
+        list_payload = ShopOrderListSerializer(order).data
+        realtime_payload = CustomerAppRealtimeOrderSerializer(order).data
+        history_payload = CustomerAppRealtimeOrderHistoryOrderEntrySerializer(order).data['order']
+        on_way_payload = CustomerAppRealtimeOnWaySerializer(order).data
+
+        self.assertEqual(order_payload['status'], 'on_the_way')
+        self.assertEqual(order_payload['status_display'], 'جاري التوصيل')
+        self.assertEqual(list_payload['status'], 'on_the_way')
+        self.assertEqual(list_payload['status_display'], 'جاري التوصيل')
+        self.assertEqual(realtime_payload['status'], 'on_the_way')
+        self.assertEqual(realtime_payload['status_display'], 'جاري التوصيل')
+        self.assertEqual(history_payload['status_key'], 'on_the_way')
+        self.assertEqual(history_payload['status_label'], 'جاري التوصيل')
+        self.assertEqual(on_way_payload['status_key'], 'on_the_way')
+        self.assertEqual(on_way_payload['status_label'], 'جاري التوصيل')
+
+        order.status = 'delivered'
+        order.save(update_fields=['status', 'updated_at'])
+
+        delivered_order_payload = OrderSerializer(order).data
+        delivered_history_payload = CustomerAppRealtimeOrderHistoryOrderEntrySerializer(order).data['order']
+
+        self.assertEqual(delivered_order_payload['status'], 'delivered')
+        self.assertEqual(delivered_order_payload['status_display'], 'تم التوصيل')
+        self.assertEqual(delivered_history_payload['status_key'], 'delivered')
+        self.assertEqual(delivered_history_payload['status_label'], 'تم التوصيل')
 
     def test_customer_confirm_adds_preparing_message(self):
         order = self._create_order(status='pending_customer_confirm')
@@ -887,6 +936,9 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                     customer_socket,
                     {'order_remove', 'on_way_remove', 'order_history_entry_upsert'},
                 )
+                history_event = next(event for event in events if event['type'] == 'order_history_entry_upsert')
+                self.assertEqual(history_event['data']['order']['status_key'], 'delivered')
+                self.assertEqual(history_event['data']['order']['status_label'], 'تم التوصيل')
                 self.assertEqual(
                     next(event for event in events if event['type'] == 'on_way_remove')['data']['order_id'],
                     order.id,
