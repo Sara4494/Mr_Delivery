@@ -1,0 +1,8 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  <li>
+    <a href="{{ broadcast_url }}" class="addlink">Send custom push</a>
+  </li>
+  {{ block.super }}
+{% endblock %}

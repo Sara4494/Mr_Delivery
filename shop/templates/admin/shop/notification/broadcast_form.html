@@ -1,0 +1,46 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:shop_notification_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; Send custom push
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <form method="post">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+      <h2>Broadcast details</h2>
+      {{ form.as_p }}
+    </fieldset>
+
+    <fieldset class="module aligned">
+      <h2>Configured Topics</h2>
+      <div class="form-row">
+        <div>
+          <strong>Customers:</strong> {{ topics_preview.customers|join:", " }}
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <strong>Drivers:</strong> {{ topics_preview.drivers|join:", " }}
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <strong>Customers + drivers:</strong> {{ topics_preview.all|join:", " }}
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="submit-row">
+      <input type="submit" value="Send notification" class="default">
+      <a href="{% url 'admin:shop_notification_changelist' %}" class="button cancel-link">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

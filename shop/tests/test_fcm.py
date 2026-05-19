@@ -9,9 +9,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from shop.fcm_service import (
     _build_message_kwargs,
     _stringify_payload,
+    FCM_BROADCAST_AUDIENCE_ALL,
+    FCM_BROADCAST_AUDIENCE_CUSTOMERS,
+    FCM_BROADCAST_AUDIENCE_DRIVERS,
     build_driver_inbox_notification_payload,
     build_incoming_ring_payload,
+    get_admin_broadcast_topics,
     send_driver_chat_call_ringing_push_fallback,
+    send_admin_topic_broadcast,
     send_order_chat_push_fallback,
     send_driver_new_order_notification,
     send_driver_store_invite_notification,
@@ -1008,6 +1013,38 @@ class FCMServiceTests(TestCase):
         self.assertIsNone(payload['android'].notification)
         self.assertEqual(payload['apns'].headers['apns-push-type'], 'background')
         self.assertIsNone(payload['apns'].payload.aps.sound)
+
+    def test_get_admin_broadcast_topics_returns_expected_topics(self):
+        self.assertEqual(get_admin_broadcast_topics(FCM_BROADCAST_AUDIENCE_CUSTOMERS), ['all_customers'])
+        self.assertEqual(get_admin_broadcast_topics(FCM_BROADCAST_AUDIENCE_DRIVERS), ['all_drivers'])
+        self.assertEqual(
+            get_admin_broadcast_topics(FCM_BROADCAST_AUDIENCE_ALL),
+            ['all_customers', 'all_drivers'],
+        )
+
+    @patch('shop.fcm_service.send_to_topic')
+    def test_send_admin_topic_broadcast_targets_both_topics_for_all_audience(self, mock_send_to_topic):
+        mock_send_to_topic.side_effect = [
+            {'success': True, 'topic': 'all_customers', 'response_id': 'one'},
+            {'success': True, 'topic': 'all_drivers', 'response_id': 'two'},
+        ]
+
+        summary = send_admin_topic_broadcast(
+            audience=FCM_BROADCAST_AUDIENCE_ALL,
+            title='Promo',
+            body='Big sale today',
+            data={'campaign': 'may-sale'},
+        )
+
+        self.assertEqual(mock_send_to_topic.call_count, 2)
+        self.assertEqual(summary['topics_sent'], 2)
+        self.assertEqual(summary['sent_topics'], ['all_customers', 'all_drivers'])
+        self.assertEqual(mock_send_to_topic.call_args_list[0].kwargs['user_type'], 'customer')
+        self.assertEqual(mock_send_to_topic.call_args_list[1].kwargs['user_type'], 'driver')
+        self.assertEqual(summary['payload']['type'], 'general_notification')
+        self.assertEqual(summary['payload']['screen'], 'notifications')
+        self.assertEqual(summary['payload']['route'], '/notifications')
+        self.assertEqual(summary['payload']['campaign'], 'may-sale')
 
     @override_settings(
         FCM_ENABLED=True,

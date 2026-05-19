@@ -51,6 +51,9 @@ _FCM_USER_TYPE_APP_PROFILE = {
     'shop_owner': 'customer',
     'employee': 'customer',
 }
+FCM_BROADCAST_AUDIENCE_CUSTOMERS = 'customers'
+FCM_BROADCAST_AUDIENCE_DRIVERS = 'drivers'
+FCM_BROADCAST_AUDIENCE_ALL = 'all'
 
 
 def resolve_user_identity(user):
@@ -1295,6 +1298,7 @@ def send_to_topic(
     body,
     data=None,
     *,
+    user_type=None,
     high_priority=False,
     channel_id=None,
     sound='default',
@@ -1305,7 +1309,7 @@ def send_to_topic(
     tag=None,
 ):
     _, _, messaging = _firebase_modules()
-    app = _firebase_app()
+    app = _firebase_app(user_type=user_type)
     message = messaging.Message(
         topic=str(topic).strip(),
         **_build_message_kwargs(
@@ -1392,6 +1396,90 @@ def broadcast_to_all(
     )
     summary['users_targeted'] = queryset.values('user_type', 'user_id').distinct().count()
     return summary
+
+
+def _broadcast_topic_name(setting_name, default_value):
+    return str(getattr(settings, setting_name, default_value) or default_value).strip() or default_value
+
+
+def get_admin_broadcast_topics(audience):
+    normalized_audience = str(audience or '').strip().lower()
+    topic_customers = _broadcast_topic_name('FCM_TOPIC_ALL_CUSTOMERS', 'all_customers')
+    topic_drivers = _broadcast_topic_name('FCM_TOPIC_ALL_DRIVERS', 'all_drivers')
+
+    if normalized_audience == FCM_BROADCAST_AUDIENCE_CUSTOMERS:
+        return [topic_customers]
+    if normalized_audience == FCM_BROADCAST_AUDIENCE_DRIVERS:
+        return [topic_drivers]
+    if normalized_audience == FCM_BROADCAST_AUDIENCE_ALL:
+        return [topic_customers, topic_drivers]
+    raise ValueError(f'Unsupported broadcast audience: {audience}')
+
+
+def _get_admin_broadcast_targets(audience):
+    normalized_audience = str(audience or '').strip().lower()
+    topic_customers = _broadcast_topic_name('FCM_TOPIC_ALL_CUSTOMERS', 'all_customers')
+    topic_drivers = _broadcast_topic_name('FCM_TOPIC_ALL_DRIVERS', 'all_drivers')
+
+    if normalized_audience == FCM_BROADCAST_AUDIENCE_CUSTOMERS:
+        return [{'topic': topic_customers, 'user_type': 'customer'}]
+    if normalized_audience == FCM_BROADCAST_AUDIENCE_DRIVERS:
+        return [{'topic': topic_drivers, 'user_type': 'driver'}]
+    if normalized_audience == FCM_BROADCAST_AUDIENCE_ALL:
+        return [
+            {'topic': topic_customers, 'user_type': 'customer'},
+            {'topic': topic_drivers, 'user_type': 'driver'},
+        ]
+    raise ValueError(f'Unsupported broadcast audience: {audience}')
+
+
+def send_admin_topic_broadcast(*, audience, title, body, data=None):
+    payload = {
+        'type': 'general_notification',
+        'screen': 'notifications',
+        'route': '/notifications',
+        'click_action': 'OPEN_NOTIFICATIONS',
+        'notification_source': 'django_admin_broadcast',
+        'target_audience': str(audience or '').strip().lower(),
+    }
+    payload.update(_stringify_payload(data or {}))
+
+    targets = _get_admin_broadcast_targets(audience)
+    topics = [target['topic'] for target in targets]
+    results = []
+    sent_topics = []
+    failed_topics = []
+
+    for target in targets:
+        topic = target['topic']
+        result = send_to_topic(
+            topic,
+            title=title,
+            body=body,
+            data=payload,
+            user_type=target['user_type'],
+            high_priority=False,
+            channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
+            sound=getattr(settings, 'FCM_CHAT_SOUND', 'default'),
+            ios_sound=getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default'),
+        )
+        results.append(result)
+        if result.get('success'):
+            sent_topics.append(topic)
+        else:
+            failed_topics.append(topic)
+
+    return {
+        'audience': str(audience or '').strip().lower(),
+        'topics': topics,
+        'topics_total': len(topics),
+        'topics_sent': len(sent_topics),
+        'topics_failed': len(failed_topics),
+        'sent_topics': sent_topics,
+        'failed_topics': failed_topics,
+        'results': results,
+        'payload': payload,
+    }
 
 
 def _create_driver_notification_record(

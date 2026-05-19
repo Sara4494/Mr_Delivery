@@ -1,10 +1,35 @@
-from django.contrib import admin
+from django import forms
+from django.contrib import admin, messages
+from django.http import HttpResponseRedirect
+from django.template.response import TemplateResponse
+from django.urls import path, reverse
+
+from .fcm.service import (
+    FCM_BROADCAST_AUDIENCE_ALL,
+    FCM_BROADCAST_AUDIENCE_CUSTOMERS,
+    FCM_BROADCAST_AUDIENCE_DRIVERS,
+    get_admin_broadcast_topics,
+    send_admin_topic_broadcast,
+)
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, PaymentMethod,
     Notification, Cart, CartItem, ShopDriver, FCMDeviceToken ,
 )
+
+
+class AdminBroadcastNotificationForm(forms.Form):
+    audience = forms.ChoiceField(
+        label='Target Audience',
+        choices=[
+            (FCM_BROADCAST_AUDIENCE_CUSTOMERS, 'All customers'),
+            (FCM_BROADCAST_AUDIENCE_DRIVERS, 'All drivers'),
+            (FCM_BROADCAST_AUDIENCE_ALL, 'Customers + drivers'),
+        ],
+    )
+    title = forms.CharField(label='Title', max_length=200)
+    body = forms.CharField(label='Body', widget=forms.Textarea(attrs={'rows': 5}), max_length=2000)
 
 
 @admin.register(ShopStatus)
@@ -338,6 +363,71 @@ class NotificationAdmin(admin.ModelAdmin):
     list_filter = ('notification_type', 'is_read', 'created_at')
     search_fields = ('title', 'message')
     readonly_fields = ('created_at',)
+    change_list_template = 'admin/shop/notification/change_list.html'
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                'broadcast/',
+                self.admin_site.admin_view(self.broadcast_view),
+                name='shop_notification_broadcast',
+            ),
+        ]
+        return custom_urls + urls
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['broadcast_url'] = reverse('admin:shop_notification_broadcast')
+        return super().changelist_view(request, extra_context=extra_context)
+
+    def broadcast_view(self, request):
+        form = AdminBroadcastNotificationForm(request.POST or None)
+
+        if request.method == 'POST' and form.is_valid():
+            audience = form.cleaned_data['audience']
+            title = form.cleaned_data['title']
+            body = form.cleaned_data['body']
+            try:
+                summary = send_admin_topic_broadcast(
+                    audience=audience,
+                    title=title,
+                    body=body,
+                    data={
+                        'title': title,
+                        'body': body,
+                        'notification_type': 'general_notification',
+                    },
+                )
+            except Exception as exc:
+                self.message_user(
+                    request,
+                    f'Broadcast failed: {exc}',
+                    level=messages.ERROR,
+                )
+            else:
+                self.message_user(
+                    request,
+                    (
+                        f"Broadcast sent to {summary['topics_sent']} topic(s): "
+                        f"{', '.join(summary['sent_topics']) or 'none'}"
+                    ),
+                    level=messages.SUCCESS,
+                )
+                return HttpResponseRedirect(reverse('admin:shop_notification_changelist'))
+
+        context = {
+            **self.admin_site.each_context(request),
+            'opts': self.model._meta,
+            'title': 'Send custom push notification',
+            'form': form,
+            'topics_preview': {
+                'customers': get_admin_broadcast_topics(FCM_BROADCAST_AUDIENCE_CUSTOMERS),
+                'drivers': get_admin_broadcast_topics(FCM_BROADCAST_AUDIENCE_DRIVERS),
+                'all': get_admin_broadcast_topics(FCM_BROADCAST_AUDIENCE_ALL),
+            },
+        }
+        return TemplateResponse(request, 'admin/shop/notification/broadcast_form.html', context)
 
 
 @admin.register(Cart)

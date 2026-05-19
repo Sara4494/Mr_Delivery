@@ -394,6 +394,8 @@ FCM_DRIVER_INCOMING_CALL_IOS_SOUND = (
     os.environ.get("FCM_DRIVER_INCOMING_CALL_IOS_SOUND", "incoming_call.mp3").strip()
     or "incoming_call.mp3"
 )
+FCM_TOPIC_ALL_CUSTOMERS = os.environ.get("FCM_TOPIC_ALL_CUSTOMERS", "all_customers").strip() or "all_customers"
+FCM_TOPIC_ALL_DRIVERS = os.environ.get("FCM_TOPIC_ALL_DRIVERS", "all_drivers").strip() or "all_drivers"
 
 FCM_DRIVER_URGENT_CHANNEL_ID = (
     os.environ.get("FCM_DRIVER_URGENT_CHANNEL_ID", "delivery_orders_urgent").strip()
