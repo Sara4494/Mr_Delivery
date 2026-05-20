@@ -1797,24 +1797,7 @@ def send_driver_new_order_notification(driver, order, *, request=None, scope=Non
         scope=scope,
         base_url=base_url,
     )
-    return send_driver_push_only_notification(
-        driver,
-        notification_type='new_delivery_order',
-        title='في طلب جديد جاهز للاستلام',
-        body=f'{store_name} أضافت طلب توصيل جديد ومتاح لك الآن.',
-        image_url=image_url,
-        order_id=order.id,
-        store_id=getattr(shop_owner, 'id', None),
-        data={
-            'order_id': order.id,
-            'store_id': getattr(shop_owner, 'id', None),
-            'store_name': getattr(shop_owner, 'shop_name', None),
-            'screen': 'order_details',
-            'sound': getattr(settings, 'FCM_DRIVER_ORDER_SOUND', 'order_ring'),
-            'tag': f'order_{order.id}',
-        },
-    )
-
+    
 
 def send_driver_store_invite_notification(driver, shop_owner, invitation, *, request=None, scope=None, base_url=None):
     image_url = build_absolute_file_url(
