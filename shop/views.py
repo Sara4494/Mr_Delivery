@@ -4786,6 +4786,7 @@ def driver_register_verify_otp_view(request):
             message=t(request, 'phone_number_is_required'),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
+
     if not otp_code:
         return error_response(
             message=t(request, 'verification_code_is_required'),
@@ -4793,11 +4794,13 @@ def driver_register_verify_otp_view(request):
         )
 
     driver = _find_driver_by_phone(phone_number)
+
     if not driver:
         return error_response(
             message=t(request, 'phone_number_is_not_registered_please_register_first'),
             status_code=status.HTTP_404_NOT_FOUND,
         )
+
     if driver.is_verified:
         return error_response(
             message=t(request, 'account_is_already_verified_use_login'),
@@ -4805,27 +4808,41 @@ def driver_register_verify_otp_view(request):
         )
 
     normalized_phone = normalize_phone(phone_number)
+
     if not otp_verify(normalized_phone, otp_code):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
-    driver.is_verified = True
-    driver.save(update_fields=['is_verified', 'updated_at'])
+    from user.authentication import (
+        rotate_user_session,
+        build_session_refresh_token,
+        apply_session_token_lifetimes,
+    )
 
-   
+    driver.is_verified = True
+    rotate_user_session(driver)
+    driver.save(update_fields=['is_verified', 'active_session_key', 'updated_at'])
+
+    refresh = build_session_refresh_token(
+        user=driver,
+        user_type='driver',
+    )
+
+    access = apply_session_token_lifetimes(refresh)
+
     response_serializer = DriverAppSerializer(driver, context={'request': request})
+
     return success_response(
         data={
             'refresh': str(refresh),
-            'access': str(refresh.access_token),
+            'access': str(access),
             'driver': response_serializer.data,
         },
         message=t(request, 'verification_successful'),
         status_code=status.HTTP_200_OK,
     )
-
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
