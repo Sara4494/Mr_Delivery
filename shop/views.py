@@ -2086,61 +2086,19 @@ def staff_view(request):
 @api_view(['DELETE'])
 @permission_classes([IsShopOwner])
 def staff_delete_view(request, staff_type, staff_id):
-    """
-    DELETE /api/shop/staff/{staff_type}/{staff_id}/delete/
-    """
     staff_type = _normalize_staff_type(staff_type)
     if not staff_type:
         return _staff_type_validation_error(request)
 
-    staff_member, not_found_message = _get_staff_member(
-        request.user,
-        staff_type,
-        staff_id
-    )
+    staff_member, not_found_message = _get_staff_member(request.user, staff_type, staff_id)
 
     if not staff_member:
-        if staff_type == STAFF_TYPE_DRIVER:
-            pending_or_non_active_relation = _get_shop_driver_relation(
-                request.user,
-                staff_id,
-                relation_statuses=['pending', 'blocked', 'rejected'],
-            )
-
-            if pending_or_non_active_relation:
-                pending_or_non_active_relation.delete()
-
-                return success_response(
-                    data={
-                        'driver_id': staff_id,
-                        'shop_id': request.user.id,
-                        'remaining_active_shops_count': ShopDriver.objects.filter(
-                            driver_id=staff_id,
-                            status='active',
-                        ).count(),
-                    },
-                    message=t(request, 'driver_removed_from_shop_successfully'),
-                    status_code=status.HTTP_200_OK
-                )
-
         return error_response(
             message=t(request, not_found_message),
             status_code=status.HTTP_404_NOT_FOUND
         )
 
     if staff_type == STAFF_TYPE_DRIVER:
-        active_orders_count = Order.objects.filter(
-            shop_owner=request.user,
-            driver=staff_member,
-            status__in=['preparing', 'on_way'],
-        ).count()
-
-        if active_orders_count > 0:
-            return error_response(
-                message=f'لا يمكن إزالة السائق من المحل أثناء وجود {active_orders_count} طلبات جارية مسندة إليه.',
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
         shop_driver_relation = ShopDriver.objects.filter(
             shop_owner=request.user,
             driver=staff_member,
@@ -2157,7 +2115,6 @@ def staff_delete_view(request, staff_type, staff_id):
         if remaining_active_shops_count == 0:
             staff_member.availability_enabled = False
             staff_member.save(update_fields=['availability_enabled', 'updated_at'])
-
             _sync_driver_availability_status(staff_member)
 
             try:
