@@ -50,7 +50,7 @@ class AdminDesktopStoreMonitoringConsumer(AsyncWebsocketConsumer):
         await self.send_snapshot(request_id=request_id)
 
     async def send_snapshot(self, request_id=None):
-        snapshot = await database_sync_to_async(get_store_monitoring_snapshot)()
+        snapshot = await database_sync_to_async(get_store_monitoring_snapshot)(scope=self.scope)
         payload = {
             "type": "store_monitor.snapshot",
             "data": snapshot,

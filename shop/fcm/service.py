@@ -1308,10 +1308,14 @@ def send_to_topic(
     notification_priority=None,
     tag=None,
 ):
+    normalized_topic = str(topic or '').strip()
+    if normalized_topic.startswith('/topics/'):
+        normalized_topic = normalized_topic[len('/topics/'):]
+
     _, _, messaging = _firebase_modules()
     app = _firebase_app(user_type=user_type)
     message = messaging.Message(
-        topic=str(topic).strip(),
+        topic=normalized_topic,
         **_build_message_kwargs(
             messaging,
             title=title,
@@ -1327,12 +1331,25 @@ def send_to_topic(
             tag=tag,
         ),
     )
-    response_id = messaging.send(message, app=app)
-    logger.info('fcm.topic.send.success topic=%s response_id=%s', topic, response_id)
+    try:
+        response_id = messaging.send(message, app=app)
+    except Exception as exc:
+        logger.exception(
+            'fcm.topic.send.failed topic=%s user_type=%s',
+            normalized_topic,
+            user_type,
+        )
+        return {
+            'success': False,
+            'error': str(exc),
+            'topic': normalized_topic,
+        }
+
+    logger.info('fcm.topic.send.success topic=%s response_id=%s', normalized_topic, response_id)
     return {
         'success': True,
         'response_id': response_id,
-        'topic': topic,
+        'topic': normalized_topic,
     }
 
 

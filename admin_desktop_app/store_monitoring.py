@@ -5,6 +5,7 @@ from django.db.models import Count, F, Max, Min, OuterRef, Q, Subquery
 from shop.models import ChatMessage, Order, ShopStatus
 from shop.realtime.presence import format_utc_iso8601
 from user.models import ShopOwner
+from user.utils import build_absolute_file_url
 
 
 STORE_MONITOR_GROUP = "admin_desktop_store_monitoring"
@@ -31,7 +32,7 @@ def _latest_store_reply_subquery():
     )
 
 
-def _build_store_snapshot_map():
+def _build_store_snapshot_map(*, request=None, scope=None, base_url=None):
     stores = (
         ShopOwner.objects.select_related("shop_status")
         .all()
@@ -119,6 +120,12 @@ def _build_store_snapshot_map():
             "store_name": store.shop_name,
             "owner_name": store.owner_name,
             "phone": store.phone_number,
+            "image_url": build_absolute_file_url(
+                getattr(store, "profile_image", None),
+                request=request,
+                scope=scope,
+                base_url=base_url,
+            ),
             "is_online": _is_store_online(getattr(status_obj, "status", None)),
             "unanswered_messages": unanswered_messages,
             "unanswered_orders": unanswered_orders,
@@ -129,8 +136,12 @@ def _build_store_snapshot_map():
     return snapshot_map
 
 
-def get_store_monitoring_snapshot(*, store_id=None):
-    snapshot_map = _build_store_snapshot_map()
+def get_store_monitoring_snapshot(*, store_id=None, request=None, scope=None, base_url=None):
+    snapshot_map = _build_store_snapshot_map(
+        request=request,
+        scope=scope,
+        base_url=base_url,
+    )
     if store_id is not None:
         return snapshot_map.get(store_id)
     stores = sorted(

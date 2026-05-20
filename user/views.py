@@ -1547,7 +1547,7 @@ def admin_desktop_store_monitoring_view(request):
             request=request,
         )
     return success_response(
-        data=get_store_monitoring_snapshot(),
+        data=get_store_monitoring_snapshot(request=request),
         message="ØªÙ… Ø¬Ù„Ø¨ Ù…Ø±Ø§Ù‚Ø¨Ø© Ø§Ù„Ù…ØªØ§Ø¬Ø± Ø¨Ù†Ø¬Ø§Ø­",
         request=request,
     )
@@ -1563,7 +1563,7 @@ def admin_desktop_store_monitoring_view(request):
             request=request,
         )
     return success_response(
-        data=get_store_monitoring_snapshot(),
+        data=get_store_monitoring_snapshot(request=request),
         message="Store monitoring snapshot retrieved successfully",
         request=request,
     )

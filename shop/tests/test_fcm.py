@@ -22,6 +22,7 @@ from shop.fcm_service import (
     send_driver_store_invite_notification,
     send_driver_system_notification,
     send_driver_system_notifications,
+    send_to_topic,
     send_push_to_token_record,
     send_push_to_user,
     send_ring_push_fallback,
@@ -1021,6 +1022,148 @@ class FCMServiceTests(TestCase):
             get_admin_broadcast_topics(FCM_BROADCAST_AUDIENCE_ALL),
             ['all_customers', 'all_drivers'],
         )
+
+    @patch('shop.fcm_service._firebase_app', return_value='customer-app')
+    @patch('shop.fcm_service._firebase_modules')
+    def test_send_to_topic_normalizes_topic_name_before_dispatch(self, mock_firebase_modules, _mock_firebase_app):
+        class DummyMessaging:
+            class Notification:
+                def __init__(self, **kwargs):
+                    self.title = kwargs.get('title')
+                    self.body = kwargs.get('body')
+
+            class AndroidNotification:
+                def __init__(self, **kwargs):
+                    self.channel_id = kwargs.get('channel_id')
+                    self.sound = kwargs.get('sound')
+                    self.click_action = kwargs.get('click_action')
+                    self.tag = kwargs.get('tag')
+                    self.priority = kwargs.get('priority')
+
+            class AndroidConfig:
+                def __init__(self, **kwargs):
+                    self.priority = kwargs.get('priority')
+                    self.ttl = kwargs.get('ttl')
+                    self.notification = kwargs.get('notification')
+                    self.data = kwargs.get('data')
+
+            class APNSFCMOptions:
+                def __init__(self, **kwargs):
+                    self.analytics_label = kwargs.get('analytics_label')
+
+            class APNSPayload:
+                def __init__(self, **kwargs):
+                    self.aps = kwargs.get('aps')
+
+            class Aps:
+                def __init__(self, **kwargs):
+                    self.sound = kwargs.get('sound')
+                    self.content_available = kwargs.get('content_available')
+
+            class APNSConfig:
+                def __init__(self, **kwargs):
+                    self.headers = kwargs.get('headers')
+                    self.payload = kwargs.get('payload')
+                    self.fcm_options = kwargs.get('fcm_options')
+
+            class Message:
+                def __init__(self, **kwargs):
+                    self.topic = kwargs.get('topic')
+                    self.notification = kwargs.get('notification')
+                    self.data = kwargs.get('data')
+                    self.android = kwargs.get('android')
+                    self.apns = kwargs.get('apns')
+
+            last_message = None
+            last_app = None
+
+            @staticmethod
+            def send(message, app=None):
+                DummyMessaging.last_message = message
+                DummyMessaging.last_app = app
+                return 'projects/demo/messages/123'
+
+        mock_firebase_modules.return_value = (object(), object(), DummyMessaging)
+
+        result = send_to_topic(
+            '/topics/all_customers',
+            title='Promo',
+            body='Big sale today',
+            data={'type': 'general_notification'},
+            user_type='customer',
+        )
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['topic'], 'all_customers')
+        self.assertEqual(result['response_id'], 'projects/demo/messages/123')
+        self.assertEqual(DummyMessaging.last_message.topic, 'all_customers')
+        self.assertEqual(DummyMessaging.last_message.notification.title, 'Promo')
+        self.assertEqual(DummyMessaging.last_app, 'customer-app')
+
+    @patch('shop.fcm_service._firebase_app', return_value='driver-app')
+    @patch('shop.fcm_service._firebase_modules')
+    def test_send_to_topic_returns_structured_failure_on_firebase_error(self, mock_firebase_modules, _mock_firebase_app):
+        class DummyMessaging:
+            class Notification:
+                def __init__(self, **kwargs):
+                    self.title = kwargs.get('title')
+                    self.body = kwargs.get('body')
+
+            class AndroidNotification:
+                def __init__(self, **kwargs):
+                    self.channel_id = kwargs.get('channel_id')
+                    self.sound = kwargs.get('sound')
+                    self.click_action = kwargs.get('click_action')
+                    self.tag = kwargs.get('tag')
+                    self.priority = kwargs.get('priority')
+
+            class AndroidConfig:
+                def __init__(self, **kwargs):
+                    self.priority = kwargs.get('priority')
+                    self.ttl = kwargs.get('ttl')
+                    self.notification = kwargs.get('notification')
+                    self.data = kwargs.get('data')
+
+            class APNSFCMOptions:
+                def __init__(self, **kwargs):
+                    self.analytics_label = kwargs.get('analytics_label')
+
+            class APNSPayload:
+                def __init__(self, **kwargs):
+                    self.aps = kwargs.get('aps')
+
+            class Aps:
+                def __init__(self, **kwargs):
+                    self.sound = kwargs.get('sound')
+                    self.content_available = kwargs.get('content_available')
+
+            class APNSConfig:
+                def __init__(self, **kwargs):
+                    self.headers = kwargs.get('headers')
+                    self.payload = kwargs.get('payload')
+                    self.fcm_options = kwargs.get('fcm_options')
+
+            class Message:
+                def __init__(self, **kwargs):
+                    self.topic = kwargs.get('topic')
+
+            @staticmethod
+            def send(message, app=None):
+                raise RuntimeError('firebase topic send failed')
+
+        mock_firebase_modules.return_value = (object(), object(), DummyMessaging)
+
+        result = send_to_topic(
+            '/topics/all_drivers',
+            title='Alert',
+            body='Check app',
+            data={'type': 'general_notification'},
+            user_type='driver',
+        )
+
+        self.assertFalse(result['success'])
+        self.assertEqual(result['topic'], 'all_drivers')
+        self.assertIn('firebase topic send failed', result['error'])
 
     @patch('shop.fcm_service.send_to_topic')
     def test_send_admin_topic_broadcast_targets_both_topics_for_all_audience(self, mock_send_to_topic):
