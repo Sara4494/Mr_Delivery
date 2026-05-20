@@ -8,6 +8,7 @@ from rest_framework.decorators import api_view, permission_classes
 from user.utils import error_response, success_response
 
 from .service import (
+    _extract_numeric_id,
     get_available_transfer_drivers,
     get_call_by_public_id,
     get_conversation_by_public_id,
@@ -179,26 +180,29 @@ def driver_chat_orders_view(request, conversation_id):
         request=request,
     )
 
+from shop.models import DriverPresenceConnection, Driver
 
-@api_view(['GET'])
-@permission_classes([IsShopOwnerOrEmployee])
-def driver_chat_available_transfer_drivers_view(request):
-    shop_owner = _resolve_shop_owner(request.user)
-    if not shop_owner:
-        return error_response(message='غير مصرح', status_code=status.HTTP_403_FORBIDDEN, request=request)
 
-    exclude_driver_id = request.query_params.get('exclude_driver_id')
-    drivers = get_available_transfer_drivers(shop_owner, exclude_driver_id=exclude_driver_id)
-    return success_response(
-        data={
-            'drivers': drivers,
-            'count': len(drivers),
-        },
-        message='تم استرجاع السائقين المتاحين للتحويل',
-        status_code=status.HTTP_200_OK,
-        request=request,
+def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
+    exclude_numeric_id = _extract_numeric_id(exclude_driver_id) or 0
+
+    online_driver_ids = list(
+        DriverPresenceConnection.objects.values_list('driver_id', flat=True)
     )
 
+    qs = (
+        Driver.objects
+        .filter(
+            driver_shops__shop_owner=shop_owner,
+            driver_shops__status='active',
+            id__in=online_driver_ids,
+        )
+        .exclude(id=exclude_numeric_id)
+        .distinct()
+        .order_by('name')
+    )
+
+    return [serialize_driver_chat_driver(driver) for driver in qs]
 
 @api_view(['POST'])
 @permission_classes([IsShopOwnerOrEmployee])
