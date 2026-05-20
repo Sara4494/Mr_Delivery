@@ -3581,75 +3581,46 @@ def admin_desktop_support_actions_account_action_view(request, account_type, acc
 
 
 @api_view(["POST"])
-# @permission_classes([IsAuthenticated, IsAdminDesktopUser])
 def admin_desktop_broadcast_notification_view(request):
-    """
-    إرسال إشعار عام (FCM + Database) لجميع العملاء أو جميع المناديب أو الكل.
-    Body: {
-        "target_type": "all" | "customer" | "driver",
-        "title": "عنوان الإشعار",
-        "message": "نص الإشعار",
-        "data": {} // اختياري لبيانات إضافية
-    }
-    """
-    if not _has_admin_desktop_permission(request.user, "notifications"):
-        return error_response(
-            message="ليس لديك صلاحية لإرسال التنبيهات العامة",
-            status_code=status.HTTP_403_FORBIDDEN,
-            request=request,
-        )
 
     target_type = str(request.data.get("target_type") or "all").strip().lower()
     title = str(request.data.get("title") or "").strip()
     message = str(request.data.get("message") or "").strip()
     extra_data = request.data.get("data") or {}
 
-    if not title or not message:
-        return error_response(
-            message="العنوان والرسالة مطلوبان",
-            status_code=status.HTTP_400_BAD_REQUEST,
-            request=request,
-        )
-
-    if target_type not in {"all", "customer", "driver"}:
-        return error_response(
-            message="نوع الجمهور المستهدف غير صحيح (all, customer, driver)",
-            status_code=status.HTTP_400_BAD_REQUEST,
-            request=request,
-        )
-
     from shop.models import Customer, Driver
     from shop.views import _attach_notification_to_user
     from shop.fcm.service import send_driver_system_notification
 
     count = 0
+
     if target_type in {"all", "customer"}:
         for customer in Customer.objects.filter(is_verified=True):
-            _attach_notification_to_user("customer", customer, title=title, message=message, notification_type="broadcast", data=extra_data)
+            _attach_notification_to_user(
+                "customer",
+                customer,
+                title=title,
+                message=message,
+                notification_type="broadcast",
+                data=extra_data
+            )
             count += 1
 
     if target_type in {"all", "driver"}:
         for driver in Driver.objects.filter(is_verified=True):
-            send_driver_system_notification(driver, title=title, body=message, data=extra_data, notification_type="general_notification")
+            send_driver_system_notification(
+                driver,
+                title=title,
+                body=message,
+                data=extra_data,
+                notification_type="general_notification"
+            )
             count += 1
 
-    _log_admin_desktop_activity(
-        request.user,
-        section_key="notifications",
-        section_label="التنبيهات",
-        action_key="broadcast",
-        action_label="إرسال تنبيه عام",
-        action_category="data_operations",
-        target_name=f"الجمهور: {target_type}",
-        details=f"إرسال تنبيه لـ {count} مستخدم: {title}",
-        metadata={"target_type": target_type, "count": count, "title": title},
-    )
-
-    return success_response(
-        data={"sent_count": count},
-        message=f"تم إرسال التنبيه بنجاح لـ {count} مستخدم",
-        request=request,
-    )
+    return Response({
+        "success": True,
+        "sent_count": count
+    })
 
 
 def _serialize_admin_activity_log(request, log_item):
