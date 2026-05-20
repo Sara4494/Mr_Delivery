@@ -432,13 +432,13 @@ def _driver_notification_profile(notification_type):
 
     profiles = {
         'new_delivery_order': {
-            'channel_id': urgent_channel,
-            'sound': order_sound,
-            'ios_sound': order_ios_sound,
-            'high_priority': True,
-            'ttl': '60s',
-            'notification_priority': 'max',
-        },
+        'channel_id': general_channel,
+        'sound': default_sound,
+        'ios_sound': default_sound,
+        'high_priority': False,
+        'ttl': '3600s',
+        'notification_priority': 'default',
+    },
         'store_invite': {
             'channel_id': general_channel,
             'sound': default_sound,
