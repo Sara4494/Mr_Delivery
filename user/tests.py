@@ -1,7 +1,17 @@
-from django.test import SimpleTestCase, TestCase
+import asyncio
+from datetime import timedelta
+
+from channels.db import database_sync_to_async
+from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.testing import WebsocketCommunicator
+from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 from unittest.mock import patch
 
+from mr_delivery.websocket_urls import websocket_urlpatterns
+from shop.middleware import JWTAuthMiddleware
 from user.models import (
     ADMIN_DESKTOP_FULL_ADMIN_ROLE,
     AdminApprovalRequest,
@@ -12,7 +22,7 @@ from user.models import (
     ShopOwner,
     get_admin_desktop_role_permissions,
 )
-from shop.models import AbuseReport, AccountModerationStatus, Customer, Driver, FCMDeviceToken, Notification, Order
+from shop.models import AbuseReport, AccountModerationStatus, ChatMessage, Customer, Driver, FCMDeviceToken, Notification, Order, ShopStatus
 from user.views import (
     _admin_desktop_role_catalog,
     _can_manage_admin_desktop_users,
@@ -805,3 +815,267 @@ class LoginOptionalTrailingSlashTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("access", response.data["data"])
+
+
+class AdminDesktopStoreMonitoringEndpointTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = AdminDesktopUser.objects.create(
+            name="Monitor Admin",
+            phone_number="+201000000061",
+            email="monitor@example.com",
+            password="secret123",
+            role="store_supervisor",
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+        self.shop_one = ShopOwner.objects.create(
+            owner_name="Owner One",
+            shop_name="Store One",
+            shop_number="SM-1001",
+            phone_number="+201000000062",
+            password="secret123",
+        )
+        self.shop_two = ShopOwner.objects.create(
+            owner_name="Owner Two",
+            shop_name="Store Two",
+            shop_number="SM-1002",
+            phone_number="+201000000063",
+            password="secret123",
+        )
+        ShopStatus.objects.create(shop_owner=self.shop_one, status="open")
+        ShopStatus.objects.create(shop_owner=self.shop_two, status="closed")
+
+        self.customer = Customer.objects.create(
+            name="Monitoring Customer",
+            phone_number="+201000000064",
+            email="monitor.customer@example.com",
+        )
+
+        now = timezone.now()
+        self.order_one = Order.objects.create(
+            shop_owner=self.shop_one,
+            customer=self.customer,
+            order_number="MON-1",
+            status="new",
+            items="[]",
+            total_amount=100,
+            delivery_fee=10,
+            address="Address 1",
+        )
+        self.order_two = Order.objects.create(
+            shop_owner=self.shop_one,
+            customer=self.customer,
+            order_number="MON-2",
+            status="confirmed",
+            items="[]",
+            total_amount=120,
+            delivery_fee=12,
+            address="Address 2",
+        )
+        self.order_three = Order.objects.create(
+            shop_owner=self.shop_two,
+            customer=self.customer,
+            order_number="MON-3",
+            status="confirmed",
+            items="[]",
+            total_amount=130,
+            delivery_fee=13,
+            address="Address 3",
+        )
+
+        Order.objects.filter(id=self.order_one.id).update(
+            created_at=now - timedelta(hours=3),
+            updated_at=now - timedelta(minutes=40),
+        )
+        Order.objects.filter(id=self.order_two.id).update(
+            created_at=now - timedelta(hours=2),
+            updated_at=now - timedelta(minutes=5),
+        )
+        Order.objects.filter(id=self.order_three.id).update(
+            created_at=now - timedelta(hours=4),
+            updated_at=now - timedelta(hours=1),
+        )
+
+        msg_1 = ChatMessage.objects.create(
+            order=self.order_one,
+            chat_type="shop_customer",
+            sender_type="customer",
+            sender_customer=self.customer,
+            message_type="text",
+            content="Need help 1",
+        )
+        msg_2 = ChatMessage.objects.create(
+            order=self.order_one,
+            chat_type="shop_customer",
+            sender_type="customer",
+            sender_customer=self.customer,
+            message_type="text",
+            content="Need help 2",
+        )
+        msg_3 = ChatMessage.objects.create(
+            order=self.order_two,
+            chat_type="shop_customer",
+            sender_type="customer",
+            sender_customer=self.customer,
+            message_type="text",
+            content="Need help 3",
+        )
+        msg_4 = ChatMessage.objects.create(
+            order=self.order_two,
+            chat_type="shop_customer",
+            sender_type="shop_owner",
+            sender_shop_owner=self.shop_one,
+            message_type="text",
+            content="Reply",
+        )
+        msg_5 = ChatMessage.objects.create(
+            order=self.order_two,
+            chat_type="shop_customer",
+            sender_type="customer",
+            sender_customer=self.customer,
+            message_type="text",
+            content="Need help again",
+        )
+        msg_6 = ChatMessage.objects.create(
+            order=self.order_three,
+            chat_type="shop_customer",
+            sender_type="customer",
+            sender_customer=self.customer,
+            message_type="text",
+            content="Resolved soon?",
+        )
+        msg_7 = ChatMessage.objects.create(
+            order=self.order_three,
+            chat_type="shop_customer",
+            sender_type="shop_owner",
+            sender_shop_owner=self.shop_two,
+            message_type="text",
+            content="Resolved",
+        )
+
+        ChatMessage.objects.filter(id=msg_1.id).update(created_at=now - timedelta(hours=2, minutes=30))
+        ChatMessage.objects.filter(id=msg_2.id).update(created_at=now - timedelta(hours=2))
+        ChatMessage.objects.filter(id=msg_3.id).update(created_at=now - timedelta(hours=1, minutes=30))
+        ChatMessage.objects.filter(id=msg_4.id).update(created_at=now - timedelta(hours=1, minutes=20))
+        ChatMessage.objects.filter(id=msg_5.id).update(created_at=now - timedelta(minutes=50))
+        ChatMessage.objects.filter(id=msg_6.id).update(created_at=now - timedelta(hours=3, minutes=30))
+        ChatMessage.objects.filter(id=msg_7.id).update(created_at=now - timedelta(hours=3, minutes=20))
+
+        ShopStatus.objects.filter(shop_owner=self.shop_one).update(updated_at=now - timedelta(minutes=10))
+        ShopStatus.objects.filter(shop_owner=self.shop_two).update(updated_at=now - timedelta(hours=2))
+
+    def test_store_monitoring_endpoint_returns_expected_snapshot(self):
+        response = self.client.get("/api/admin-desktop/store-monitoring/")
+
+        self.assertEqual(response.status_code, 200)
+        stores = response.data["data"]["stores"]
+        self.assertEqual(len(stores), 2)
+
+        first_store = stores[0]
+        self.assertEqual(first_store["store_id"], self.shop_one.id)
+        self.assertEqual(first_store["store_name"], "Store One")
+        self.assertEqual(first_store["owner_name"], "Owner One")
+        self.assertEqual(first_store["phone"], self.shop_one.phone_number)
+        self.assertTrue(first_store["is_online"])
+        self.assertEqual(first_store["unanswered_messages"], 3)
+        self.assertEqual(first_store["unanswered_orders"], 1)
+        self.assertEqual(first_store["total_pending"], 4)
+        self.assertIsNotNone(first_store["oldest_pending_at"])
+        self.assertIsNotNone(first_store["last_activity_at"])
+
+        second_store = next(item for item in stores if item["store_id"] == self.shop_two.id)
+        self.assertFalse(second_store["is_online"])
+        self.assertEqual(second_store["unanswered_messages"], 0)
+        self.assertEqual(second_store["unanswered_orders"], 0)
+        self.assertEqual(second_store["total_pending"], 0)
+        self.assertIsNone(second_store["oldest_pending_at"])
+
+
+@override_settings(
+    CHANNEL_LAYERS={"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}},
+    ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"],
+)
+class AdminDesktopStoreMonitoringWebSocketTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        super().setUp()
+        self.application = ProtocolTypeRouter(
+            {
+                "websocket": JWTAuthMiddleware(URLRouter(websocket_urlpatterns)),
+            }
+        )
+        self.admin_user = AdminDesktopUser.objects.create(
+            name="WS Monitor Admin",
+            phone_number="+201000000071",
+            password="secret123",
+            role="store_supervisor",
+        )
+        self.shop = ShopOwner.objects.create(
+            owner_name="WS Owner",
+            shop_name="WS Store",
+            shop_number="SM-WS-1",
+            phone_number="+201000000072",
+            password="secret123",
+        )
+
+    def _admin_token(self):
+        refresh = RefreshToken()
+        refresh["admin_desktop_user_id"] = self.admin_user.id
+        refresh["permissions"] = self.admin_user.get_resolved_permissions()
+        refresh["user_type"] = "admin_desktop"
+        return str(refresh.access_token)
+
+    def test_store_monitor_sync_returns_snapshot(self):
+        async def scenario():
+            communicator = WebsocketCommunicator(
+                self.application,
+                f"/ws/admin-desktop/store-monitoring/?token={self._admin_token()}&lang=ar",
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await communicator.send_json_to(
+                {
+                    "action": "store_monitor.sync",
+                    "request_id": "req-sync-1",
+                }
+            )
+            payload = await communicator.receive_json_from()
+            self.assertEqual(payload["type"], "store_monitor.snapshot")
+            self.assertEqual(payload["request_id"], "req-sync-1")
+            self.assertIn("stores", payload["data"])
+            await communicator.disconnect()
+
+        asyncio.run(scenario())
+
+    def test_store_update_event_is_broadcast_when_status_changes(self):
+        def create_status():
+            ShopStatus.objects.create(shop_owner=self.shop, status="open")
+
+        async def scenario():
+            communicator = WebsocketCommunicator(
+                self.application,
+                f"/ws/admin-desktop/store-monitoring/?token={self._admin_token()}&lang=ar",
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await communicator.send_json_to(
+                {
+                    "action": "store_monitor.sync",
+                    "request_id": "req-sync-2",
+                }
+            )
+            initial_snapshot = await communicator.receive_json_from()
+            self.assertEqual(initial_snapshot["type"], "store_monitor.snapshot")
+
+            await database_sync_to_async(create_status)()
+            update_event = await communicator.receive_json_from()
+            self.assertEqual(update_event["type"], "store_monitor.store_updated")
+            self.assertEqual(update_event["data"]["store"]["store_id"], self.shop.id)
+            self.assertTrue(update_event["data"]["store"]["is_online"])
+            await communicator.disconnect()
+
+        asyncio.run(scenario())

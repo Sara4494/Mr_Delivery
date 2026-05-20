@@ -6,3 +6,5 @@ class AdminDesktopAppConfig(AppConfig):
     name = 'admin_desktop_app'
     verbose_name = 'Admin Desktop App'
 
+    def ready(self):
+        from . import signals  # noqa: F401

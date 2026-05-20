@@ -21,6 +21,7 @@ urlpatterns = [
     path('admin-desktop/approvals/requests/<int:approval_request_id>/approve/', views.admin_desktop_approval_request_approve_view, name='admin_desktop_approval_request_approve'),
     path('admin-desktop/approvals/requests/<int:approval_request_id>/reject/', views.admin_desktop_approval_request_reject_view, name='admin_desktop_approval_request_reject'),
     path('admin-desktop/stores/categories/', views.admin_desktop_store_categories_view, name='admin_desktop_store_categories'),
+    path('admin-desktop/store-monitoring/', views.admin_desktop_store_monitoring_view, name='admin_desktop_store_monitoring'),
     path('admin-desktop/stores/', views.admin_desktop_stores_view, name='admin_desktop_stores'),
     path('admin-desktop/stores/<int:shop_id>/', views.admin_desktop_store_detail_view, name='admin_desktop_store_detail'),
     path('admin-desktop/stores/<int:shop_id>/suspend/', views.admin_desktop_store_suspend_view, name='admin_desktop_store_suspend'),

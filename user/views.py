@@ -40,6 +40,7 @@ from .approval_requests import (
     serialize_admin_approval_request_detail,
     review_approval_request,
 )
+from admin_desktop_app.store_monitoring import get_store_monitoring_snapshot
 from .utils import success_response, error_response, t, localize_message, resolve_customer_profile_image_url
 from .otp_service import (
     send_otp as otp_send,
@@ -1532,6 +1533,38 @@ def admin_desktop_stores_view(request):
         data=_serialize_admin_store_detail(request, shop),
         message="تم إضافة المتجر بنجاح",
         status_code=status.HTTP_201_CREATED,
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_store_monitoring_view(request):
+    if not _has_admin_desktop_permission(request.user, "store_management"):
+        return error_response(
+            message="Ù„ÙŠØ³Øª Ù„Ø¯ÙŠÙƒ ØµÙ„Ø§Ø­ÙŠØ© Ù„Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…ØªØ§Ø¬Ø±",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+    return success_response(
+        data=get_store_monitoring_snapshot(),
+        message="ØªÙ… Ø¬Ù„Ø¨ Ù…Ø±Ø§Ù‚Ø¨Ø© Ø§Ù„Ù…ØªØ§Ø¬Ø± Ø¨Ù†Ø¬Ø§Ø­",
+        request=request,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminDesktopUser])
+def admin_desktop_store_monitoring_view(request):
+    if not _has_admin_desktop_permission(request.user, "store_management"):
+        return error_response(
+            message="You do not have permission to manage stores",
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+    return success_response(
+        data=get_store_monitoring_snapshot(),
+        message="Store monitoring snapshot retrieved successfully",
         request=request,
     )
 
