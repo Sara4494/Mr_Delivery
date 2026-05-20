@@ -1653,6 +1653,29 @@ def send_driver_push_only_notification(
         create_record=False,
     )
 
+def send_customer_notification_from_record(customer, notification):
+    if not customer or not notification:
+        return
+
+    payload = {
+        "type": notification.notification_type,
+        "screen": "notifications",
+        "notification_id": str(notification.id),
+    }
+
+    return send_to_user(
+        customer,
+        title=notification.title,
+        body=notification.message,
+        data=payload,
+        high_priority=False,
+        channel_id='delivery_general',
+        sound='default',
+        ios_sound='default',
+        click_action='OPEN_NOTIFICATIONS',
+        notification_priority='default',
+        tag=f"{notification.notification_type}_{notification.id}",
+    )
 
 def send_driver_system_notification(
     driver,

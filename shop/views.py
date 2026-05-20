@@ -5620,6 +5620,11 @@ def _attach_notification_to_user(
         from .fcm.service import send_driver_notification_from_record
 
         transaction.on_commit(lambda: send_driver_notification_from_record(user, notification))
+    if user_type == 'customer':
+        from .fcm.service import send_customer_notification_from_record
+        transaction.on_commit(
+            lambda: send_customer_notification_from_record(user, notification)
+        )
 
     return notification
 

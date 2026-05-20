@@ -2341,6 +2341,7 @@ def _create_support_action_notification(account_type, account, title, message, d
             reference_id=(data or {}).get("reference_id"),
             idempotency_key=(data or {}).get("idempotency_key"),
         )
+    
 
     return _attach_notification_to_user(
         account_type,
