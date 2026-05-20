@@ -126,7 +126,32 @@ def driver_chat_conversations_view(request):
         request=request,
     )
 
+@api_view(['GET'])
+@permission_classes([IsShopOwnerOrEmployee])
+def driver_chat_available_transfer_drivers_view(request):
+    shop_owner = _resolve_shop_owner(request.user)
+    if not shop_owner:
+        return error_response(
+            message='غير مصرح',
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request
+        )
 
+    exclude_driver_id = request.query_params.get('exclude_driver_id')
+    drivers = get_available_transfer_drivers(
+        shop_owner,
+        exclude_driver_id=exclude_driver_id
+    )
+
+    return success_response(
+        data={
+            'drivers': drivers,
+            'count': len(drivers),
+        },
+        message='تم استرجاع السائقين المتاحين للتحويل',
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
 @api_view(['GET'])
 @permission_classes([IsShopOwnerOrEmployee])
 def driver_chat_messages_view(request, conversation_id):
