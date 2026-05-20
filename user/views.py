@@ -3578,15 +3578,23 @@ def admin_desktop_support_actions_account_action_view(request, account_type, acc
         message=f"تم تفعيل حساب {account_name} بنجاح",
         request=request,
     )
-
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
 
 @api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def admin_desktop_broadcast_notification_view(request):
-
     target_type = str(request.data.get("target_type") or "all").strip().lower()
     title = str(request.data.get("title") or "").strip()
     message = str(request.data.get("message") or "").strip()
     extra_data = request.data.get("data") or {}
+
+    if not title or not message:
+        return Response({
+            "success": False,
+            "message": "العنوان والرسالة مطلوبان"
+        }, status=status.HTTP_400_BAD_REQUEST)
 
     from shop.models import Customer, Driver
     from shop.views import _attach_notification_to_user
@@ -3619,7 +3627,8 @@ def admin_desktop_broadcast_notification_view(request):
 
     return Response({
         "success": True,
-        "sent_count": count
+        "sent_count": count,
+        "message": f"تم إرسال التنبيه بنجاح لـ {count} مستخدم"
     })
 
 
