@@ -14,8 +14,9 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from django.utils.crypto import get_random_string
@@ -41,6 +42,13 @@ from .approval_requests import (
     review_approval_request,
 )
 from admin_desktop_app.store_monitoring import get_store_monitoring_snapshot
+from .authentication import (
+    apply_session_token_lifetimes,
+    build_session_refresh_token,
+    notify_session_revoked,
+    rotate_user_session,
+    validate_user_session_token,
+)
 from .utils import success_response, error_response, t, localize_message, resolve_customer_profile_image_url
 from .otp_service import (
     send_otp as otp_send,
@@ -76,6 +84,10 @@ ARABIC_WEEKDAY_NAMES = {
 }
 
 logger = logging.getLogger(__name__)
+
+
+def _notify_session_revoked(user, user_type):
+    notify_session_revoked(user, user_type)
 
 
 SUSPENDED_ACCOUNT_ERROR_CODES = {
@@ -155,6 +167,77 @@ class ShopOwnerTokenObtainPairView(TokenObtainPairView):
         )
 
 
+class ProjectTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        refresh = self.token_class(attrs["refresh"])
+        user_type = str(refresh.get("user_type") or "").strip()
+
+        user = None
+        if user_type == "admin_desktop":
+            admin_desktop_user_id = refresh.get("admin_desktop_user_id")
+            if not admin_desktop_user_id:
+                raise InvalidToken("Admin desktop refresh token missing admin_desktop_user_id")
+            try:
+                user = AdminDesktopUser.objects.get(id=admin_desktop_user_id)
+            except AdminDesktopUser.DoesNotExist as exc:
+                raise InvalidToken("Admin desktop user not found") from exc
+        elif user_type == "shop_owner":
+            shop_owner_id = refresh.get("shop_owner_id") or refresh.get("user_id")
+            if not shop_owner_id:
+                raise InvalidToken("Shop owner refresh token missing shop_owner_id")
+            try:
+                user = ShopOwner.objects.get(id=shop_owner_id)
+            except ShopOwner.DoesNotExist as exc:
+                raise InvalidToken("Shop owner not found") from exc
+        elif user_type == "customer":
+            from shop.models import Customer
+
+            customer_id = refresh.get("customer_id")
+            if not customer_id:
+                raise InvalidToken("Customer refresh token missing customer_id")
+            try:
+                user = Customer.objects.get(id=customer_id)
+            except Customer.DoesNotExist as exc:
+                raise InvalidToken("Customer not found") from exc
+        elif user_type == "employee":
+            from shop.models import Employee
+
+            employee_id = refresh.get("employee_id")
+            if not employee_id:
+                raise InvalidToken("Employee refresh token missing employee_id")
+            try:
+                user = Employee.objects.get(id=employee_id)
+            except Employee.DoesNotExist as exc:
+                raise InvalidToken("Employee not found") from exc
+        elif user_type == "driver":
+            from shop.models import Driver
+
+            driver_id = refresh.get("driver_id")
+            if not driver_id:
+                raise InvalidToken("Driver refresh token missing driver_id")
+            try:
+                user = Driver.objects.get(id=driver_id)
+            except Driver.DoesNotExist as exc:
+                raise InvalidToken("Driver not found") from exc
+
+        if user is not None:
+            validate_user_session_token(refresh, user)
+
+        data = super().validate(attrs)
+
+        target_refresh = refresh
+        if "refresh" in data:
+            target_refresh = self.token_class(data["refresh"])
+            data["refresh"] = str(target_refresh)
+
+        access_token = apply_session_token_lifetimes(target_refresh)
+        data["access"] = str(access_token)
+        if "refresh" in data:
+            data["refresh"] = str(target_refresh)
+
+        return data
+
+
 class ShopOwnerTokenRefreshView(TokenRefreshView):
     """
     تحديث JWT Token
@@ -163,6 +246,7 @@ class ShopOwnerTokenRefreshView(TokenRefreshView):
         "refresh": "refresh_token"
     }
     """
+    serializer_class = ProjectTokenRefreshSerializer
     
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -220,17 +304,12 @@ def _serialize_admin_desktop_user(request, user):
 
 
 def _build_admin_desktop_auth_payload(request, user):
-    permissions = user.get_resolved_permissions()
-    refresh = RefreshToken()
-    refresh["admin_desktop_user_id"] = user.id
-    refresh["phone_number"] = user.phone_number
-    refresh["role"] = user.role
-    refresh["permissions"] = permissions
-    refresh["user_type"] = "admin_desktop"
+    refresh = build_session_refresh_token(user=user, user_type="admin_desktop")
+    access_token = apply_session_token_lifetimes(refresh)
 
     return {
         "refresh": str(refresh),
-        "access": str(refresh.access_token),
+        "access": str(access_token),
         "user": _serialize_admin_desktop_user(request, user),
         "role": "admin_desktop",
     }
@@ -274,14 +353,11 @@ def _normalize_admin_desktop_permissions(role, permissions):
 
 
 def _build_customer_auth_payload(customer, request=None):
-    refresh = RefreshToken()
-    refresh['customer_id'] = customer.id
-    refresh['phone_number'] = customer.phone_number
-    refresh['email'] = customer.email
-    refresh['user_type'] = 'customer'
+    refresh = build_session_refresh_token(user=customer, user_type='customer')
+    access_token = apply_session_token_lifetimes(refresh)
     return {
         'refresh': str(refresh),
-        'access': str(refresh.access_token),
+        'access': str(access_token),
         'user': {
             'id': customer.id,
             'name': customer.name,
@@ -292,6 +368,20 @@ def _build_customer_auth_payload(customer, request=None):
         },
         'role': 'customer',
     }
+
+
+def _start_user_session(user, user_type, *, update_fields=None, extra_claims=None):
+    rotate_user_session(user)
+    save_fields = list(dict.fromkeys((update_fields or []) + ['active_session_key']))
+    user.save(update_fields=save_fields)
+    _notify_session_revoked(user, user_type)
+    refresh = build_session_refresh_token(
+        user=user,
+        user_type=user_type,
+        extra_claims=extra_claims or {},
+    )
+    access_token = apply_session_token_lifetimes(refresh)
+    return refresh, access_token
 
 
 def _normalize_google_token(raw_token):
@@ -662,7 +752,7 @@ def admin_desktop_login_view(request):
 
     user.last_login_at = timezone.now()
     user.sync_role_permissions()
-    user.save(update_fields=["last_login_at", "permissions"])
+    _start_user_session(user, "admin_desktop", update_fields=["last_login_at", "permissions"])
 
     return success_response(
         data=_build_admin_desktop_auth_payload(request, user),
@@ -4211,17 +4301,12 @@ def unified_login_view(request):
                 )
             
             # إنشاء التوكن
-            refresh = RefreshToken.for_user(shop_owner)
-            refresh['shop_owner_id'] = shop_owner.id
-            refresh['shop_number'] = shop_owner.shop_number
-            refresh['shop_category_id'] = shop_owner.shop_category_id
-            refresh['shop_category_name'] = shop_owner.shop_category.name if shop_owner.shop_category else None
-            refresh['user_type'] = 'shop_owner'
+            refresh, access_token = _start_user_session(shop_owner, 'shop_owner')
             
             return success_response(
                 data={
                     'refresh': str(refresh),
-                    'access': str(refresh.access_token),
+                    'access': str(access_token),
                     'user': {
                         'id': shop_owner.id,
                         'shop_number': shop_owner.shop_number,
@@ -4271,16 +4356,12 @@ def unified_login_view(request):
                 )
              
             # إنشاء التوكن
-            refresh = RefreshToken()
-            refresh['customer_id'] = customer.id
-            refresh['phone_number'] = customer.phone_number
-            refresh['email'] = customer.email
-            refresh['user_type'] = 'customer'
+            refresh, access_token = _start_user_session(customer, 'customer')
             token_record = _register_customer_fcm(customer=customer, request=request)
 
             payload = {
                 'refresh': str(refresh),
-                'access': str(refresh.access_token),
+                'access': str(access_token),
                 'user': {
                     'id': customer.id,
                     'name': customer.name,
@@ -4330,17 +4411,12 @@ def unified_login_view(request):
                 )
             
             # إنشاء التوكن
-            refresh = RefreshToken()
-            refresh['employee_id'] = employee.id
-            refresh['phone_number'] = employee.phone_number
-            refresh['user_type'] = 'employee'
-            refresh['shop_owner_id'] = employee.shop_owner_id
-            refresh['role'] = employee.role
+            refresh, access_token = _start_user_session(employee, 'employee')
             
             return success_response(
                 data={
                     'refresh': str(refresh),
-                    'access': str(refresh.access_token),
+                    'access': str(access_token),
                     'user': {
                         'id': employee.id,
                         'name': employee.name,
@@ -4394,20 +4470,20 @@ def unified_login_view(request):
             )
 
         # إنشاء التوكن
-        refresh = RefreshToken()
         active_shop_ids = list(
             driver.shops.filter(shop_drivers__status='active').values_list('id', flat=True)
         )
         primary_shop_id = active_shop_ids[0] if active_shop_ids else None
-        refresh['driver_id'] = driver.id
-        refresh['phone_number'] = driver.phone_number
-        refresh['user_type'] = 'driver'
-        refresh['shop_owner_id'] = primary_shop_id
+        refresh, access_token = _start_user_session(
+            driver,
+            'driver',
+            extra_claims={'shop_owner_id': primary_shop_id},
+        )
         
         return success_response(
             data={
                 'refresh': str(refresh),
-                'access': str(refresh.access_token),
+                'access': str(access_token),
                 'user': {
                     'id': driver.id,
                     'name': driver.name,
@@ -4518,6 +4594,7 @@ def google_customer_auth_view(request):
             update_fields.append('updated_at')
             customer.save(update_fields=update_fields)
 
+        _start_user_session(customer, 'customer')
         token_record = _register_google_customer_fcm(customer=customer, request=request)
         payload = _build_customer_auth_payload(customer, request=request)
         if token_record:
@@ -4584,6 +4661,7 @@ def google_customer_auth_view(request):
             is_verified=True,
         )
 
+    _start_user_session(customer, 'customer')
     token_record = _register_google_customer_fcm(customer=customer, request=request)
     payload = _build_customer_auth_payload(customer, request=request)
     payload['registration_completed'] = True
@@ -4989,18 +5067,14 @@ def verify_otp_login_view(request):
         customer.is_verified = True
         customer.save(update_fields=['is_verified'])
 
-    refresh = RefreshToken()
-    refresh['customer_id'] = customer.id
-    refresh['phone_number'] = customer.phone_number
-    refresh['email'] = customer.email
-    refresh['user_type'] = 'customer'
+    refresh, access_token = _start_user_session(customer, 'customer')
     token_record = _register_customer_fcm(customer=customer, request=request)
 
     success_message = t(request, 'verification_successful') if purpose == 'register' else t(request, 'login_successful')
 
     payload = {
         'refresh': str(refresh),
-        'access': str(refresh.access_token),
+        'access': str(access_token),
         'user': {
             'id': customer.id,
             'name': customer.name,

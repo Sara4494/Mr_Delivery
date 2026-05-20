@@ -6,6 +6,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
+from user.authentication import get_socket_session_group_name
 from user.utils import resolve_base_url
 
 from ..models import Driver
@@ -108,6 +109,21 @@ class BaseDriverChatConsumer(AsyncWebsocketConsumer):
 
     async def driver_chat_message(self, event):
         await self.send_payload(event['payload'])
+
+    async def auth_session_revoked(self, event):
+        current_session_key = str((self.scope or {}).get('auth_session_key') or '').strip()
+        active_session_key = str(event.get('session_key') or '').strip()
+        if current_session_key and active_session_key and current_session_key == active_session_key:
+            return
+        await self.send_payload({
+            'type': 'auth.session_revoked',
+            'success': False,
+            'data': {
+                'message': 'Session ended because this account signed in on another device.',
+            },
+            'sent_at': format_utc_iso8601(timezone.now()),
+        })
+        await self.close(code=4401)
 
     async def receive(self, text_data):
         if not await ensure_socket_account_active(self, refresh=True):
@@ -321,7 +337,9 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
 
         self.shop_owner = owner
         self.room_group_name = shop_driver_chats_group(self.shop_owner_id)
+        self.session_group_name = get_socket_session_group_name(user_type, user.id)
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.channel_layer.group_add(self.session_group_name, self.channel_name)
         await self.accept()
         await self.send_payload({
             'type': 'driver_chat.connection',
@@ -334,6 +352,8 @@ class DriverChatsShopConsumer(BaseDriverChatConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'session_group_name'):
+            await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
     async def send_snapshot(self):
         snapshot = await self._get_snapshot()
@@ -534,8 +554,10 @@ class DriverChatsDriverConsumer(BaseDriverChatConsumer):
 
         self.driver = user
         self.room_group_name = driver_driver_chats_group(self.driver_id)
+        self.session_group_name = get_socket_session_group_name(user_type, user.id)
         self._presence_timeout_task = None
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.channel_layer.group_add(self.session_group_name, self.channel_name)
         await self.accept()
         presence_state = await self._mark_driver_connected()
         self._presence_timeout_task = asyncio.create_task(self._watch_presence_timeout())
@@ -552,6 +574,8 @@ class DriverChatsDriverConsumer(BaseDriverChatConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'session_group_name'):
+            await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
         self._cancel_presence_timeout_task()
         presence_state = await self._mark_driver_disconnected()
         if presence_state and presence_state.get('changed'):

@@ -34,6 +34,7 @@ from shop.fcm_views import (
     fcm_register_device_view,
     fcm_unregister_device_view,
 )
+from user.authentication import build_session_refresh_token, rotate_user_session
 from shop.models import (
     AccountModerationStatus,
     Customer,
@@ -82,19 +83,12 @@ class FCMDeviceApiTests(TestCase):
         return view(request)
 
     def _access_token_for_user(self, user, user_type):
-        refresh = RefreshToken()
-        if user_type == 'customer':
-            refresh['customer_id'] = user.id
-        elif user_type == 'driver':
-            refresh['driver_id'] = user.id
-        elif user_type == 'employee':
-            refresh['employee_id'] = user.id
-            refresh['shop_owner_id'] = user.shop_owner_id
-        elif user_type == 'shop_owner':
-            refresh['shop_owner_id'] = user.id
-        else:
+        if user_type not in {'customer', 'driver', 'employee', 'shop_owner'}:
             raise ValueError(f'Unsupported user_type: {user_type}')
-        refresh['user_type'] = user_type
+        if not getattr(user, 'active_session_key', ''):
+            rotate_user_session(user)
+            user.save(update_fields=['active_session_key'])
+        refresh = build_session_refresh_token(user=user, user_type=user_type)
         return str(refresh.access_token)
 
     def test_register_endpoint_creates_device_token_for_authenticated_user(self):

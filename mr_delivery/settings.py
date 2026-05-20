@@ -478,3 +478,9 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
 }
+SESSION_ACCESS_TOKEN_LIFETIME = timedelta(
+    days=_env_int('SESSION_ACCESS_TOKEN_LIFETIME_DAYS', 3650)
+)
+SESSION_REFRESH_TOKEN_LIFETIME = timedelta(
+    days=_env_int('SESSION_REFRESH_TOKEN_LIFETIME_DAYS', 3650)
+)

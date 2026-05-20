@@ -36,6 +36,7 @@ from shop.views import (
     driver_order_accept_view,
     order_detail_view,
 )
+from user.authentication import build_session_refresh_token, rotate_user_session
 from user.utils import localize_message
 from user.models import ShopCategory, ShopOwner
 
@@ -83,27 +84,26 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
     def _customer_access_token(self, customer=None):
         customer = customer or self.customer
-        refresh = RefreshToken()
-        refresh['customer_id'] = customer.id
-        refresh['phone_number'] = customer.phone_number
-        refresh['user_type'] = 'customer'
+        if not customer.active_session_key:
+            rotate_user_session(customer)
+            customer.save(update_fields=['active_session_key'])
+        refresh = build_session_refresh_token(user=customer, user_type='customer')
         return str(refresh.access_token)
 
     def _shop_access_token(self, shop_owner=None):
         shop_owner = shop_owner or self.shop
-        refresh = RefreshToken()
-        refresh['shop_owner_id'] = shop_owner.id
-        refresh['user_id'] = shop_owner.id
-        refresh['shop_number'] = shop_owner.shop_number
-        refresh['user_type'] = 'shop_owner'
+        if not shop_owner.active_session_key:
+            rotate_user_session(shop_owner)
+            shop_owner.save(update_fields=['active_session_key'])
+        refresh = build_session_refresh_token(user=shop_owner, user_type='shop_owner')
         return str(refresh.access_token)
 
     def _driver_access_token(self, driver=None):
         driver = driver or self.driver
-        refresh = RefreshToken()
-        refresh['driver_id'] = driver.id
-        refresh['phone_number'] = driver.phone_number
-        refresh['user_type'] = 'driver'
+        if not driver.active_session_key:
+            rotate_user_session(driver)
+            driver.save(update_fields=['active_session_key'])
+        refresh = build_session_refresh_token(user=driver, user_type='driver')
         return str(refresh.access_token)
 
     def _next_order_number(self):

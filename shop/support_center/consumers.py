@@ -5,6 +5,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
+from user.authentication import get_socket_session_group_name
 from user.utils import resolve_base_url
 
 from ..models import ShopSupportTicket
@@ -75,6 +76,22 @@ class BaseSupportCenterConsumer(AsyncWebsocketConsumer):
 
     async def support_center_event(self, event):
         await self.send_payload(event['payload'])
+
+    async def auth_session_revoked(self, event):
+        current_session_key = str((self.scope or {}).get('auth_session_key') or '').strip()
+        active_session_key = str(event.get('session_key') or '').strip()
+        if current_session_key and active_session_key and current_session_key == active_session_key:
+            return
+        await self.send_payload(
+            {
+                'type': 'auth.session_revoked',
+                'data': {
+                    'message': 'Session ended because this account signed in on another device.',
+                },
+                'sent_at': format_utc_iso8601(timezone.now()),
+            }
+        )
+        await self.close(code=4401)
 
     async def receive(self, text_data):
         if not await ensure_socket_account_active(self, refresh=True):
@@ -301,8 +318,11 @@ class ShopSupportCenterConsumer(BaseSupportCenterConsumer):
         self.user = user
         self.actor_type = user_type
         self.overview_group = support_center_shop_group(self.shop_owner_id)
+        self.session_group = get_socket_session_group_name(user_type, user.id)
         self.joined_groups.add(self.overview_group)
+        self.joined_groups.add(self.session_group)
         await self.channel_layer.group_add(self.overview_group, self.channel_name)
+        await self.channel_layer.group_add(self.session_group, self.channel_name)
         await self.accept()
         await self.send_payload(
             {
@@ -401,8 +421,11 @@ class AdminSupportCenterConsumer(BaseSupportCenterConsumer):
         self.user = user
         self.actor_type = 'admin_desktop'
         self.overview_group = support_center_admin_group()
+        self.session_group = get_socket_session_group_name(user_type, user.id)
         self.joined_groups.add(self.overview_group)
+        self.joined_groups.add(self.session_group)
         await self.channel_layer.group_add(self.overview_group, self.channel_name)
+        await self.channel_layer.group_add(self.session_group, self.channel_name)
         await self.accept()
         await self.send_payload(
             {
@@ -434,6 +457,7 @@ class AdminSupportCenterConsumer(BaseSupportCenterConsumer):
                 'sent_at': format_utc_iso8601(timezone.now()),
             }
         )
+
 
     async def handle_support_ticket_update_status(self, data, request_id=None):
         ticket = await self._require_ticket(data.get('ticket_id'), request_id=request_id)

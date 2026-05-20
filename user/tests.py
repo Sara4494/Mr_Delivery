@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from mr_delivery.websocket_urls import websocket_urlpatterns
 from shop.middleware import JWTAuthMiddleware
+from user.authentication import notify_session_revoked, rotate_user_session
 from user.models import (
     ADMIN_DESKTOP_FULL_ADMIN_ROLE,
     AdminApprovalRequest,
@@ -816,6 +817,66 @@ class LoginOptionalTrailingSlashTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("access", response.data["data"])
 
+    def test_admin_desktop_old_access_token_is_rejected_after_second_login(self):
+        first_login = self.client.post(
+            "/api/admin-desktop/auth/login",
+            {
+                "phone_number": self.admin_user.phone_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+        self.assertEqual(first_login.status_code, 200)
+        first_access = first_login.data["data"]["access"]
+
+        second_login = self.client.post(
+            "/api/admin-desktop/auth/login",
+            {
+                "phone_number": self.admin_user.phone_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+        self.assertEqual(second_login.status_code, 200)
+
+        old_session_client = APIClient()
+        old_session_client.credentials(HTTP_AUTHORIZATION=f"Bearer {first_access}")
+        me_response = old_session_client.get("/api/admin-desktop/auth/me/")
+
+        self.assertEqual(me_response.status_code, 401)
+
+    def test_admin_desktop_old_refresh_token_is_rejected_after_second_login(self):
+        first_login = self.client.post(
+            "/api/admin-desktop/auth/login",
+            {
+                "phone_number": self.admin_user.phone_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+        self.assertEqual(first_login.status_code, 200)
+        first_refresh = first_login.data["data"]["refresh"]
+
+        second_login = self.client.post(
+            "/api/admin-desktop/auth/login",
+            {
+                "phone_number": self.admin_user.phone_number,
+                "password": "secret123",
+            },
+            format="json",
+        )
+        self.assertEqual(second_login.status_code, 200)
+
+        refresh_response = self.client.post(
+            "/api/admin-desktop/auth/token/refresh/",
+            {
+                "refresh": first_refresh,
+            },
+            format="json",
+        )
+
+        self.assertEqual(refresh_response.status_code, 400)
+
 
 class AdminDesktopStoreMonitoringEndpointTests(TestCase):
     def setUp(self):
@@ -1021,10 +1082,14 @@ class AdminDesktopStoreMonitoringWebSocketTests(TransactionTestCase):
         )
 
     def _admin_token(self):
+        if not self.admin_user.active_session_key:
+            rotate_user_session(self.admin_user)
+            self.admin_user.save(update_fields=["active_session_key"])
         refresh = RefreshToken()
         refresh["admin_desktop_user_id"] = self.admin_user.id
         refresh["permissions"] = self.admin_user.get_resolved_permissions()
         refresh["user_type"] = "admin_desktop"
+        refresh["session_key"] = self.admin_user.active_session_key
         return str(refresh.access_token)
 
     def test_store_monitor_sync_returns_snapshot(self):
@@ -1077,5 +1142,26 @@ class AdminDesktopStoreMonitoringWebSocketTests(TransactionTestCase):
             self.assertEqual(update_event["data"]["store"]["store_id"], self.shop.id)
             self.assertTrue(update_event["data"]["store"]["is_online"])
             await communicator.disconnect()
+
+        asyncio.run(scenario())
+
+    def test_existing_store_monitor_socket_is_revoked_after_new_session(self):
+        def rotate_session_and_notify():
+            self.admin_user.refresh_from_db()
+            rotate_user_session(self.admin_user)
+            self.admin_user.save(update_fields=["active_session_key"])
+            notify_session_revoked(self.admin_user, "admin_desktop")
+
+        async def scenario():
+            communicator = WebsocketCommunicator(
+                self.application,
+                f"/ws/admin-desktop/store-monitoring/?token={self._admin_token()}&lang=ar",
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await database_sync_to_async(rotate_session_and_notify)()
+            payload = await communicator.receive_json_from()
+            self.assertEqual(payload["type"], "auth.session_revoked")
 
         asyncio.run(scenario())

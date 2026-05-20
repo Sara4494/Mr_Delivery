@@ -8,6 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from shop.middleware import JWTAuthMiddleware
 from shop.routing import websocket_urlpatterns
 from shop.models import AccountModerationStatus
+from user.authentication import build_session_refresh_token, rotate_user_session
 from user.models import AdminDesktopUser, ShopCategory, ShopOwner
 from shop.models import Employee
 
@@ -50,18 +51,21 @@ class SupportCenterWebSocketTests(TransactionTestCase):
         )
 
     def _shop_token(self):
-        refresh = RefreshToken()
-        refresh['shop_owner_id'] = self.shop.id
-        refresh['user_id'] = self.shop.id
-        refresh['shop_number'] = self.shop.shop_number
-        refresh['user_type'] = 'shop_owner'
+        if not self.shop.active_session_key:
+            rotate_user_session(self.shop)
+            self.shop.save(update_fields=['active_session_key'])
+        refresh = build_session_refresh_token(user=self.shop, user_type='shop_owner')
         return str(refresh.access_token)
 
     def _admin_token(self):
+        if not self.admin_user.active_session_key:
+            rotate_user_session(self.admin_user)
+            self.admin_user.save(update_fields=['active_session_key'])
         refresh = RefreshToken()
         refresh['admin_desktop_user_id'] = self.admin_user.id
         refresh['permissions'] = self.admin_user.get_resolved_permissions()
         refresh['user_type'] = 'admin_desktop'
+        refresh['session_key'] = self.admin_user.active_session_key
         return str(refresh.access_token)
 
     async def _connect_shop(self):

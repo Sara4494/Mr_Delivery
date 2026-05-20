@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import UntypedToken
 
 from shop.models import Customer, Driver, Employee
 from user.account_status import get_account_suspension_context
+from user.authentication import validate_user_session_token
 from user.models import AdminDesktopUser, ShopOwner
 
 
@@ -44,6 +45,8 @@ def get_user_from_token(token):
             admin_user_id = decoded_data.get("admin_desktop_user_id")
             if admin_user_id:
                 user = AdminDesktopUser.objects.filter(id=admin_user_id).first()
+        if user:
+            validate_user_session_token(decoded_data, user)
 
         if not user:
             return None, None, None
@@ -67,6 +70,7 @@ class JWTAuthMiddleware(BaseMiddleware):
         scope["user"] = None
         scope["user_type"] = None
         scope["account_suspension"] = None
+        scope["auth_session_key"] = None
 
         if token:
             user, user_type, suspension = await get_user_from_token(token)
@@ -74,6 +78,11 @@ class JWTAuthMiddleware(BaseMiddleware):
                 scope["user"] = user
                 scope["user_type"] = user_type
                 scope["account_suspension"] = suspension
+                try:
+                    decoded_data = jwt_decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+                    scope["auth_session_key"] = decoded_data.get("session_key")
+                except Exception:
+                    scope["auth_session_key"] = None
                 print(f"[JWTAuthMiddleware] Authenticated: {user_type} - ID: {user.id}")
 
         return await super().__call__(scope, receive, send)

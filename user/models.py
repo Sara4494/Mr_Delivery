@@ -412,6 +412,12 @@ class AdminDesktopUser(models.Model):
         null=True,
         verbose_name="صورة المستخدم",
     )
+    active_session_key = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name="مفتاح الجلسة النشطة",
+    )
     is_active = models.BooleanField(default=True, verbose_name="نشط")
     last_login_at = models.DateTimeField(blank=True, null=True, verbose_name="آخر تسجيل دخول")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
@@ -617,6 +623,12 @@ class ShopOwner(models.Model):
     phone_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="رقم الهاتف")
     password = models.CharField(max_length=128, verbose_name="كلمة المرور")
     profile_image = models.ImageField(upload_to="shop_profiles/", blank=True, null=True, verbose_name="صورة البروفيل")
+    active_session_key = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name="مفتاح الجلسة النشطة",
+    )
     description = models.TextField(blank=True, null=True, verbose_name="وصف المحل")
     work_schedule = models.JSONField(default=default_work_schedule, blank=True, verbose_name="مواعيد العمل الأسبوعية")
     admin_status = models.CharField(max_length=20, choices=ADMIN_STATUS_CHOICES, default="active", verbose_name="الحالة الإدارية")

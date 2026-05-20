@@ -5,6 +5,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.core.serializers.json import DjangoJSONEncoder
 
 from shop.websocket_auth import ensure_socket_account_active
+from user.authentication import get_socket_session_group_name
 
 from .store_monitoring import get_store_monitoring_snapshot, store_monitor_group_name
 
@@ -25,13 +26,18 @@ class AdminDesktopStoreMonitoringConsumer(AsyncWebsocketConsumer):
         if not callable(getattr(user, "has_permission", None)) or not user.has_permission("store_management"):
             await self.close(code=4403)
             return
+        self.user = user
         self.group_name = store_monitor_group_name()
+        self.session_group_name = get_socket_session_group_name(user_type, user.id)
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.channel_layer.group_add(self.session_group_name, self.channel_name)
         await self.accept()
 
     async def disconnect(self, close_code):
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if hasattr(self, "session_group_name"):
+            await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
     async def receive(self, text_data):
         if not await ensure_socket_account_active(self, refresh=True):
@@ -73,3 +79,18 @@ class AdminDesktopStoreMonitoringConsumer(AsyncWebsocketConsumer):
 
     async def store_monitor_event(self, event):
         await self.send(text_data=_json_dumps(event["payload"]))
+
+    async def auth_session_revoked(self, event):
+        current_session_key = str((self.scope or {}).get("auth_session_key") or "").strip()
+        active_session_key = str(event.get("session_key") or "").strip()
+        if current_session_key and active_session_key and current_session_key == active_session_key:
+            return
+        await self.send(
+            text_data=_json_dumps(
+                {
+                    "type": "auth.session_revoked",
+                    "message": "Session ended because this account signed in on another device.",
+                }
+            )
+        )
+        await self.close(code=4401)

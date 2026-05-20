@@ -1,5 +1,11 @@
 from rest_framework import serializers
-from rest_framework_simplejwt.tokens import RefreshToken
+
+from .authentication import (
+    apply_session_token_lifetimes,
+    build_session_refresh_token,
+    notify_session_revoked,
+    rotate_user_session,
+)
 from .models import ShopOwner
 
 
@@ -13,14 +19,7 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
         """
         إنشاء token مع shop_owner_id
         """
-        token = RefreshToken()
-        token['shop_owner_id'] = shop_owner.id
-        token['shop_number'] = shop_owner.shop_number
-        token['shop_name'] = shop_owner.shop_name
-        token['shop_category_id'] = shop_owner.shop_category_id
-        token['shop_category_name'] = shop_owner.shop_category.name if shop_owner.shop_category else None
-        token['user_type'] = 'shop_owner'
-        return token
+        return build_session_refresh_token(user=shop_owner, user_type='shop_owner')
     
     def validate(self, attrs):
         """
@@ -58,11 +57,15 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
                 'password': 'كلمة المرور غير صحيحة'
             })
         
+        rotate_user_session(shop_owner)
+        shop_owner.save(update_fields=['active_session_key'])
+        notify_session_revoked(shop_owner, 'shop_owner')
         refresh = self.get_token(shop_owner)
+        access_token = apply_session_token_lifetimes(refresh)
         
         return {
             'refresh': str(refresh),
-            'access': str(refresh.access_token),
+            'access': str(access_token),
             'shop_owner': {
                 'id': shop_owner.id,
                 'owner_name': shop_owner.owner_name,

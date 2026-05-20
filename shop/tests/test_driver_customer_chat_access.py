@@ -21,6 +21,7 @@ from shop.views import (
     driver_order_chat_open_view,
     driver_order_chat_view,
 )
+from user.authentication import build_session_refresh_token, rotate_user_session
 from user.models import ShopCategory, ShopOwner
 
 
@@ -70,10 +71,10 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
 
     def _customer_access_token(self, customer=None):
         customer = customer or self.customer
-        refresh = RefreshToken()
-        refresh['customer_id'] = customer.id
-        refresh['phone_number'] = customer.phone_number
-        refresh['user_type'] = 'customer'
+        if not customer.active_session_key:
+            rotate_user_session(customer)
+            customer.save(update_fields=['active_session_key'])
+        refresh = build_session_refresh_token(user=customer, user_type='customer')
         return str(refresh.access_token)
 
     def _create_order(self, *, accepted=False):

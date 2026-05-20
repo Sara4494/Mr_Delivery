@@ -48,6 +48,7 @@ from .customer_app_realtime import (
 )
 from .driver_realtime import build_driver_snapshot_events, has_driver_accepted
 from .fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
+from user.authentication import get_socket_session_group_name
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
 from gallery.serializers import GalleryImageSerializer, ShopProfileSerializer, WorkScheduleSerializer
 from .websocket_auth import ensure_socket_account_active
@@ -72,6 +73,18 @@ def _with_localized_message(payload, message, lang=None):
 
 def _json_dumps(payload):
     return json.dumps(payload, cls=DjangoJSONEncoder)
+
+
+async def _handle_session_revoked(consumer, event):
+    current_session_key = str((getattr(consumer, 'scope', None) or {}).get('auth_session_key') or '').strip()
+    active_session_key = str(event.get('session_key') or '').strip()
+    if current_session_key and active_session_key and current_session_key == active_session_key:
+        return
+    await consumer.send(text_data=_json_dumps({
+        'type': 'auth.session_revoked',
+        'message': 'Session ended because this account signed in on another device.',
+    }))
+    await consumer.close(code=4401)
 
 
 def _serializer_context(lang=None, scope=None, base_url=None):
@@ -499,6 +512,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.user_type = user_type
             if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
                 return
+            self.session_group_name = get_socket_session_group_name(self.user_type, self.user.id)
             
             # Validate access to the order.
             has_access = await self.check_order_access(user, user_type)
@@ -521,6 +535,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
             # Join the chat group.
             await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+            await self.channel_layer.group_add(self.session_group_name, self.channel_name)
             await self.accept()
 
             presence_state = None
@@ -569,6 +584,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'session_group_name'):
+            await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
         if getattr(self, 'customer_presence_registered', False):
             presence_state = await self.unregister_customer_presence()
@@ -628,6 +645,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if getattr(self, 'user_type', None) != 'driver':
             return
         await self._touch_driver_presence()
+
+    async def auth_session_revoked(self, event):
+        await _handle_session_revoked(self, event)
 
     @database_sync_to_async
     def get_chat_block(self):
@@ -1352,6 +1372,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             self.user_type = user_type
             if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
                 return
+            self.session_group_name = get_socket_session_group_name(self.user_type, self.user.id)
 
             has_access = await self.check_conversation_access(user, user_type)
             if not has_access:
@@ -1365,6 +1386,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             self.customer_presence_registered = False
 
             await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+            await self.channel_layer.group_add(self.session_group_name, self.channel_name)
             await self.accept()
 
             if self.user_type == 'customer':
@@ -1400,6 +1422,8 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'session_group_name'):
+            await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
         if getattr(self, 'customer_presence_registered', False):
             await self.unregister_customer_presence()
@@ -1503,6 +1527,9 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
                 'chat_type': self.chat_type,
             },
         )
+
+    async def auth_session_revoked(self, event):
+        await _handle_session_revoked(self, event)
 
     async def handle_location(self, data, request_id=None, action='location'):
         latitude = data.get('latitude')
@@ -1992,6 +2019,7 @@ class OrderConsumer(AsyncWebsocketConsumer):
         self.user_type = user_type
         if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
             return
+        self.session_group_name = get_socket_session_group_name(self.user_type, self.user.id)
 
         if user_type == 'shop_owner' and user.id != int(self.shop_owner_id):
             await self.close(code=4403)
@@ -2006,6 +2034,7 @@ class OrderConsumer(AsyncWebsocketConsumer):
             return
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.channel_layer.group_add(self.session_group_name, self.channel_name)
         await self.accept()
 
         await self.send(text_data=_json_dumps(_with_localized_message(
@@ -2022,6 +2051,8 @@ class OrderConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'session_group_name'):
+            await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
     async def receive(self, text_data):
         try:
@@ -2077,6 +2108,9 @@ class OrderConsumer(AsyncWebsocketConsumer):
             'type': 'order_update',
             'data': event['data'],
         }))
+
+    async def auth_session_revoked(self, event):
+        await _handle_session_revoked(self, event)
 
     async def new_order(self, event):
         await self.send(text_data=_json_dumps({
@@ -2251,6 +2285,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         self.user_type = user_type
         if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
             return
+        self.session_group_name = get_socket_session_group_name(self.user_type, self.user.id)
 
         if user.id != self.customer_id:
             await self.reject_connection(
@@ -2263,6 +2298,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         self.customer_presence_registered = False
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.channel_layer.group_add(self.session_group_name, self.channel_name)
         await self.accept()
 
         presence_state = await self.register_customer_presence('orders')
@@ -2283,6 +2319,8 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'session_group_name'):
+            await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
         if getattr(self, 'customer_presence_registered', False):
             presence_state = await self.unregister_customer_presence()
@@ -2338,6 +2376,9 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
                 message='Unexpected customer realtime error.',
                 details={'error_detail': str(e)},
             )
+
+    async def auth_session_revoked(self, event):
+        await _handle_session_revoked(self, event)
 
     async def order_update(self, event):
         order_id = self._extract_order_id(event.get('data'))
@@ -2631,11 +2672,13 @@ class DriverConsumer(AsyncWebsocketConsumer):
         self.user_type = user_type
         if not await ensure_socket_account_active(self, refresh=True, accept_if_needed=True):
             return
+        self.session_group_name = get_socket_session_group_name(self.user_type, self.user.id)
 
         self.driver_presence_registered = False
         self.driver_presence_timeout_task = None
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.channel_layer.group_add(self.session_group_name, self.channel_name)
         await self.accept()
 
         presence_state = await self.register_driver_presence()
@@ -2658,6 +2701,8 @@ class DriverConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'session_group_name'):
+            await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
         if getattr(self, 'driver_presence_registered', False):
             self.cancel_driver_presence_timeout_task()
@@ -2733,6 +2778,9 @@ class DriverConsumer(AsyncWebsocketConsumer):
                 message='حدث خطأ غير متوقع',
                 details={'error_detail': str(e)},
             )
+
+    async def auth_session_revoked(self, event):
+        await _handle_session_revoked(self, event)
 
     def cancel_driver_presence_timeout_task(self):
         task = getattr(self, 'driver_presence_timeout_task', None)

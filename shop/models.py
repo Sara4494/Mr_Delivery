@@ -40,6 +40,7 @@ class Customer(models.Model):
     password = models.CharField(max_length=128, blank=True, null=True, verbose_name="كلمة المرور")
     profile_image = models.ImageField(upload_to='customer_profiles/', blank=True, null=True, verbose_name="صورة العميل")
     google_profile_image_url = models.URLField(blank=True, null=True, verbose_name="رابط صورة جوجل")
+    active_session_key = models.CharField(max_length=64, blank=True, default="", verbose_name="مفتاح الجلسة النشطة")
     is_online = models.BooleanField(default=False, verbose_name="متصل الآن")
     last_seen = models.DateTimeField(blank=True, null=True, verbose_name="آخر ظهور")
     is_verified = models.BooleanField(default=False, verbose_name="تم التحقق")
@@ -166,6 +167,7 @@ class Employee(models.Model):
     password = models.CharField(max_length=128, verbose_name="كلمة المرور")
     role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='cashier', verbose_name="الدور")
     profile_image = models.ImageField(upload_to='employee_profiles/', blank=True, null=True, verbose_name="صورة الموظف")
+    active_session_key = models.CharField(max_length=64, blank=True, default="", verbose_name="مفتاح الجلسة النشطة")
     custody_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="المبلغ في العهدة")
     is_active = models.BooleanField(default=True, verbose_name="نشط")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
@@ -233,6 +235,7 @@ class Driver(models.Model):
     phone_number = models.CharField(max_length=20, unique=True, verbose_name="رقم الهاتف")
     password = models.CharField(max_length=128, verbose_name="كلمة المرور", blank=True, null=True)  # إضافة password للسائق
     profile_image = models.ImageField(upload_to='driver_profiles/', blank=True, null=True, verbose_name="صورة السائق")
+    active_session_key = models.CharField(max_length=64, blank=True, default="", verbose_name="مفتاح الجلسة النشطة")
     vehicle_label = models.CharField(max_length=120, blank=True, null=True, verbose_name="وصف المركبة")
     plate_number = models.CharField(max_length=50, blank=True, null=True, verbose_name="رقم اللوحة")
     vehicle_type = models.CharField(
