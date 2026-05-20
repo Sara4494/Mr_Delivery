@@ -4840,7 +4840,7 @@ def driver_register_verify_otp_view(request):
     driver.is_verified = True
     driver.save(update_fields=['is_verified', 'updated_at'])
 
-    refresh = DriverTokenObtainPairSerializer.get_token(driver)
+   
     response_serializer = DriverAppSerializer(driver, context={'request': request})
     return success_response(
         data={
@@ -7908,8 +7908,7 @@ def customer_profile_phone_verify_otp_view(request):
     customer.phone_number = normalized_phone
     customer.save(update_fields=['phone_number', 'updated_at'])
     cache.delete(_customer_phone_change_cache_key(customer.id))
-
-    refresh = CustomerTokenObtainPairSerializer.get_token(customer)
+ 
     serializer = CustomerAppProfileSerializer(customer, context={'request': request})
     return success_response(
         data={

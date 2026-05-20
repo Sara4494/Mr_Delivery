@@ -1682,20 +1682,7 @@ class EmployeeTokenObtainPairSerializer(serializers.Serializer):
     """Custom Token Serializer للموظف"""
     phone_number = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
-
-    @classmethod
-    def get_token(cls, employee):
-        """
-        إنشاء token مع employee_id
-        """
-        token = RefreshToken()
-        token['employee_id'] = employee.id
-        token['phone_number'] = employee.phone_number
-        token['role'] = employee.role
-        token['shop_owner_id'] = employee.shop_owner.id
-        token['user_type'] = 'employee'
-        return token
-
+ 
     def validate(self, attrs):
         """
         التحقق من بيانات تسجيل الدخول وإرجاع token
@@ -1744,19 +1731,6 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
     password = serializers.CharField(required=True, write_only=True)
     shop_number = serializers.CharField(required=False, allow_blank=True)
 
-    @classmethod
-    def get_token(cls, driver):
-        """
-        إنشاء token مع driver_id
-        """
-        token = RefreshToken()
-        token['driver_id'] = driver.id
-        token['phone_number'] = driver.phone_number
-        # السائق قد يعمل في عدة محلات، لا نضع shop_owner_id واحد في التوكن
-        # يمكن إرجاع قائمة المحلات في الاستجابة بدلاً من ذلك
-        token['user_type'] = 'driver'
-        return token
-
     @staticmethod
     def _phone_variants(phone_number):
         raw = str(phone_number or '').strip()
@@ -1769,9 +1743,6 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
         return [variant for variant in variants if variant]
 
     def validate(self, attrs):
-        """
-        التحقق من بيانات تسجيل الدخول وإرجاع token
-        """
         request = self.context.get('request')
         phone_number = attrs.get('phone_number')
         password = attrs.get('password')
@@ -1779,6 +1750,7 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
         queryset = Driver.objects.filter(
             phone_number__in=self._phone_variants(phone_number)
         ).order_by('-updated_at')
+
         if not queryset.exists():
             raise serializers.ValidationError({
                 'phone_number': t(request, 'phone_number_or_password_is_incorrect')
@@ -1807,11 +1779,25 @@ class DriverTokenObtainPairSerializer(serializers.Serializer):
                 'detail': moderation.suspension_reason or 'تم تعليق هذا الحساب من الإدارة.'
             })
 
-        refresh = self.get_token(driver)
+        from user.authentication import (
+            rotate_user_session,
+            build_session_refresh_token,
+            apply_session_token_lifetimes,
+        )
+
+        rotate_user_session(driver)
+        driver.save(update_fields=['active_session_key'])
+
+        refresh = build_session_refresh_token(
+            user=driver,
+            user_type='driver',
+        )
+
+        access = apply_session_token_lifetimes(refresh)
 
         return {
             'refresh': str(refresh),
-            'access': str(refresh.access_token),
+            'access': str(access),
             'driver': DriverAppSerializer(driver, context=self.context).data,
         }
 
