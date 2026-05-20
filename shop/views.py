@@ -2192,7 +2192,11 @@ def staff_block_view(request, staff_type, staff_id):
         staff_member.is_active = not blocked
         staff_member.save()
     else:
-        active_orders_count = staff_member.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
+        active_orders_count = Order.objects.filter(
+    shop_owner=request.user,
+    driver=staff_member,
+    status__in=['preparing', 'on_way'],
+).count()
         if blocked:
             staff_member.availability_enabled = False
             staff_member.save(update_fields=['availability_enabled', 'updated_at'])
