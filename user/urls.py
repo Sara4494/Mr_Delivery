@@ -1,4 +1,7 @@
+ 
+
 from django.urls import path, re_path
+from django.urls import path
 from . import views
 
 app_name = 'user'
@@ -12,4 +15,6 @@ urlpatterns = [
     path('auth/otp/verify/', views.verify_otp_login_view, name='verify_otp'),
     path('auth/password-reset/', views.reset_password_view, name='reset_password'),
     path('auth/password-change/', views.change_password_view, name='change_password'),
+    
+    path('admin/notifications/broadcast/', views.admin_desktop_broadcast_notification_view, name='admin_desktop_broadcast_notification'),
 ]
