@@ -3497,8 +3497,6 @@ def customer_order_chat_view(request, order_id):
     )
 
 
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
 def _chat_message_image_delete_view_v2(request, message_id):
     user = request.user
     user_type = _resolve_user_type(user)
