@@ -990,11 +990,31 @@ def driver_send_image(*, conversation: DriverChatConversation, image_url, text=N
 
 def driver_accept_order(*, conversation: DriverChatConversation, conversation_order: DriverChatOrder, request=None, scope=None, base_url=None):
     order = conversation_order.order
+    accepted_at = timezone.now()
+    previous_status = order.status
+    previous_driver_id = order.driver_id
+    previous_driver_accepted_at = order.driver_accepted_at
+
     conversation_order.status = 'driver_on_way'
     conversation_order.transfer_reason = None
     conversation_order.save(update_fields=['status', 'transfer_reason', 'updated_at'])
+
+    order.driver = conversation.driver
+    if order.driver_assigned_at is None or previous_driver_id != conversation.driver_id:
+        order.driver_assigned_at = accepted_at
+    order.driver_accepted_at = accepted_at
     order.status = 'on_way'
-    order.save(update_fields=['status', 'updated_at'])
+    order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'status', 'updated_at'])
+
+    from ..realtime.driver import clear_driver_rejection, sync_driver_order_state
+    from ..serializers import OrderSerializer
+    from ..websocket_utils import notify_driver_status_updated, notify_order_update
+
+    clear_driver_rejection(order, conversation.driver)
+    conversation.driver.current_orders_count = conversation.driver.orders.filter(
+        status__in=['new', 'confirmed', 'preparing', 'on_way']
+    ).count()
+    conversation.driver.save(update_fields=['current_orders_count', 'updated_at'])
     try:
         from ..views import _notify_shop_about_driver_order_action
 
@@ -1006,6 +1026,29 @@ def driver_accept_order(*, conversation: DriverChatConversation, conversation_or
         )
     except Exception:
         logger.exception("driver_chat.accept_order.shop_notification_failed order_id=%s", order.id)
+
+    try:
+        order_data = OrderSerializer(order, context={'request': request}).data
+        notify_order_update(
+            shop_owner_id=order.shop_owner_id,
+            customer_id=order.customer_id,
+            driver_id=order.driver_id,
+            order_data=order_data,
+        )
+        notify_driver_status_updated(conversation.driver)
+    except Exception:
+        logger.exception("driver_chat.accept_order.realtime_sync_failed order_id=%s", order.id)
+
+    sync_driver_order_state(
+        order,
+        previous_status=previous_status,
+        previous_driver_id=previous_driver_id,
+        previous_driver_accepted_at=previous_driver_accepted_at,
+        request=request,
+        scope=scope,
+        base_url=base_url,
+    )
+
     system_message = create_message(
         conversation=conversation,
         sender_type='system',
