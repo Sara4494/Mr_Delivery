@@ -216,6 +216,7 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
         .filter(
             driver_shops__shop_owner=shop_owner,
             driver_shops__status='active',
+            is_online=True,
         )
         .exclude(id=exclude_numeric_id)
         .distinct()

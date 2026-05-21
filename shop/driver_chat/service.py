@@ -1281,7 +1281,7 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
     exclude_numeric_id = _extract_numeric_id(exclude_driver_id) or 0
     qs = (
         Driver.objects
-        .filter(driver_shops__shop_owner=shop_owner, driver_shops__status='active')
+        .filter(driver_shops__shop_owner=shop_owner, driver_shops__status='active', is_online=True)
         .exclude(id=exclude_numeric_id)
         .distinct()
         .order_by('name')

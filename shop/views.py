@@ -1177,6 +1177,13 @@ def _active_shop_drivers_queryset(shop_owner):
     )
 
 
+def _query_flag_enabled(request, key, default=False):
+    raw_value = request.query_params.get(key, None)
+    if raw_value is None:
+        return bool(default)
+    return _is_true_query_value(raw_value)
+
+
 def _get_shop_driver_relation(shop_owner, staff_id, relation_statuses=None):
     queryset = ShopDriver.objects.select_related('driver').filter(
         shop_owner=shop_owner,
@@ -1944,8 +1951,11 @@ def staff_view(request):
         if STAFF_TYPE_DRIVER in requested_types:
             driver_queryset = driver_base_queryset.order_by('-updated_at')
             status_filter = request.query_params.get('status')
+            online_only = _query_flag_enabled(request, 'online_only', default=False)
             if status_filter:
                 driver_queryset = driver_queryset.filter(status=status_filter)
+            if online_only:
+                driver_queryset = driver_queryset.filter(is_online=True)
             for driver in driver_queryset:
                 staff_items.append((driver.updated_at, _serialize_staff_member(driver, STAFF_TYPE_DRIVER, request)))
 
