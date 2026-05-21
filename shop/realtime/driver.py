@@ -326,6 +326,43 @@ def driver_can_accept_reassigned_order(driver):
     return bool(snapshot.get('presence_online')) and snapshot.get('status') != 'offline'
 
 
+def get_driver_receive_orders_block_reason(driver):
+    if not driver:
+        return 'driver_not_found', {}
+    snapshot = driver.get_availability_snapshot()
+    if snapshot.get('can_receive_orders'):
+        return None, snapshot
+    return str(snapshot.get('reason') or 'unavailable'), snapshot
+
+
+def get_driver_assignment_block_message(driver, *, reassignment=False):
+    reason, snapshot = get_driver_receive_orders_block_reason(driver)
+    if not reason:
+        return None
+
+    if reassignment:
+        if reason == 'account_restricted':
+            return 'لا يمكن تحويل الأوردر إلى هذا الدليفري لأن حسابه غير مؤهل للعمل حالياً.'
+        return 'لا يمكن تحويل الأوردر إلى هذا الدليفري لأنه غير متصل حالياً.'
+
+    if reason == 'offline':
+        return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متصل حالياً.'
+    if reason == 'availability_disabled':
+        return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه أغلق استقبال الطلبات الجديدة حالياً.'
+    if reason == 'max_active_orders':
+        active_orders_count = int(snapshot.get('active_orders_count') or 0)
+        max_active_orders = int(snapshot.get('max_active_orders_per_driver') or 0)
+        if max_active_orders > 0:
+            return (
+                f'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه وصل للحد الأقصى '
+                f'من الطلبات الجارية ({active_orders_count}/{max_active_orders}).'
+            )
+        return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه وصل للحد الأقصى من الطلبات الجارية.'
+    if reason == 'account_restricted':
+        return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأن حسابه غير مؤهل للعمل حالياً.'
+    return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متاح لاستقبال الطلبات حالياً.'
+
+
 def get_shop_receiving_driver_ids(shop_owner_id):
     drivers = list(
         Driver.objects.filter(

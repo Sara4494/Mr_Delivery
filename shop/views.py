@@ -146,6 +146,7 @@ from .driver_realtime import (
     emit_order_transfer_requested,
     emit_order_transferred,
     get_available_order_for_driver,
+    get_driver_assignment_block_message,
     has_driver_accepted,
     record_driver_rejection,
     sync_driver_order_state,
@@ -4182,6 +4183,19 @@ def order_detail_view(request, order_id):
                     )
                     new_driver = relation.driver
                     is_reassignment = bool(old_driver and old_driver.id != new_driver.id)
+                    availability_error_message = None
+                    if is_reassignment and not driver_can_accept_reassigned_order(new_driver):
+                        availability_error_message = get_driver_assignment_block_message(
+                            new_driver,
+                            reassignment=True,
+                        )
+                    elif not is_reassignment and not driver_can_receive_new_orders(new_driver):
+                        availability_error_message = get_driver_assignment_block_message(new_driver)
+                    if availability_error_message:
+                        return error_response(
+                            message=availability_error_message,
+                            status_code=status.HTTP_400_BAD_REQUEST
+                        )
                     if is_reassignment:
                         if not driver_can_accept_reassigned_order(new_driver):
                             return error_response(

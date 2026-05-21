@@ -521,6 +521,35 @@ class DriverAvailabilityEnforcementTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(response.status_code, 400)
         self.assertIsNone(order.driver_id)
+        self.assertEqual(
+            response.data.get('message'),
+            'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متصل حالياً.',
+        )
+
+    @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
+    def test_shop_gets_explicit_message_when_driver_hit_max_active_orders(self):
+        self.other_driver.current_orders_count = 2
+        self.other_driver.save(update_fields=['current_orders_count', 'updated_at'])
+        self._create_order(driver=self.other_driver, accepted=True, status='preparing')
+        self._create_order(driver=self.other_driver, accepted=False, status='confirmed')
+        order = self._create_order(driver=None, accepted=False, status='confirmed')
+
+        request = self.factory.put(
+            f'/api/shop/orders/{order.id}/',
+            {'driver_id': self.other_driver.id},
+            format='json',
+        )
+        force_authenticate(request, user=self.shop)
+
+        response = order_detail_view(request, order.id)
+
+        order.refresh_from_db()
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(order.driver_id)
+        self.assertEqual(
+            response.data.get('message'),
+            'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه وصل للحد الأقصى من الطلبات الجارية (2/2).',
+        )
 
     def test_reassignment_is_allowed_to_connected_driver_even_if_not_receiving_new_orders(self):
         self.driver.is_online = True
