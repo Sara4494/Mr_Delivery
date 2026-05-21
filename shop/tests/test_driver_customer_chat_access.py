@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 
 from asgiref.sync import async_to_sync
 from channels.routing import ProtocolTypeRouter, URLRouter
@@ -18,6 +19,7 @@ from shop.views import (
     chat_message_image_delete_view,
     chat_order_media_upload_view,
     customer_order_chat_view,
+    driver_order_customer_contact_status_view,
     driver_order_chat_open_view,
     driver_order_chat_view,
 )
@@ -75,6 +77,14 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
             rotate_user_session(customer)
             customer.save(update_fields=['active_session_key'])
         refresh = build_session_refresh_token(user=customer, user_type='customer')
+        return str(refresh.access_token)
+
+    def _driver_access_token(self, driver=None):
+        driver = driver or self.driver
+        if not driver.active_session_key:
+            rotate_user_session(driver)
+            driver.save(update_fields=['active_session_key'])
+        refresh = build_session_refresh_token(user=driver, user_type='driver')
         return str(refresh.access_token)
 
     def _create_order(self, *, accepted=False):
@@ -188,6 +198,40 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
         self.assertEqual(response.data['data']['chat_type'], 'driver_customer')
         self.assertTrue(response.data['data']['can_open'])
 
+    def test_driver_chat_bootstrap_hides_customer_phone_while_customer_online(self):
+        order = self._create_order(accepted=True)
+        self.customer.is_online = True
+        self.customer.last_seen = timezone.now()
+        self.customer.save(update_fields=['is_online', 'last_seen', 'updated_at'])
+
+        request = self.factory.get(f'/api/driver/orders/{order.id}/chat/')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_order_chat_view(request, order.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data']['customer_online_status'], 'online')
+        self.assertFalse(response.data['data']['can_show_customer_phone'])
+        self.assertIsNone(response.data['data']['customer_phone'])
+        self.assertEqual(response.data['data']['remaining_seconds'], 120)
+
+    def test_driver_customer_contact_status_reveals_phone_after_offline_timeout(self):
+        order = self._create_order(accepted=True)
+        self.customer.is_online = False
+        self.customer.last_seen = timezone.now() - timedelta(seconds=125)
+        self.customer.save(update_fields=['is_online', 'last_seen', 'updated_at'])
+
+        request = self.factory.get(f'/api/driver/orders/{order.id}/chat/customer-contact/')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_order_customer_contact_status_view(request, order.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data']['customer_online_status'], 'offline')
+        self.assertTrue(response.data['data']['can_show_customer_phone'])
+        self.assertEqual(response.data['data']['customer_phone'], self.customer.phone_number)
+        self.assertEqual(response.data['data']['remaining_seconds'], 0)
+
     def test_customer_chat_get_returns_json_404_for_missing_order(self):
         request = self.factory.get('/api/customer/orders/999999/chat/')
         force_authenticate(request, user=self.customer)
@@ -196,6 +240,61 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.data['message'], 'Chat not found')
+
+    @override_settings(CUSTOMER_PHONE_REVEAL_DELAY_SECONDS=1)
+    def test_driver_socket_receives_customer_presence_and_phone_availability_events(self):
+        order = self._create_order(accepted=True)
+        driver_token = self._driver_access_token()
+        customer_token = self._customer_access_token()
+
+        async def _drain_initial_messages(communicator):
+            received = []
+            for _ in range(3):
+                received.append(await communicator.receive_json_from())
+            return received
+
+        async def _receive_until_type(communicator, expected_type, attempts=8):
+            for _ in range(attempts):
+                payload = await communicator.receive_json_from(timeout=3)
+                if payload.get('type') == expected_type:
+                    return payload
+            self.fail(f'Missing websocket event: {expected_type}')
+
+        async def scenario():
+            driver_socket = WebsocketCommunicator(
+                self.application,
+                f'/ws/chat/order/{order.id}/?token={driver_token}&chat_type=driver_customer&lang=ar',
+            )
+            connected, _ = await driver_socket.connect()
+            self.assertTrue(connected)
+            await _drain_initial_messages(driver_socket)
+
+            customer_socket = WebsocketCommunicator(
+                self.application,
+                f'/ws/chat/order/{order.id}/?token={customer_token}&chat_type=driver_customer&lang=ar',
+            )
+            customer_connected, _ = await customer_socket.connect()
+            self.assertTrue(customer_connected)
+            await _drain_initial_messages(customer_socket)
+
+            customer_online = await _receive_until_type(driver_socket, 'customer_online')
+            self.assertTrue(customer_online['data']['is_online'])
+            self.assertFalse(customer_online['data']['can_show_customer_phone'])
+
+            await customer_socket.disconnect()
+
+            customer_offline = await _receive_until_type(driver_socket, 'customer_offline')
+            self.assertFalse(customer_offline['data']['is_online'])
+            self.assertFalse(customer_offline['data']['can_show_customer_phone'])
+
+            phone_available = await _receive_until_type(driver_socket, 'phone_available')
+            self.assertTrue(phone_available['data']['can_show_customer_phone'])
+            self.assertEqual(phone_available['data']['customer_phone'], self.customer.phone_number)
+            self.assertEqual(phone_available['data']['remaining_seconds'], 0)
+
+            await driver_socket.disconnect()
+
+        async_to_sync(scenario)()
 
     def test_customer_can_upload_driver_chat_image_after_accept(self):
         order = self._create_order(accepted=True)

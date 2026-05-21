@@ -124,7 +124,7 @@ from .websocket_utils import (
     notify_driver_status_updated,
 )
 from .customer_app_realtime import broadcast_customer_order_removed
-from .presence import format_utc_iso8601
+from .presence import format_utc_iso8601, get_order_customer_presence_snapshot
 from .driver_chat_service import (
     get_driver_presence_snapshot,
     ensure_shop_driver_welcome_conversation,
@@ -3186,6 +3186,7 @@ def _build_driver_customer_chat_bootstrap_response(request, order, *, mark_as_op
     conversation_id = f'order_{order.id}_driver_customer'
     ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
     driver_presence = _serialize_driver_presence_response(order.driver) if order.driver_id else None
+    customer_contact = get_order_customer_presence_snapshot(order.id) if order.customer_id else None
 
     messages_qs = (
         ChatMessage.objects
@@ -3206,8 +3207,19 @@ def _build_driver_customer_chat_bootstrap_response(request, order, *, mark_as_op
         'can_open': can_open,
         'ws_path': ws_path,
         'driver_presence': driver_presence,
+        'customer_contact': customer_contact,
         'messages': normalized_messages,
     }
+    if customer_contact:
+        data.update({
+            'customer_online_status': customer_contact.get('customer_online_status'),
+            'customer_last_seen': customer_contact.get('customer_last_seen'),
+            'can_show_customer_phone': customer_contact.get('can_show_customer_phone'),
+            'customer_phone': customer_contact.get('customer_phone'),
+            'remaining_seconds': customer_contact.get('remaining_seconds'),
+            'server_time': customer_contact.get('server_time'),
+            'phone_available_at': customer_contact.get('phone_available_at'),
+        })
 
     if not can_open:
         return success_response(
@@ -3448,6 +3460,38 @@ def customer_order_chat_view(request, order_id):
         request,
         order,
         mark_as_opened=False,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_order_customer_contact_status_view(request, order_id):
+    """
+    Driver-only contact status snapshot for the customer in driver-customer chat.
+    GET /api/driver/orders/{id}/chat/customer-contact/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    order = _get_driver_order_or_none(driver, order_id, statuses=DRIVER_APP_ORDER_STATUSES)
+    if not order:
+        return error_response(
+            message=t(request, 'driver_order_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    customer_contact = get_order_customer_presence_snapshot(order.id)
+    if not customer_contact:
+        return error_response(
+            message='Customer contact status not found',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    return success_response(
+        data=customer_contact,
+        message='تم استرجاع حالة تواصل العميل بنجاح',
+        status_code=status.HTTP_200_OK,
     )
 
 

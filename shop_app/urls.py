@@ -41,6 +41,7 @@ urlpatterns = [
     path('shop/driver-chats/mark-read/', driver_chat_views.driver_chat_mark_read_view, name='driver_chat_mark_read'),
     path('shop/driver-chats/resync/', driver_chat_views.driver_chat_resync_view, name='driver_chat_resync'),
     path('shop/driver-chats/calls/<str:call_id>/', driver_chat_views.driver_chat_call_detail_view, name='driver_chat_call_detail'),
+    path('driver/orders/<int:order_id>/chat/customer-contact/', shop_views.driver_order_customer_contact_status_view, name='driver_order_customer_contact_status'),
     path('shop/dashboard/statistics/', shop_views.shop_dashboard_statistics_view, name='dashboard_statistics'),
     path('shop/dashboard/summary/', shop_views.shop_dashboard_summary_view, name='dashboard_summary'),
     path('employee/login/', shop_views.employee_login_view, name='employee_login'),

@@ -1,11 +1,23 @@
+import math
+from datetime import timedelta
 from datetime import timezone as dt_timezone
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
 from user.utils import resolve_customer_profile_image_url
 
 from ..models import Customer, CustomerPresenceConnection, Order
+
+
+def get_customer_phone_reveal_delay_seconds():
+    raw_value = getattr(settings, 'CUSTOMER_PHONE_REVEAL_DELAY_SECONDS', 120)
+    try:
+        delay_seconds = int(raw_value)
+    except (TypeError, ValueError):
+        delay_seconds = 120
+    return max(delay_seconds, 0)
 
 
 def format_utc_iso8601(value):
@@ -39,10 +51,41 @@ def _apply_customer_presence_state(customer, is_online):
 
 
 def serialize_customer_presence(customer, order_id=None):
+    now = timezone.now()
+    delay_seconds = get_customer_phone_reveal_delay_seconds()
+    offline_since = customer.last_seen if not bool(customer.is_online) else None
+    elapsed_seconds = 0.0
+    if offline_since:
+        elapsed_seconds = max(0.0, (now - offline_since).total_seconds())
+    can_show_customer_phone = bool(
+        customer.phone_number
+        and not bool(customer.is_online)
+        and elapsed_seconds >= delay_seconds
+    )
+    remaining_seconds = (
+        delay_seconds
+        if bool(customer.is_online)
+        else max(0, int(math.ceil(delay_seconds - elapsed_seconds)))
+    )
+    phone_available_at = (
+        offline_since + timedelta(seconds=delay_seconds)
+        if offline_since
+        else None
+    )
+
     payload = {
         'customer_id': customer.id,
         'is_online': bool(customer.is_online),
+        'customer_online_status': 'online' if bool(customer.is_online) else 'offline',
         'last_seen': format_utc_iso8601(customer.last_seen),
+        'customer_last_seen': format_utc_iso8601(customer.last_seen),
+        'offline_since': format_utc_iso8601(offline_since),
+        'server_time': format_utc_iso8601(now),
+        'phone_reveal_delay_seconds': delay_seconds,
+        'phone_available_at': format_utc_iso8601(phone_available_at),
+        'can_show_customer_phone': can_show_customer_phone,
+        'customer_phone': customer.phone_number if can_show_customer_phone else None,
+        'remaining_seconds': remaining_seconds,
         'profile_image_url': resolve_customer_profile_image_url(customer),
     }
     if order_id is not None:
@@ -97,6 +140,10 @@ def get_order_customer_presence_snapshot(order_id):
 
 
 def build_customer_presence_broadcast_batches(customer_id, is_online, last_seen):
+    customer = Customer.objects.filter(id=customer_id).first()
+    if not customer:
+        return []
+
     orders = list(
         Order.objects
         .filter(customer_id=customer_id)
@@ -105,6 +152,7 @@ def build_customer_presence_broadcast_batches(customer_id, is_online, last_seen)
 
     batches = []
     for order in orders:
+        payload = serialize_customer_presence(customer, order_id=order['id'])
         group_names = {
             f'chat_order_{order["id"]}_shop_customer',
             f'customer_orders_{customer_id}',
@@ -119,12 +167,7 @@ def build_customer_presence_broadcast_batches(customer_id, is_online, last_seen)
 
         batches.append({
             'group_names': list(group_names),
-            'data': {
-                'order_id': order['id'],
-                'customer_id': customer_id,
-                'is_online': bool(is_online),
-                'last_seen': last_seen,
-            },
+            'data': payload,
         })
 
     return batches

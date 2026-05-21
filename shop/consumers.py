@@ -20,6 +20,7 @@ from .models import (
 from .presence import (
     build_customer_presence_broadcast_batches,
     format_utc_iso8601,
+    get_customer_phone_reveal_delay_seconds,
     get_order_customer_presence_snapshot,
     mark_customer_websocket_connected,
     mark_customer_websocket_disconnected,
@@ -532,6 +533,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.customer_presence_registered = False
             self.driver_presence_registered = False
             self.driver_presence_timeout_task = None
+            self.customer_phone_availability_task = None
             
             # Join the chat group.
             await self.channel_layer.group_add(self.room_group_name, self.channel_name)
@@ -565,6 +567,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'type': 'presence_snapshot',
                     'data': presence_snapshot,
                 }))
+                await self.refresh_customer_phone_availability_watch(presence_snapshot)
 
             if presence_state and presence_state.get('changed'):
                 await self.broadcast_presence_updates(presence_state)
@@ -596,6 +599,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             presence_state = await self.unregister_driver_presence()
             if presence_state and presence_state.get('changed'):
                 await self.broadcast_driver_presence()
+        self.cancel_customer_phone_availability_task()
     
     async def receive(self, text_data):
         """Receive an inbound WebSocket event."""
@@ -901,10 +905,87 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def presence_update(self, event):
+        await self.refresh_customer_phone_availability_watch(event.get('data') or {})
         await self.send(text_data=_json_dumps({
             'type': 'presence_update',
             'data': event['data'],
         }))
+
+    async def customer_contact_status(self, event):
+        await self.refresh_customer_phone_availability_watch(event.get('data') or {})
+        await self.send(text_data=_json_dumps({
+            'type': 'customer_contact_status',
+            'data': event['data'],
+        }))
+
+    async def customer_online(self, event):
+        await self.refresh_customer_phone_availability_watch(event.get('data') or {})
+        await self.send(text_data=_json_dumps({
+            'type': 'customer_online',
+            'data': event['data'],
+        }))
+
+    async def customer_offline(self, event):
+        await self.refresh_customer_phone_availability_watch(event.get('data') or {})
+        await self.send(text_data=_json_dumps({
+            'type': 'customer_offline',
+            'data': event['data'],
+        }))
+
+    async def phone_available(self, event):
+        await self.refresh_customer_phone_availability_watch(event.get('data') or {})
+        await self.send(text_data=_json_dumps({
+            'type': 'phone_available',
+            'data': event['data'],
+        }))
+
+    def cancel_customer_phone_availability_task(self):
+        task = getattr(self, 'customer_phone_availability_task', None)
+        if task:
+            task.cancel()
+            self.customer_phone_availability_task = None
+
+    async def refresh_customer_phone_availability_watch(self, payload):
+        if self.chat_type != 'driver_customer' or self.user_type != 'driver':
+            return
+        if not isinstance(payload, dict):
+            self.cancel_customer_phone_availability_task()
+            return
+        order_id_candidates = {None, self.order_id}
+        if str(self.order_id).isdigit():
+            order_id_candidates.add(int(self.order_id))
+        if payload.get('order_id') not in order_id_candidates:
+            return
+        self.cancel_customer_phone_availability_task()
+        if payload.get('is_online') or payload.get('can_show_customer_phone'):
+            return
+        remaining_seconds = payload.get('remaining_seconds')
+        try:
+            remaining_seconds = int(remaining_seconds)
+        except (TypeError, ValueError):
+            remaining_seconds = get_customer_phone_reveal_delay_seconds()
+        if remaining_seconds <= 0:
+            return
+        self.customer_phone_availability_task = asyncio.create_task(
+            self.watch_customer_phone_availability(max(remaining_seconds, 1))
+        )
+
+    async def watch_customer_phone_availability(self, delay_seconds):
+        try:
+            await asyncio.sleep(int(delay_seconds))
+            latest_snapshot = await self.get_presence_snapshot()
+            if not latest_snapshot or latest_snapshot.get('is_online') or not latest_snapshot.get('can_show_customer_phone'):
+                return
+            await self.send(text_data=_json_dumps({
+                'type': 'phone_available',
+                'data': latest_snapshot,
+            }))
+            await self.send(text_data=_json_dumps({
+                'type': 'customer_contact_status',
+                'data': latest_snapshot,
+            }))
+        except asyncio.CancelledError:
+            return
 
     async def send_ack(self, action, request_id=None, data=None, message='تم تنفيذ الطلب بنجاح'):
         payload = {
@@ -1002,6 +1083,29 @@ class ChatConsumer(AsyncWebsocketConsumer):
                         'data': batch['data'],
                     }
                 )
+                if group_name == f'chat_order_{batch["data"].get("order_id")}_driver_customer':
+                    await self.channel_layer.group_send(
+                        group_name,
+                        {
+                            'type': 'customer_contact_status',
+                            'data': batch['data'],
+                        }
+                    )
+                    await self.channel_layer.group_send(
+                        group_name,
+                        {
+                            'type': 'customer_online' if batch['data'].get('is_online') else 'customer_offline',
+                            'data': batch['data'],
+                        }
+                    )
+                    if batch['data'].get('can_show_customer_phone'):
+                        await self.channel_layer.group_send(
+                            group_name,
+                            {
+                                'type': 'phone_available',
+                                'data': batch['data'],
+                            }
+                        )
     
     # ==================== Database Operations ====================
 
