@@ -1125,7 +1125,7 @@ def notify_store_about_driver_order_action(
 
     system_message = create_message(
         conversation=conversation,
-        sender_type='system',
+        sender_type='driver',
         message_type='system',
         text=message_text,
         conversation_order=conversation_order,

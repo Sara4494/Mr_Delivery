@@ -400,6 +400,40 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn('block', response.data.get('errors', {}))
 
+    def test_customer_block_prevents_driver_customer_text_message(self):
+        order = self._create_order(accepted=True)
+        ChatParticipantBlock.objects.create(
+            source_type='customer',
+            source_customer=self.customer,
+            target_type='driver',
+            target_driver=self.driver,
+            reason='blocked',
+        )
+
+        request = self.factory.post(
+            f'/api/driver/orders/{order.id}/chat/',
+            {
+                'chat_type': 'driver_customer',
+                'message_type': 'text',
+                'content': 'hello',
+            },
+            format='json',
+        )
+        force_authenticate(request, user=self.driver)
+
+        response = driver_order_chat_view(request, order.id)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('block', response.data.get('errors', {}))
+        self.assertFalse(
+            ChatMessage.objects.filter(
+                order=order,
+                chat_type='driver_customer',
+                sender_type='driver',
+                content='hello',
+            ).exists()
+        )
+
     def test_customer_can_delete_own_chat_image(self):
         order = self._create_order(accepted=True)
         message = ChatMessage.objects.create(

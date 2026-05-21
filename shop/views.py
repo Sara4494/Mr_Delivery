@@ -3314,6 +3314,22 @@ def driver_order_chat_view(request, order_id):
                 status_code=status.HTTP_403_FORBIDDEN,
             )
 
+        block = _chat_block_for_order(order, 'driver_customer', driver, 'driver')
+        if block:
+            return error_response(
+                message='لا يمكن إرسال رسائل لأن أحد الطرفين قام بعمل بلوك للطرف الآخر.',
+                errors={
+                    'block': {
+                        'id': block.id,
+                        'source_type': block.source_type,
+                        'source_id': block.source_id,
+                        'target_type': block.target_type,
+                        'target_id': block.target_id,
+                    }
+                },
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
         _mark_driver_customer_chat_opened(order)
 
         chat_type = str(request.data.get('chat_type') or 'driver_customer').strip()
