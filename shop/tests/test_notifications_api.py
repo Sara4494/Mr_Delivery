@@ -1,11 +1,13 @@
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
+from rest_framework.test import APIRequestFactory, force_authenticate
 
-from shop.models import ChatMessage, Customer, Driver, Notification, Order
+from shop.models import ChatMessage, Customer, Driver, Notification, Order, ShopDriver
 from shop.views import (
     _attach_notification_to_shop_users,
     _notify_shop_about_driver_order_action,
+    driver_invitation_action_view,
 )
 from user.models import Employee, ShopCategory, ShopOwner
 
@@ -188,6 +190,7 @@ class ShopNotificationsApiTests(TestCase):
     def setUp(self):
         super().setUp()
         self.client = APIClient()
+        self.factory = APIRequestFactory()
         self.category = ShopCategory.objects.create(name="Groceries")
         self.shop = ShopOwner.objects.create(
             owner_name="Shop Owner",
@@ -217,6 +220,11 @@ class ShopNotificationsApiTests(TestCase):
             phone_number="01010019994",
             password="secret123",
             is_verified=True,
+        )
+        self.invitation = ShopDriver.objects.create(
+            shop_owner=self.shop,
+            driver=self.driver,
+            status='pending',
         )
         self.order = Order.objects.create(
             shop_owner=self.shop,

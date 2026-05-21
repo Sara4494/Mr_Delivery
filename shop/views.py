@@ -1732,6 +1732,23 @@ def _respond_to_driver_invitation(request, shop_driver, driver, action, normaliz
     if action == 'reject':
         shop_driver.status = 'rejected'
         shop_driver.save(update_fields=['status'])
+        _attach_notification_to_shop_users(
+            shop_owner,
+            notification_type='system',
+            title='رفض دعوة الانضمام',
+            message=f'رفض السائق {driver.name} دعوة الانضمام إلى المتجر.',
+            reference_id=shop_driver.id,
+            idempotency_key=f'driver-invitation-rejected:{shop_driver.id}',
+            data={
+                'event': 'driver_invitation_rejected',
+                'invitation_id': shop_driver.id,
+                'driver_id': driver.id,
+                'driver_name': driver.name,
+                'shop_id': shop_owner.id,
+                'shop_name': shop_owner.shop_name,
+                'status': 'rejected',
+            },
+        )
         return success_response(
             data={
                 'action': 'reject',
@@ -1762,6 +1779,23 @@ def _respond_to_driver_invitation(request, shop_driver, driver, action, normaliz
 
     shop_driver.status = 'active'
     shop_driver.save(update_fields=['status'])
+    _attach_notification_to_shop_users(
+        shop_owner,
+        notification_type='system',
+        title='قبول دعوة الانضمام',
+        message=f'وافق السائق {driver.name} على الانضمام للعمل مع المتجر.',
+        reference_id=shop_driver.id,
+        idempotency_key=f'driver-invitation-accepted:{shop_driver.id}',
+        data={
+            'event': 'driver_invitation_accepted',
+            'invitation_id': shop_driver.id,
+            'driver_id': driver.id,
+            'driver_name': driver.name,
+            'shop_id': shop_owner.id,
+            'shop_name': shop_owner.shop_name,
+            'status': 'active',
+        },
+    )
     try:
         ensure_shop_driver_welcome_conversation(
             shop_owner,
