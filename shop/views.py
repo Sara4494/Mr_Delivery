@@ -137,6 +137,7 @@ from .driver_realtime import (
     build_driver_order_payload,
     clear_all_driver_rejections,
     clear_driver_rejection,
+    driver_can_receive_new_orders,
     emit_assigned_order_upsert,
     emit_available_order_remove,
     emit_order_accepted,
@@ -4179,6 +4180,11 @@ def order_detail_view(request, order_id):
                         status='active',
                     )
                     new_driver = relation.driver
+                    if not driver_can_receive_new_orders(new_driver):
+                        return error_response(
+                            message='لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متصل أو غير متاح لاستقبال الطلبات.',
+                            status_code=status.HTTP_400_BAD_REQUEST
+                        )
                     if not old_driver or old_driver.id != new_driver.id:
                         order.driver_assigned_at = timezone.now()
                         order.driver_accepted_at = None

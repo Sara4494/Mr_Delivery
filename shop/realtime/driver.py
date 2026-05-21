@@ -329,26 +329,29 @@ def get_shop_receiving_driver_ids(shop_owner_id):
     return [driver.id for driver in drivers if driver_can_receive_new_orders(driver)]
 
 
-def get_available_orders_queryset(driver):
-    availability_filter = Q(driver=driver, driver_accepted_at__isnull=True)
-    if driver_can_receive_new_orders(driver):
-        availability_filter |= Q(driver__isnull=True, driver_accepted_at__isnull=True)
-
+def get_driver_visible_available_orders_queryset(driver):
     return (
         Order.objects
         .filter(
             shop_owner__shop_drivers__driver=driver,
             shop_owner__shop_drivers__status='active',
             status__in=DRIVER_AVAILABLE_ORDER_STATUSES,
+            driver_accepted_at__isnull=True,
         )
         .filter(
-            availability_filter
+            Q(driver=driver) | Q(driver__isnull=True)
         )
         .exclude(driver_rejections__driver=driver)
         .select_related('shop_owner', 'shop_owner__shop_category', 'customer', 'delivery_address')
         .distinct()
         .order_by('-updated_at', '-created_at')
     )
+
+
+def get_available_orders_queryset(driver):
+    if not driver_can_receive_new_orders(driver):
+        return Order.objects.none()
+    return get_driver_visible_available_orders_queryset(driver)
 
 
 def get_assigned_orders_queryset(driver):
@@ -505,11 +508,12 @@ def emit_order_cancelled(driver_id, order_id):
 def upsert_available_order_for_all(order, *, request=None, scope=None, base_url=None, exclude_driver_ids=None):
     exclude_driver_ids = set(exclude_driver_ids or [])
     order_payload = build_driver_order_payload(order, request=request, scope=scope, base_url=base_url)
-    target_driver_ids = (
-        [get_assigned_driver_id(order)]
-        if get_assigned_driver_id(order) and not has_driver_accepted(order)
-        else get_shop_receiving_driver_ids(order.shop_owner_id)
-    )
+    assigned_driver_id = get_assigned_driver_id(order)
+    if assigned_driver_id and not has_driver_accepted(order):
+        assigned_driver = Driver.objects.filter(id=assigned_driver_id).first()
+        target_driver_ids = [assigned_driver_id] if driver_can_receive_new_orders(assigned_driver) else []
+    else:
+        target_driver_ids = get_shop_receiving_driver_ids(order.shop_owner_id)
     for driver_id in target_driver_ids:
         if driver_id in exclude_driver_ids:
             continue
@@ -518,17 +522,37 @@ def upsert_available_order_for_all(order, *, request=None, scope=None, base_url=
 
 def push_available_order_for_all(order, *, request=None, scope=None, base_url=None, exclude_driver_ids=None):
     exclude_driver_ids = set(exclude_driver_ids or [])
-    target_driver_ids = (
-        [get_assigned_driver_id(order)]
-        if get_assigned_driver_id(order) and not has_driver_accepted(order)
-        else get_shop_receiving_driver_ids(order.shop_owner_id)
-    )
+    assigned_driver_id = get_assigned_driver_id(order)
+    if assigned_driver_id and not has_driver_accepted(order):
+        assigned_driver = Driver.objects.filter(id=assigned_driver_id).first()
+        target_driver_ids = [assigned_driver_id] if driver_can_receive_new_orders(assigned_driver) else []
+    else:
+        target_driver_ids = get_shop_receiving_driver_ids(order.shop_owner_id)
     drivers = Driver.objects.filter(id__in=[driver_id for driver_id in target_driver_ids if driver_id not in exclude_driver_ids])
     for driver in drivers:
         try:
             send_driver_new_order_notification(driver, order, request=request, scope=scope, base_url=base_url)
         except Exception:
             continue
+
+
+def sync_driver_available_orders_for_status(driver, *, request=None, scope=None, base_url=None):
+    if not driver:
+        return
+
+    if driver_can_receive_new_orders(driver):
+        for order in get_available_orders_queryset(driver):
+            emit_available_order_upsert(
+                driver.id,
+                build_driver_order_payload(order, request=request, scope=scope, base_url=base_url),
+            )
+        return
+
+    visible_order_ids = list(
+        get_driver_visible_available_orders_queryset(driver).values_list('id', flat=True)
+    )
+    for order_id in visible_order_ids:
+        emit_available_order_remove(driver.id, order_id, 'driver_unavailable')
 
 
 def remove_available_order_for_all(order, reason, *, driver_ids=None):

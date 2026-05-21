@@ -13,6 +13,7 @@ from .customer_app import (
     broadcast_customer_order_changed,
     broadcast_customer_support_changed,
 )
+from .driver import sync_driver_available_orders_for_status
 from ..driver_chat.service import broadcast_driver_presence_update
 from ..fcm.service import send_order_chat_push_fallback
 
@@ -321,6 +322,11 @@ def notify_driver_status_updated(driver):
 
     for shop_owner_id in shop_owner_ids:
         send_to_group(f'shop_orders_{shop_owner_id}', 'driver_status_updated', payload)
+
+    try:
+        sync_driver_available_orders_for_status(driver_obj)
+    except Exception as exc:
+        print(f"driver available orders sync error: {exc}")
 
     try:
         broadcast_driver_presence_update(driver_obj)

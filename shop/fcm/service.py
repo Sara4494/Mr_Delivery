@@ -2268,17 +2268,27 @@ def build_driver_customer_ring_payload(*, order, ring_payload):
         default='العميل',
         max_length=120,
     )
+    title = f'مكالمة واردة من {customer_name}'
+    body = 'اضغط لفتح شاشة مكالمة العميل'
     profile = _driver_urgent_ring_profile()
     return {
         'type': 'driver_customer.call_ringing',
         'chat_type': 'driver_customer',
+        'screen': 'incoming_call',
+        'route': '/incoming-call',
+        'click_action': 'OPEN_INCOMING_CALL',
         'order_id': str(order.id),
         'customer_id': str(getattr(customer, 'id', '') or ''),
         'ring_id': str(ring_payload.get('ring_id') or ''),
+        'call_id': str(ring_payload.get('call_id') or ring_payload.get('ring_id') or ''),
         'conversation_id': str(ring_payload.get('conversation_id') or f'order_{order.id}_driver_customer'),
         'customer_name': customer_name,
-        'title': f'{customer_name} يتصل بك',
-        'body': 'اضغط لفتح محادثة العميل',
+        'caller_name': customer_name,
+        'call_direction': 'incoming',
+        'title': title,
+        'body': body,
+        'notification_title': title,
+        'notification_body': body,
         'sound': profile['sound'],
         'channel_id': profile['channel_id'],
     }
