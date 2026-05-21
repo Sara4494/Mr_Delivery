@@ -1876,7 +1876,7 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
     )
     push_title = shop_name
     if chat_type == 'driver_customer':
-        push_title = message_payload.get('sender_name') or push_title
+        push_title = payload.get('sender_name') or push_title
     logger.info(
         'fcm.chat.dispatch order_id=%s chat_type=%s sender_type=%s recipients=%s',
         order.id,
@@ -2070,6 +2070,14 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
 
 def build_chat_message_payload(*, order, chat_type, message_payload, shop_name=None, shop_profile_image_url=None):
     message_payload = message_payload or {}
+    sender_type = message_payload.get('sender_type') or ''
+    sender_name = message_payload.get('sender_name') or ''
+    if chat_type == 'driver_customer' and sender_type == 'driver':
+        sender_name = _trim_text(
+            message_payload.get('driver_name') or sender_name or getattr(order.driver, 'name', None),
+            default='المندوب',
+            max_length=120,
+        )
     return {
         'type': 'chat_message',
         'chat_id': order.id,
@@ -2079,9 +2087,19 @@ def build_chat_message_payload(*, order, chat_type, message_payload, shop_name=N
         'shop_id': order.shop_owner_id,
         'shop_name': shop_name or getattr(order.shop_owner, 'shop_name', '') or 'Mr Delivery',
         'shop_profile_image_url': shop_profile_image_url or '',
+        'shop_logo_url': shop_profile_image_url or '',
         'sender_id': message_payload.get('sender_id') or '',
-        'sender_type': message_payload.get('sender_type') or '',
-        'sender_name': message_payload.get('sender_name') or '',
+        'sender_type': sender_type,
+        'sender_name': sender_name,
+        'driver_id': getattr(order, 'driver_id', '') or '',
+        'driver_name': (
+            _trim_text(getattr(order.driver, 'name', None), default='المندوب', max_length=120)
+            if chat_type == 'driver_customer' else ''
+        ),
+        'driver_image_url': (
+            build_absolute_file_url(getattr(order.driver, 'profile_image', None), request=None, scope=None, base_url=None)
+            if chat_type == 'driver_customer' else ''
+        ),
         'message_type': message_payload.get('message_type') or 'text',
         'message_preview': _message_preview(message_payload),
         'route': '/chat',
@@ -2215,6 +2233,11 @@ def send_driver_chat_call_ringing_push_fallback(conversation, call, *, request=N
 def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, shop_profile_image_url=None):
     ring_payload = ring_payload or {}
     resolved_shop_name = shop_name or getattr(order.shop_owner, 'shop_name', '') or 'Mr Delivery'
+    resolved_driver_name = _trim_text(
+        ring_payload.get('driver_name') or ring_payload.get('sender_name') or getattr(order.driver, 'name', None),
+        default='المندوب',
+        max_length=120,
+    )
     driver_image_url = ring_payload.get('driver_image_url')
     if driver_image_url is None and ring_payload.get('sender_type') == 'driver':
         driver_image_url = build_absolute_file_url(getattr(order.driver, 'profile_image', None))
@@ -2239,6 +2262,7 @@ def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, 
         'shop_name': resolved_shop_name,
         'store_name': resolved_shop_name,
         'shop_profile_image_url': shop_profile_image_url or '',
+        'shop_logo_url': shop_profile_image_url or '',
         'target': target,
         'targets': ring_payload.get('targets') or ([target] if target else []),
         'chat_type': chat_type,
@@ -2249,7 +2273,18 @@ def build_incoming_ring_payload(*, order, ring_payload, target, shop_name=None, 
         'customer_id': getattr(customer, 'id', '') or '',
         'customer_name': customer_name,
         'driver_id': getattr(order, 'driver_id', '') or '',
+        'driver_name': resolved_driver_name,
         'driver_image_url': driver_image_url,
+        'driver': {
+            'id': str(getattr(order, 'driver_id', '') or ''),
+            'name': resolved_driver_name,
+            'image_url': driver_image_url,
+        },
+        'shop': {
+            'id': str(order.shop_owner_id or ''),
+            'name': resolved_shop_name,
+            'logo_url': shop_profile_image_url or '',
+        },
         'caller_name': ring_payload.get('caller_name') or sender_name,
         'notification_kind': ring_payload.get('notification_kind') or 'ring',
         'play_sound_on_frontend': ring_payload.get('play_sound_on_frontend', True),
@@ -2297,9 +2332,8 @@ def build_driver_customer_ring_payload(*, order, ring_payload):
 def build_customer_driver_chat_ring_payload(*, order, ring_payload, shop_name=None, shop_profile_image_url=None):
     ring_payload = ring_payload or {}
     customer = getattr(order, 'customer', None)
-    display_shop_name = str(shop_name or getattr(getattr(order, 'shop_owner', None), 'shop_name', None) or '').strip()
     sender_name = _trim_text(
-        (f'مندوب {display_shop_name}' if display_shop_name else None)
+        ring_payload.get('driver_name')
         or ring_payload.get('sender_name')
         or getattr(order.driver, 'name', None),
         default='المندوب',
@@ -2314,6 +2348,8 @@ def build_customer_driver_chat_ring_payload(*, order, ring_payload, shop_name=No
             **ring_payload,
             'conversation_id': conversation_id,
             'chat_type': 'driver_customer',
+            'driver_name': sender_name,
+            'sender_name': sender_name,
         },
         target='customer',
         shop_name=shop_name,

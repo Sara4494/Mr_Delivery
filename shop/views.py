@@ -3237,6 +3237,7 @@ def _build_driver_customer_chat_bootstrap_response(request, order, *, mark_as_op
     can_open = has_driver_accepted(order)
     conversation_id = f'order_{order.id}_driver_customer'
     ws_path = f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}'
+    driver = order.driver
     driver_presence = _serialize_driver_presence_response(order.driver) if order.driver_id else None
     customer_contact = get_order_customer_presence_snapshot(order.id) if order.customer_id else None
 
@@ -3259,6 +3260,20 @@ def _build_driver_customer_chat_bootstrap_response(request, order, *, mark_as_op
         'can_open': can_open,
         'ws_path': ws_path,
         'driver_presence': driver_presence,
+        'driver_id': getattr(driver, 'id', None) if driver else None,
+        'driver_name': getattr(driver, 'name', None) if driver else None,
+        'driver_image_url': _build_file_url(request, getattr(driver, 'profile_image', None)) if driver else None,
+        'driver': (
+            {
+                'id': getattr(driver, 'id', None),
+                'name': getattr(driver, 'name', None),
+                'image_url': _build_file_url(request, getattr(driver, 'profile_image', None)),
+            }
+            if driver else None
+        ),
+        'shop_id': order.shop_owner_id,
+        'shop_name': getattr(order.shop_owner, 'shop_name', None),
+        'shop_logo_url': _build_file_url(request, getattr(order.shop_owner, 'profile_image', None)),
         'customer_contact': customer_contact,
         'messages': normalized_messages,
     }

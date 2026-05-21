@@ -206,6 +206,9 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
         self.assertEqual(response.data['data']['order_id'], order.id)
         self.assertEqual(response.data['data']['chat_type'], 'driver_customer')
         self.assertTrue(response.data['data']['can_open'])
+        self.assertEqual(response.data['data']['driver_id'], self.driver.id)
+        self.assertEqual(response.data['data']['driver_name'], self.driver.name)
+        self.assertEqual(response.data['data']['driver']['name'], self.driver.name)
 
     def test_driver_chat_bootstrap_hides_customer_phone_while_customer_online(self):
         order = self._create_order(accepted=True)

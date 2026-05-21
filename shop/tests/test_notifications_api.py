@@ -299,3 +299,40 @@ class ShopNotificationsApiTests(TestCase):
         _notify_shop_about_driver_order_action(self.order, self.driver, "rejected", reason="ازدحام")
 
         self.assertFalse(ChatMessage.objects.filter(order=self.order, chat_type="shop_customer").exists())
+    def test_driver_accept_invitation_creates_shop_notification(self):
+        request = self.factory.post(
+            f"/api/driver/invitations/{self.invitation.id}/respond/",
+            {"action": "accept"},
+            format="json",
+        )
+        force_authenticate(request, user=self.driver)
+
+        response = driver_invitation_action_view(request, self.invitation.id)
+
+        self.assertEqual(response.status_code, 200)
+        owner_notification = Notification.objects.filter(
+            shop_owner=self.shop,
+            reference_id=str(self.invitation.id),
+            idempotency_key=f"driver-invitation-accepted:{self.invitation.id}",
+        ).first()
+        self.assertIsNotNone(owner_notification)
+        self.assertEqual(owner_notification.data.get("event"), "driver_invitation_accepted")
+
+    def test_driver_reject_invitation_creates_shop_notification(self):
+        request = self.factory.post(
+            f"/api/driver/invitations/{self.invitation.id}/respond/",
+            {"action": "reject"},
+            format="json",
+        )
+        force_authenticate(request, user=self.driver)
+
+        response = driver_invitation_action_view(request, self.invitation.id)
+
+        self.assertEqual(response.status_code, 200)
+        owner_notification = Notification.objects.filter(
+            shop_owner=self.shop,
+            reference_id=str(self.invitation.id),
+            idempotency_key=f"driver-invitation-rejected:{self.invitation.id}",
+        ).first()
+        self.assertIsNotNone(owner_notification)
+        self.assertEqual(owner_notification.data.get("event"), "driver_invitation_rejected")

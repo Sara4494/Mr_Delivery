@@ -503,6 +503,37 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(mock_send.call_args.kwargs['data']['sender_name'], f'مندوب {self.shop.shop_name}')
 
     @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
+    def test_chat_fallback_uses_delegate_sender_name_as_title_for_driver_customer_message(self, mock_send):
+        FCMDeviceToken.objects.create(
+            user_type='customer',
+            user_id=self.customer.id,
+            device_id='customer-driver-chat-device',
+            platform='android',
+            fcm_token='customer-driver-chat-token',
+            is_active=True,
+        )
+
+        summary = send_order_chat_push_fallback(
+            self.order.id,
+            'driver_customer',
+            {
+                'sender_type': 'driver',
+                'sender_name': self.driver.name,
+                'message_type': 'text',
+                'content': 'رسالة جديدة',
+            },
+        )
+
+        self.assertEqual(summary['tokens_total'], 1)
+        self.assertEqual(summary['tokens_sent'], 1)
+        self.assertEqual(mock_send.call_count, 1)
+        target_record = mock_send.call_args[0][0]
+        self.assertEqual(target_record.user_type, 'customer')
+        self.assertEqual(target_record.user_id, self.customer.id)
+        self.assertEqual(mock_send.call_args.kwargs['title'], self.driver.name)
+        self.assertEqual(mock_send.call_args.kwargs['data']['sender_name'], self.driver.name)
+        self.assertEqual(mock_send.call_args.kwargs['data']['driver_name'], self.driver.name)
+
     def test_ring_fallback_targets_shop_owner_and_employees_for_shop_target(self, mock_send):
         FCMDeviceToken.objects.create(
             user_type='shop_owner',
@@ -855,6 +886,26 @@ class FCMFallbackDispatchTests(TestCase):
 
         self.assertEqual(payload['sender_name'], f'مندوب {self.shop.shop_name}')
         self.assertEqual(payload['driver_name'], f'مندوب {self.shop.shop_name}')
+
+    def test_customer_driver_chat_ring_payload_uses_delegate_shop_name(self):
+        payload = build_customer_driver_chat_ring_payload(
+            order=self.order,
+            ring_payload={
+                'ring_id': 'ring-driver-1',
+                'sender_type': 'driver',
+                'sender_id': self.driver.id,
+                'sender_name': self.driver.name,
+                'chat_type': 'driver_customer',
+            },
+            shop_name=self.shop.shop_name,
+            shop_profile_image_url='https://example.com/media/shop_profiles/shop.jpg',
+        )
+
+        self.assertEqual(payload['sender_name'], self.driver.name)
+        self.assertEqual(payload['driver_name'], self.driver.name)
+        self.assertEqual(payload['driver']['name'], self.driver.name)
+        self.assertEqual(payload['shop']['name'], self.shop.shop_name)
+        self.assertEqual(payload['shop_logo_url'], 'https://example.com/media/shop_profiles/shop.jpg')
 
     def test_ring_dispatch_context_includes_driver_image_url_for_driver_sender(self):
         context = async_to_sync(_build_ring_dispatch_context)(
