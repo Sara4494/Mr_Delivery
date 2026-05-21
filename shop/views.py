@@ -137,6 +137,7 @@ from .driver_realtime import (
     build_driver_order_payload,
     clear_all_driver_rejections,
     clear_driver_rejection,
+    driver_can_accept_reassigned_order,
     driver_can_receive_new_orders,
     emit_assigned_order_upsert,
     emit_available_order_remove,
@@ -4180,7 +4181,14 @@ def order_detail_view(request, order_id):
                         status='active',
                     )
                     new_driver = relation.driver
-                    if not driver_can_receive_new_orders(new_driver):
+                    is_reassignment = bool(old_driver and old_driver.id != new_driver.id)
+                    if is_reassignment:
+                        if not driver_can_accept_reassigned_order(new_driver):
+                            return error_response(
+                                message='لا يمكن تحويل الأوردر إلى هذا الدليفري لأنه غير متصل حالياً.',
+                                status_code=status.HTTP_400_BAD_REQUEST
+                            )
+                    elif not driver_can_receive_new_orders(new_driver):
                         return error_response(
                             message='لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متصل أو غير متاح لاستقبال الطلبات.',
                             status_code=status.HTTP_400_BAD_REQUEST

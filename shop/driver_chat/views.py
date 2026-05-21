@@ -206,7 +206,7 @@ def driver_chat_orders_view(request, conversation_id):
     )
 
 from shop.models import DriverPresenceConnection, Driver
-from shop.realtime.driver import driver_can_receive_new_orders
+from shop.realtime.driver import driver_can_accept_reassigned_order
 
 
 def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
@@ -231,7 +231,7 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
     return [
         serialize_driver_chat_driver(driver)
         for driver in qs
-        if driver_can_receive_new_orders(driver)
+        if driver_can_accept_reassigned_order(driver)
     ]
 
 @api_view(['POST'])

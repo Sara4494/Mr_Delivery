@@ -27,7 +27,7 @@ from ..models import (
     ShopDriver,
 )
 from ..realtime.presence import format_utc_iso8601
-from ..realtime.driver import driver_can_receive_new_orders
+from ..realtime.driver import driver_can_accept_reassigned_order
 
 
 logger = logging.getLogger(__name__)
@@ -1292,7 +1292,7 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
     return [
         serialize_driver_chat_driver(driver)
         for driver in qs
-        if driver_can_receive_new_orders(driver)
+        if driver_can_accept_reassigned_order(driver)
     ]
 
 

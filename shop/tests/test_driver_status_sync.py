@@ -13,6 +13,7 @@ from shop.models import Customer, Driver, Order, ShopDriver
 from shop.views import _build_driver_availability_panel, _build_driver_status_panel, driver_dashboard_view
 from shop.driver_realtime import (
     build_driver_order_payload,
+    driver_can_accept_reassigned_order,
     driver_can_receive_new_orders,
     get_available_orders_queryset,
     get_driver_order_unavailable_reason,
@@ -520,6 +521,45 @@ class DriverAvailabilityEnforcementTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(response.status_code, 400)
         self.assertIsNone(order.driver_id)
+
+    def test_reassignment_is_allowed_to_connected_driver_even_if_not_receiving_new_orders(self):
+        self.driver.is_online = True
+        self.driver.availability_enabled = False
+        self.driver.status = 'unavailable'
+        self.driver.save(update_fields=['is_online', 'availability_enabled', 'status', 'updated_at'])
+        self.assertTrue(driver_can_accept_reassigned_order(self.driver))
+        self.assertFalse(driver_can_receive_new_orders(self.driver))
+
+        order = self._create_order(driver=self.other_driver, accepted=True, status='on_way')
+
+        request = self.factory.put(
+            f'/api/shop/orders/{order.id}/',
+            {'driver_id': self.driver.id},
+            format='json',
+        )
+        force_authenticate(request, user=self.shop)
+
+        response = order_detail_view(request, order.id)
+
+        order.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(order.driver_id, self.driver.id)
+
+    def test_reassignment_is_blocked_for_offline_driver(self):
+        order = self._create_order(driver=self.other_driver, accepted=True, status='on_way')
+
+        request = self.factory.put(
+            f'/api/shop/orders/{order.id}/',
+            {'driver_id': self.driver.id},
+            format='json',
+        )
+        force_authenticate(request, user=self.shop)
+
+        response = order_detail_view(request, order.id)
+
+        order.refresh_from_db()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(order.driver_id, self.other_driver.id)
 
     def test_shop_can_assign_new_order_to_available_driver(self):
         order = self._create_order(driver=None, accepted=False, status='confirmed')

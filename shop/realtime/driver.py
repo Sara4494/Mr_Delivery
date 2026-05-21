@@ -317,6 +317,15 @@ def driver_can_receive_new_orders(driver):
     return bool(snapshot.get('can_receive_orders'))
 
 
+def driver_can_accept_reassigned_order(driver):
+    if not driver:
+        return False
+    snapshot = driver.get_availability_snapshot()
+    if snapshot.get('reason') == 'account_restricted':
+        return False
+    return bool(snapshot.get('presence_online')) and snapshot.get('status') != 'offline'
+
+
 def get_shop_receiving_driver_ids(shop_owner_id):
     drivers = list(
         Driver.objects.filter(
