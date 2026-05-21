@@ -660,6 +660,28 @@ def broadcast_message_created(
     return serialized
 
 
+def broadcast_message_updated(
+    message: DriverChatMessage,
+    *,
+    request=None,
+    scope=None,
+    base_url=None,
+    send_push=False,
+):
+    serialized = serialize_driver_chat_message(message, request=request, scope=scope, base_url=base_url)
+    publish_driver_chat_event(
+        shop_owner_id=message.conversation.shop_owner_id,
+        event_type='driver_chat.message_updated',
+        data={
+            'conversation_id': message.conversation.public_id,
+            'message': serialized,
+        },
+        conversation=message.conversation,
+        driver=message.conversation.driver,
+    )
+    return serialized
+
+
 def broadcast_order_updated(link: DriverChatOrder):
     publish_driver_chat_event(
         shop_owner_id=link.conversation.shop_owner_id,

@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import unquote, urlsplit
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -11,6 +12,7 @@ from django.apps import apps as django_apps
 from django.conf import settings
 from django.shortcuts import render
 from django.core.cache import cache
+from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Count, Sum, F, Avg, Prefetch
 from django.utils import timezone
@@ -19,6 +21,7 @@ from zoneinfo import ZoneInfo
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
+    DriverChatMessage,
     ChatParticipantBlock,
     AbuseReport, AccountModerationStatus,
     CustomerSupportConversation, CustomerSupportMessage,
@@ -3494,6 +3497,139 @@ def customer_order_chat_view(request, order_id):
     )
 
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def _chat_message_image_delete_view_v2(request, message_id):
+    user = request.user
+    user_type = _resolve_user_type(user)
+    if user_type not in CHAT_BLOCKABLE_USER_TYPES:
+        return error_response(
+            message='نوع المستخدم الحالي غير مدعوم.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    raw_message_id = str(message_id or '').strip()
+    numeric_message_id = int(raw_message_id) if raw_message_id.isdigit() else None
+
+    chat_message = None
+    if numeric_message_id is not None:
+        chat_message = (
+            ChatMessage.objects
+            .select_related('order', 'sender_customer', 'sender_shop_owner', 'sender_employee', 'sender_driver')
+            .filter(id=numeric_message_id)
+            .first()
+        )
+
+    if chat_message:
+        if not _can_user_access_chat(chat_message.order, user, user_type, chat_message.chat_type):
+            return error_response(
+                message='ليس لديك صلاحية للوصول إلى هذه الرسالة.',
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not _can_manage_chat_message_media(chat_message, user, user_type):
+            return error_response(
+                message='لا يمكنك حذف هذه الصورة.',
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not chat_message.image_file:
+            return error_response(
+                message='الصورة محذوفة بالفعل أو غير موجودة.',
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        stored_name = chat_message.image_file.name
+        chat_message.image_file.delete(save=False)
+        metadata = dict(chat_message.metadata or {})
+        metadata['image_deleted'] = True
+        metadata['image_deleted_at'] = format_utc_iso8601(timezone.now())
+        metadata['image_deleted_by_type'] = _normalize_chat_actor_type(user_type)
+        metadata['deleted_image_name'] = stored_name
+        chat_message.content = 'تم حذف الصورة'
+        chat_message.metadata = metadata
+        chat_message.save(update_fields=['image_file', 'content', 'metadata'])
+
+        payload = _chat_message_payload(chat_message, request=request)
+        from .realtime.websocket_utils import broadcast_chat_message_update
+        broadcast_chat_message_update(chat_message.order_id, chat_message.chat_type, payload)
+
+        return success_response(
+            data={
+                'message_id': chat_message.id,
+                'order_id': chat_message.order_id,
+                'chat_type': chat_message.chat_type,
+                'image_deleted': True,
+                'message': ChatMessageSerializer(chat_message, context={'request': request}).data,
+            },
+            message='تم حذف صورة الرسالة بنجاح.',
+            status_code=status.HTTP_200_OK,
+        )
+
+    driver_chat_message = (
+        DriverChatMessage.objects
+        .select_related('conversation', 'conversation__shop_owner', 'conversation__driver')
+        .filter(Q(public_id=raw_message_id) | Q(id=numeric_message_id or 0))
+        .first()
+    )
+    if not driver_chat_message:
+        return error_response(
+            message='الرسالة غير موجودة.',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not _can_user_access_driver_chat_message(driver_chat_message, user, user_type):
+        return error_response(
+            message='ليس لديك صلاحية للوصول إلى هذه الرسالة.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not _can_manage_driver_chat_message_media(driver_chat_message, user, user_type):
+        return error_response(
+            message='لا يمكنك حذف هذه الصورة.',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    metadata = dict(driver_chat_message.metadata or {})
+    image_url = str(metadata.get('image_url') or '').strip()
+    if not image_url:
+        return error_response(
+            message='الصورة محذوفة بالفعل أو غير موجودة.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    stored_name = _resolve_driver_chat_image_storage_path(driver_chat_message)
+    if stored_name and default_storage.exists(stored_name):
+        default_storage.delete(stored_name)
+
+    metadata.pop('image_url', None)
+    metadata.pop('image_path', None)
+    metadata['image_deleted'] = True
+    metadata['image_deleted_at'] = format_utc_iso8601(timezone.now())
+    metadata['image_deleted_by_type'] = _normalize_chat_actor_type(user_type)
+    metadata['deleted_image_name'] = stored_name or image_url
+    driver_chat_message.text = 'تم حذف الصورة'
+    driver_chat_message.metadata = metadata
+    driver_chat_message.save(update_fields=['text', 'metadata', 'updated_at'])
+
+    from .driver_chat.service import broadcast_message_updated, serialize_driver_chat_message
+
+    payload = serialize_driver_chat_message(driver_chat_message, request=request)
+    broadcast_message_updated(driver_chat_message, request=request, send_push=False)
+
+    return success_response(
+        data={
+            'message_id': driver_chat_message.public_id,
+            'conversation_id': driver_chat_message.conversation.public_id,
+            'chat_type': 'driver_shop',
+            'image_deleted': True,
+            'message': payload,
+        },
+        message='تم حذف صورة الرسالة بنجاح.',
+        status_code=status.HTTP_200_OK,
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsDriver])
 def driver_order_customer_contact_status_view(request, order_id):
@@ -5482,6 +5618,54 @@ def _can_manage_chat_message_media(message, user, user_type):
     return False
 
 
+def _can_user_access_driver_chat_message(message, user, user_type):
+    actor_type, actor = _resolve_chat_actor(user, user_type)
+    if not actor_type or not actor:
+        return False
+
+    if actor_type == 'shop_owner':
+        return message.conversation.shop_owner_id == actor.id
+
+    if actor_type == 'driver':
+        return message.conversation.driver_id == actor.id
+
+    return False
+
+
+def _can_manage_driver_chat_message_media(message, user, user_type):
+    if message.message_type != 'image':
+        return False
+
+    actor_type, actor = _resolve_chat_actor(user, user_type)
+    if not actor_type or not actor:
+        return False
+
+    if actor_type == 'shop_owner':
+        return message.sender_type == 'store' and message.conversation.shop_owner_id == actor.id
+
+    if actor_type == 'driver':
+        return message.sender_type == 'driver' and message.conversation.driver_id == actor.id
+
+    return False
+
+
+def _resolve_driver_chat_image_storage_path(message):
+    metadata = dict(message.metadata or {})
+    explicit_path = str(metadata.get('image_path') or '').strip()
+    if explicit_path:
+        return explicit_path
+
+    image_url = str(metadata.get('image_url') or '').strip()
+    if not image_url:
+        return None
+
+    parsed_path = unquote(urlsplit(image_url).path or '').strip()
+    media_url = str(getattr(settings, 'MEDIA_URL', '') or '').strip()
+    if media_url and parsed_path.startswith(media_url):
+        return parsed_path[len(media_url):].lstrip('/')
+    return None
+
+
 ABUSE_REPORT_REASON_OPTIONS = {
     'customer': [
         {'key': 'abusive_language', 'label': 'ألفاظ أو إساءة'},
@@ -6221,6 +6405,11 @@ def chat_message_image_delete_view(request, message_id):
         message='تم حذف صورة الرسالة بنجاح.',
         status_code=status.HTTP_200_OK,
     )
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def chat_message_image_delete_view(request, message_id):
+    return _chat_message_image_delete_view_v2(request, message_id)
 
 
 @api_view(['GET'])

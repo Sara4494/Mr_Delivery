@@ -11,7 +11,16 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from shop.middleware import JWTAuthMiddleware
-from shop.models import ChatMessage, ChatParticipantBlock, Customer, Driver, Order, ShopDriver
+from shop.models import (
+    ChatMessage,
+    ChatParticipantBlock,
+    Customer,
+    Driver,
+    DriverChatConversation,
+    DriverChatMessage,
+    Order,
+    ShopDriver,
+)
 from shop.routing import websocket_urlpatterns
 from shop.views import (
     chat_block_detail_view,
@@ -455,6 +464,58 @@ class DriverCustomerChatAccessTests(TransactionTestCase):
         self.assertFalse(bool(message.image_file))
         self.assertEqual(message.content, 'تم حذف الصورة')
         self.assertTrue(bool((message.metadata or {}).get('image_deleted')))
+
+    def test_shop_can_delete_driver_chat_image_via_same_endpoint(self):
+        conversation = DriverChatConversation.objects.create(
+            shop_owner=self.shop,
+            driver=self.driver,
+            status='waiting_reply',
+        )
+        message = DriverChatMessage.objects.create(
+            conversation=conversation,
+            sender_type='store',
+            message_type='image',
+            text='preview',
+            metadata={'image_url': 'http://testserver/media/driver_chats/images/test.jpg'},
+        )
+
+        request = self.factory.delete(f'/api/chat/messages/{message.id}/delete-image/')
+        force_authenticate(request, user=self.shop)
+
+        response = chat_message_image_delete_view(request, message.id)
+
+        self.assertEqual(response.status_code, 200)
+        message.refresh_from_db()
+        self.assertEqual(message.text, 'تم حذف الصورة')
+        self.assertFalse(bool((message.metadata or {}).get('image_url')))
+        self.assertTrue(bool((message.metadata or {}).get('image_deleted')))
+        self.assertEqual(response.data['data']['message_id'], message.public_id)
+
+    def test_driver_can_delete_own_driver_chat_image_via_same_endpoint(self):
+        conversation = DriverChatConversation.objects.create(
+            shop_owner=self.shop,
+            driver=self.driver,
+            status='waiting_reply',
+        )
+        message = DriverChatMessage.objects.create(
+            conversation=conversation,
+            sender_type='driver',
+            message_type='image',
+            text='preview',
+            metadata={'image_url': 'http://testserver/media/driver_chats/images/test-driver.jpg'},
+        )
+
+        request = self.factory.delete(f'/api/chat/messages/{message.id}/delete-image/')
+        force_authenticate(request, user=self.driver)
+
+        response = chat_message_image_delete_view(request, message.id)
+
+        self.assertEqual(response.status_code, 200)
+        message.refresh_from_db()
+        self.assertEqual(message.text, 'تم حذف الصورة')
+        self.assertFalse(bool((message.metadata or {}).get('image_url')))
+        self.assertTrue(bool((message.metadata or {}).get('image_deleted')))
+        self.assertEqual(response.data['data']['message_id'], message.public_id)
 
     def test_customer_can_unblock_driver(self):
         ChatParticipantBlock.objects.create(
