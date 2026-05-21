@@ -506,7 +506,7 @@ class DriverAvailabilityEnforcementTests(TestCase):
         emit_available_order_remove_mock.assert_any_call(self.driver.id, unassigned_order.id, 'driver_unavailable')
         emit_available_order_remove_mock.assert_any_call(self.driver.id, pending_order.id, 'driver_unavailable')
 
-    def test_shop_cannot_assign_new_order_to_offline_driver(self):
+    def test_shop_can_assign_new_order_to_offline_driver(self):
         order = self._create_order(driver=None, accepted=False, status='confirmed')
 
         request = self.factory.put(
@@ -519,15 +519,11 @@ class DriverAvailabilityEnforcementTests(TestCase):
         response = order_detail_view(request, order.id)
 
         order.refresh_from_db()
-        self.assertEqual(response.status_code, 400)
-        self.assertIsNone(order.driver_id)
-        self.assertEqual(
-            response.data.get('message'),
-            'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متصل حالياً.',
-        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(order.driver_id, self.driver.id)
 
     @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
-    def test_shop_gets_explicit_message_when_driver_hit_max_active_orders(self):
+    def test_shop_can_assign_new_order_when_driver_hit_max_active_orders(self):
         self.other_driver.current_orders_count = 2
         self.other_driver.save(update_fields=['current_orders_count', 'updated_at'])
         self._create_order(driver=self.other_driver, accepted=True, status='preparing')
@@ -544,12 +540,8 @@ class DriverAvailabilityEnforcementTests(TestCase):
         response = order_detail_view(request, order.id)
 
         order.refresh_from_db()
-        self.assertEqual(response.status_code, 400)
-        self.assertIsNone(order.driver_id)
-        self.assertEqual(
-            response.data.get('message'),
-            'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه وصل للحد الأقصى من الطلبات الجارية (2/2).',
-        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(order.driver_id, self.other_driver.id)
 
     def test_reassignment_is_allowed_to_connected_driver_even_if_not_receiving_new_orders(self):
         self.driver.is_online = True
@@ -574,7 +566,7 @@ class DriverAvailabilityEnforcementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(order.driver_id, self.driver.id)
 
-    def test_reassignment_is_blocked_for_offline_driver(self):
+    def test_reassignment_is_allowed_for_offline_driver(self):
         order = self._create_order(driver=self.other_driver, accepted=True, status='on_way')
 
         request = self.factory.put(
@@ -587,8 +579,8 @@ class DriverAvailabilityEnforcementTests(TestCase):
         response = order_detail_view(request, order.id)
 
         order.refresh_from_db()
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(order.driver_id, self.other_driver.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(order.driver_id, self.driver.id)
 
     def test_shop_can_assign_new_order_to_available_driver(self):
         order = self._create_order(driver=None, accepted=False, status='confirmed')

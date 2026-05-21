@@ -349,15 +349,6 @@ def get_driver_assignment_block_message(driver, *, reassignment=False):
         return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متصل حالياً.'
     if reason == 'availability_disabled':
         return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه أغلق استقبال الطلبات الجديدة حالياً.'
-    if reason == 'max_active_orders':
-        active_orders_count = int(snapshot.get('active_orders_count') or 0)
-        max_active_orders = int(snapshot.get('max_active_orders_per_driver') or 0)
-        if max_active_orders > 0:
-            return (
-                f'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه وصل للحد الأقصى '
-                f'من الطلبات الجارية ({active_orders_count}/{max_active_orders}).'
-            )
-        return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه وصل للحد الأقصى من الطلبات الجارية.'
     if reason == 'account_restricted':
         return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأن حسابه غير مؤهل للعمل حالياً.'
     return 'لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متاح لاستقبال الطلبات حالياً.'

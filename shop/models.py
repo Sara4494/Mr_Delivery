@@ -351,10 +351,6 @@ class Driver(models.Model):
             status = 'unavailable'
             can_receive_orders = False
             reason = 'availability_disabled'
-        elif active_orders_count >= max_active_orders:
-            status = 'available'
-            can_receive_orders = False
-            reason = 'max_active_orders'
         else:
             status = 'available'
             can_receive_orders = True

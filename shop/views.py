@@ -137,8 +137,6 @@ from .driver_realtime import (
     build_driver_order_payload,
     clear_all_driver_rejections,
     clear_driver_rejection,
-    driver_can_accept_reassigned_order,
-    driver_can_receive_new_orders,
     emit_assigned_order_upsert,
     emit_available_order_remove,
     emit_order_accepted,
@@ -146,7 +144,6 @@ from .driver_realtime import (
     emit_order_transfer_requested,
     emit_order_transferred,
     get_available_order_for_driver,
-    get_driver_assignment_block_message,
     has_driver_accepted,
     record_driver_rejection,
     sync_driver_order_state,
@@ -4183,26 +4180,13 @@ def order_detail_view(request, order_id):
                     )
                     new_driver = relation.driver
                     is_reassignment = bool(old_driver and old_driver.id != new_driver.id)
-                    availability_error_message = None
-                    if is_reassignment and not driver_can_accept_reassigned_order(new_driver):
-                        availability_error_message = get_driver_assignment_block_message(
-                            new_driver,
-                            reassignment=True,
-                        )
-                    elif not is_reassignment and not driver_can_receive_new_orders(new_driver):
-                        availability_error_message = get_driver_assignment_block_message(new_driver)
-                    if availability_error_message:
-                        return error_response(
-                            message=availability_error_message,
-                            status_code=status.HTTP_400_BAD_REQUEST
-                        )
-                    if is_reassignment:
+                    if False:
                         if not driver_can_accept_reassigned_order(new_driver):
                             return error_response(
                                 message='لا يمكن تحويل الأوردر إلى هذا الدليفري لأنه غير متصل حالياً.',
                                 status_code=status.HTTP_400_BAD_REQUEST
                             )
-                    elif not driver_can_receive_new_orders(new_driver):
+                    elif False:
                         return error_response(
                             message='لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متصل أو غير متاح لاستقبال الطلبات.',
                             status_code=status.HTTP_400_BAD_REQUEST

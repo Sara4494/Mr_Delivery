@@ -205,34 +205,24 @@ def driver_chat_orders_view(request, conversation_id):
         request=request,
     )
 
-from shop.models import DriverPresenceConnection, Driver
-from shop.realtime.driver import driver_can_accept_reassigned_order
+from shop.models import Driver
 
 
 def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
     exclude_numeric_id = _extract_numeric_id(exclude_driver_id) or 0
-
-    online_driver_ids = list(
-        DriverPresenceConnection.objects.values_list('driver_id', flat=True)
-    )
 
     qs = (
         Driver.objects
         .filter(
             driver_shops__shop_owner=shop_owner,
             driver_shops__status='active',
-            id__in=online_driver_ids,
         )
         .exclude(id=exclude_numeric_id)
         .distinct()
         .order_by('name')
     )
 
-    return [
-        serialize_driver_chat_driver(driver)
-        for driver in qs
-        if driver_can_accept_reassigned_order(driver)
-    ]
+    return [serialize_driver_chat_driver(driver) for driver in qs]
 
 @api_view(['POST'])
 @permission_classes([IsShopOwnerOrEmployee])

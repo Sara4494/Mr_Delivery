@@ -27,9 +27,6 @@ from ..models import (
     ShopDriver,
 )
 from ..realtime.presence import format_utc_iso8601
-from ..realtime.driver import driver_can_accept_reassigned_order
-
-
 logger = logging.getLogger(__name__)
 
 DRIVER_CHAT_MESSAGE_PAGE_SIZE = 20
@@ -1289,11 +1286,7 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
         .distinct()
         .order_by('name')
     )
-    return [
-        serialize_driver_chat_driver(driver)
-        for driver in qs
-        if driver_can_accept_reassigned_order(driver)
-    ]
+    return [serialize_driver_chat_driver(driver) for driver in qs]
 
 
 def get_shop_snapshot(shop_owner, *, request=None, scope=None, base_url=None):
