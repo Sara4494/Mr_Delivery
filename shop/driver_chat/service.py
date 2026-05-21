@@ -1308,7 +1308,11 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
         .distinct()
         .order_by('name')
     )
-    return [serialize_driver_chat_driver(driver) for driver in qs]
+    return [
+        serialize_driver_chat_driver(driver)
+        for driver in qs
+        if _driver_presence_status(driver) == 'online'
+    ]
 
 
 def get_shop_snapshot(shop_owner, *, request=None, scope=None, base_url=None):
