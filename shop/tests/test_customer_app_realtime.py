@@ -664,6 +664,50 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         serialized_invoice = ChatMessageSerializer(message).data['invoice']
         self.assertEqual(serialized_invoice['items'], ['ها - price: 50.00'])
 
+    def test_driver_invoice_card_preserves_structured_invoice_shape(self):
+        order = self._create_order(status='confirmed', driver=self.driver)
+
+        message = ChatMessage.objects.create(
+            order=order,
+            chat_type='driver_customer',
+            sender_type='driver',
+            sender_driver=self.driver,
+            message_type='invoice_card',
+            metadata={
+                'card_type': 'invoice_card',
+                'invoice': {
+                    'order_id': order.id,
+                    'order_number': order.order_number,
+                    'customer_name': self.customer.name,
+                    'currency': 'جنيه',
+                    'payment_method': {'label': 'نقداً عند الاستلام'},
+                    'collection_amount': 100.0,
+                    'subtotal': 50.0,
+                    'delivery_fee': 50.0,
+                    'total': 100.0,
+                    'items': [
+                        {'name': 'ات', 'quantity': 1, 'amount': 50.0},
+                    ],
+                },
+            },
+        )
+
+        serialized_invoice = ChatMessageSerializer(message).data['invoice']
+        self.assertEqual(serialized_invoice['order_id'], order.id)
+        self.assertEqual(serialized_invoice['order_number'], order.order_number)
+        self.assertEqual(serialized_invoice['customer_name'], self.customer.name)
+        self.assertEqual(serialized_invoice['currency'], 'جنيه')
+        self.assertEqual(serialized_invoice['payment_method']['label'], 'نقداً عند الاستلام')
+        self.assertEqual(serialized_invoice['collection_amount'], 100.0)
+        self.assertEqual(serialized_invoice['subtotal'], 50.0)
+        self.assertEqual(serialized_invoice['delivery_fee'], 50.0)
+        self.assertEqual(serialized_invoice['total'], 100.0)
+        self.assertEqual(serialized_invoice['total_amount'], '100.00')
+        self.assertEqual(
+            serialized_invoice['items'],
+            [{'name': 'ات', 'quantity': 1, 'amount': 50.0}],
+        )
+
     def test_customer_realtime_order_serializer_includes_items_array(self):
         order = self._create_order(status='confirmed')
         order.items = json.dumps([

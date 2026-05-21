@@ -816,6 +816,14 @@ def _build_chat_message_invoice_payload(obj):
             return ''
         return str(value)
 
+    def _money_float(value):
+        try:
+            if value in (None, ''):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def _legacy_invoice_item_lines(items_value):
         lines = []
         for item in _normalize_invoice_items(items_value):
@@ -839,6 +847,54 @@ def _build_chat_message_invoice_payload(obj):
             'notes': _string_or_empty(getattr(order, 'notes', None) if order else None),
         }
 
+    def _build_driver_chat_invoice_payload(*, order, invoice):
+        invoice = invoice if isinstance(invoice, dict) else {}
+        normalized_items = _normalize_invoice_items(invoice.get('items') or getattr(order, 'items', None))
+        delivery_fee = _money_float(invoice.get('delivery_fee'))
+        if delivery_fee is None and order is not None:
+            delivery_fee = _money_float(getattr(order, 'delivery_fee', None))
+        total_value = _money_float(invoice.get('total'))
+        total_amount_value = _money_float(invoice.get('total_amount'))
+        if total_value is None and order is not None:
+            total_value = _money_float(getattr(order, 'total_amount', None))
+        if total_amount_value is None and order is not None:
+            total_amount_value = _money_float(getattr(order, 'total_amount', None))
+        if total_value is None:
+            total_value = total_amount_value
+        if total_amount_value is None:
+            total_amount_value = total_value
+        collection_amount = _money_float(invoice.get('collection_amount'))
+        if collection_amount is None:
+            collection_amount = total_value
+        subtotal = _money_float(invoice.get('subtotal'))
+        if subtotal is None and total_value is not None:
+            subtotal = round(max(total_value - float(delivery_fee or 0), 0.0), 2)
+
+        payment_method = invoice.get('payment_method')
+        if not isinstance(payment_method, dict):
+            payment_method = {}
+
+        order_id = invoice.get('order_id')
+        if order_id in (None, '') and order is not None:
+            order_id = getattr(order, 'id', None)
+
+        return {
+            'order_id': order_id,
+            'order_number': invoice.get('order_number') or _string_or_empty(getattr(order, 'order_number', None) if order else None),
+            'customer_name': invoice.get('customer_name') or _string_or_empty(getattr(getattr(order, 'customer', None), 'name', None)),
+            'currency': invoice.get('currency') or 'جنيه',
+            'payment_method': {
+                'code': payment_method.get('code') or _string_or_empty(getattr(order, 'payment_method', None) if order else None),
+                'label': payment_method.get('label') or _string_or_empty(order.get_payment_method_display() if order else None),
+            },
+            'collection_amount': collection_amount,
+            'subtotal': subtotal,
+            'delivery_fee': delivery_fee,
+            'total': total_value,
+            'total_amount': _money_string(total_amount_value),
+            'items': normalized_items,
+        }
+
     def _build_legacy_shop_customer_invoice_payload(*, order, items_value, delivery_fee, total_amount):
         status_key = 'pending_customer_confirm'
         status_display = dict(getattr(order, 'STATUS_CHOICES', [])) if order else {}
@@ -856,6 +912,11 @@ def _build_chat_message_invoice_payload(obj):
 
     if obj.message_type == 'invoice_card':
         invoice = metadata.get('invoice')
+        if obj.sender_type == 'driver':
+            return _build_driver_chat_invoice_payload(
+                order=getattr(obj, 'order', None),
+                invoice=invoice,
+            )
         if isinstance(invoice, dict) and invoice:
             order = getattr(obj, 'order', None)
             total_amount = invoice.get('total_amount', invoice.get('total'))
