@@ -1132,6 +1132,21 @@ class OrderCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError('السائق غير موجود')
         return value
 
+    def validate(self, attrs):
+        driver_id = attrs.get('driver_id')
+        if not driver_id:
+            return attrs
+
+        shop_owner = self.context['shop_owner']
+        relation = ShopDriver.objects.select_related('driver').filter(
+            shop_owner=shop_owner,
+            driver_id=driver_id,
+            status='active',
+        ).first()
+        if relation and not bool(getattr(relation.driver, 'is_online', False)):
+            raise serializers.ValidationError({'driver_id': [OFFLINE_DRIVER_ASSIGNMENT_MESSAGE]})
+        return attrs
+
     def create(self, validated_data):
         """إنشاء طلب جديد"""
         shop_owner = self.context['shop_owner']

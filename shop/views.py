@@ -80,6 +80,7 @@ from .serializers import (
     DriverAppVersionSerializer,
     get_order_presentation_status_display,
     get_order_presentation_status_key,
+    OFFLINE_DRIVER_ASSIGNMENT_MESSAGE,
 )
 from .permissions import (
     IsShopOwner,
@@ -4193,6 +4194,11 @@ def order_detail_view(request, order_id):
                         status='active',
                     )
                     new_driver = relation.driver
+                    if not bool(getattr(new_driver, 'is_online', False)):
+                        return error_response(
+                            message=OFFLINE_DRIVER_ASSIGNMENT_MESSAGE,
+                            status_code=status.HTTP_400_BAD_REQUEST
+                        )
                     if not old_driver or old_driver.id != new_driver.id:
                         order.driver_assigned_at = timezone.now()
                         order.driver_accepted_at = None
