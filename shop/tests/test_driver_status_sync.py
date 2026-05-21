@@ -50,7 +50,7 @@ class DriverStatusSyncTests(SimpleTestCase):
         self.assertEqual(snapshot['max_active_orders_per_driver'], 2)
 
     @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
-    def test_driver_snapshot_stays_available_at_max_active_orders_but_blocks_new_orders(self):
+    def test_driver_snapshot_stays_available_at_max_active_orders(self):
         driver = Driver(
             name='Driver',
             phone_number='01000000001',
@@ -62,8 +62,8 @@ class DriverStatusSyncTests(SimpleTestCase):
         snapshot = driver.get_availability_snapshot(active_orders_count=2, in_delivery_count=1)
 
         self.assertEqual(snapshot['status'], 'available')
-        self.assertFalse(snapshot['can_receive_orders'])
-        self.assertEqual(snapshot['reason'], 'max_active_orders')
+        self.assertTrue(snapshot['can_receive_orders'])
+        self.assertEqual(snapshot['reason'], 'available')
         self.assertEqual(snapshot['max_active_orders_per_driver'], 2)
 
     @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
@@ -83,15 +83,15 @@ class DriverStatusSyncTests(SimpleTestCase):
         self.assertEqual(status_panel['status_display'], 'متاح')
         self.assertEqual(status_panel['title'], 'أنت متاح الآن')
         self.assertEqual(status_panel['subtitle'], 'جاهز للعمل واستكمال الطلبات الحالية.')
-        self.assertFalse(status_panel['can_receive_orders'])
-        self.assertEqual(status_panel['reason'], 'max_active_orders')
+        self.assertTrue(status_panel['can_receive_orders'])
+        self.assertEqual(status_panel['reason'], 'available')
 
         self.assertEqual(availability_panel['status'], 'available')
         self.assertEqual(availability_panel['status_display'], 'متاح')
         self.assertEqual(availability_panel['title'], 'أنت متاح الآن')
         self.assertEqual(availability_panel['subtitle'], 'جاهز للعمل واستكمال الطلبات الحالية.')
-        self.assertFalse(availability_panel['can_receive_orders'])
-        self.assertEqual(availability_panel['reason'], 'max_active_orders')
+        self.assertTrue(availability_panel['can_receive_orders'])
+        self.assertEqual(availability_panel['reason'], 'available')
 
     def test_targeted_pending_acceptance_is_only_available_for_matching_driver(self):
         driver = SimpleNamespace(id=7)
@@ -367,13 +367,13 @@ class DriverStatusSyncTests(SimpleTestCase):
         self.assertTrue(driver_can_receive_new_orders(driver))
 
     @override_settings(MAX_ACTIVE_ORDERS_PER_DRIVER=2)
-    def test_driver_at_max_active_orders_cannot_receive_new_orders(self):
+    def test_driver_at_max_active_orders_can_receive_new_orders(self):
         driver = SimpleNamespace(
             get_availability_snapshot=lambda: {
-                'can_receive_orders': False,
+                'can_receive_orders': True,
             }
         )
-        self.assertFalse(driver_can_receive_new_orders(driver))
+        self.assertTrue(driver_can_receive_new_orders(driver))
 
 
 class DriverDashboardStatusCountsTests(TestCase):

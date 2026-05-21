@@ -4179,18 +4179,6 @@ def order_detail_view(request, order_id):
                         status='active',
                     )
                     new_driver = relation.driver
-                    is_reassignment = bool(old_driver and old_driver.id != new_driver.id)
-                    if False:
-                        if not driver_can_accept_reassigned_order(new_driver):
-                            return error_response(
-                                message='لا يمكن تحويل الأوردر إلى هذا الدليفري لأنه غير متصل حالياً.',
-                                status_code=status.HTTP_400_BAD_REQUEST
-                            )
-                    elif False:
-                        return error_response(
-                            message='لا يمكن إسناد طلب جديد إلى هذا الدليفري لأنه غير متصل أو غير متاح لاستقبال الطلبات.',
-                            status_code=status.HTTP_400_BAD_REQUEST
-                        )
                     if not old_driver or old_driver.id != new_driver.id:
                         order.driver_assigned_at = timezone.now()
                         order.driver_accepted_at = None
