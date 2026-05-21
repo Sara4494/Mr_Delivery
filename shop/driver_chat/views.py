@@ -206,6 +206,7 @@ def driver_chat_orders_view(request, conversation_id):
     )
 
 from shop.models import DriverPresenceConnection, Driver
+from shop.realtime.driver import driver_can_receive_new_orders
 
 
 def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
@@ -227,7 +228,11 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
         .order_by('name')
     )
 
-    return [serialize_driver_chat_driver(driver) for driver in qs]
+    return [
+        serialize_driver_chat_driver(driver)
+        for driver in qs
+        if driver_can_receive_new_orders(driver)
+    ]
 
 @api_view(['POST'])
 @permission_classes([IsShopOwnerOrEmployee])

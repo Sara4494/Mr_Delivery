@@ -27,6 +27,7 @@ from ..models import (
     ShopDriver,
 )
 from ..realtime.presence import format_utc_iso8601
+from ..realtime.driver import driver_can_receive_new_orders
 
 
 logger = logging.getLogger(__name__)
@@ -1288,7 +1289,11 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
         .distinct()
         .order_by('name')
     )
-    return [serialize_driver_chat_driver(driver) for driver in qs]
+    return [
+        serialize_driver_chat_driver(driver)
+        for driver in qs
+        if driver_can_receive_new_orders(driver)
+    ]
 
 
 def get_shop_snapshot(shop_owner, *, request=None, scope=None, base_url=None):

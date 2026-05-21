@@ -14,16 +14,19 @@ from shop.views import _build_driver_availability_panel, _build_driver_status_pa
 from shop.driver_realtime import (
     build_driver_order_payload,
     driver_can_receive_new_orders,
+    get_available_orders_queryset,
     get_driver_order_unavailable_reason,
     is_assigned_order,
     is_assigned_order_for_driver,
     is_available_order,
     is_available_order_for_driver,
     normalize_driver_status,
+    sync_driver_available_orders_for_status,
     sync_unavailable_order_for_driver,
     sync_driver_order_state,
     upsert_available_order_for_all,
 )
+from shop.views import order_detail_view
 from user.models import ShopCategory, ShopOwner
 
 
@@ -425,3 +428,111 @@ class DriverDashboardStatusCountsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['data']['stats']['current_deliveries_count'], 0)
         self.assertEqual(response.data['data']['stats']['active_orders_count'], 1)
+
+
+class DriverAvailabilityEnforcementTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.factory = APIRequestFactory()
+        self.category = ShopCategory.objects.create(name='Groceries')
+        self.shop = ShopOwner.objects.create(
+            owner_name='Shop Owner',
+            shop_name='Shawarma',
+            shop_number='SHOP-DRIVER-AVAIL-1',
+            phone_number='01010003001',
+            password='secret123',
+            shop_category=self.category,
+        )
+        self.customer = Customer.objects.create(
+            shop_owner=self.shop,
+            name='Customer',
+            phone_number='01010003002',
+            password='secret123',
+        )
+        self.driver = Driver.objects.create(
+            name='Unavailable Driver',
+            phone_number='01010003003',
+            password='secret123',
+            is_verified=True,
+            is_online=False,
+            availability_enabled=False,
+            status='offline',
+        )
+        self.other_driver = Driver.objects.create(
+            name='Available Driver',
+            phone_number='01010003004',
+            password='secret123',
+            is_verified=True,
+            is_online=True,
+            availability_enabled=True,
+            status='available',
+        )
+        ShopDriver.objects.create(shop_owner=self.shop, driver=self.driver, status='active')
+        ShopDriver.objects.create(shop_owner=self.shop, driver=self.other_driver, status='active')
+
+    def _create_order(self, *, driver=None, accepted=False, status='confirmed'):
+        return Order.objects.create(
+            shop_owner=self.shop,
+            customer=self.customer,
+            driver=driver,
+            order_number=f'OD-AVAIL-{Order.objects.count() + 1}',
+            status=status,
+            items='["meal"]',
+            total_amount='100.00',
+            delivery_fee='15.00',
+            address='Tahrir Street',
+            notes='',
+            driver_assigned_at=timezone.now() if driver else None,
+            driver_accepted_at=timezone.now() if accepted else None,
+        )
+
+    def test_unavailable_driver_available_queryset_returns_no_orders(self):
+        self._create_order(driver=None, accepted=False, status='confirmed')
+        self._create_order(driver=self.driver, accepted=False, status='preparing')
+
+        orders = list(get_available_orders_queryset(self.driver))
+
+        self.assertEqual(orders, [])
+
+    @patch('shop.driver_realtime.emit_available_order_remove')
+    def test_unavailable_driver_receives_remove_for_visible_available_orders(self, emit_available_order_remove_mock):
+        unassigned_order = self._create_order(driver=None, accepted=False, status='confirmed')
+        pending_order = self._create_order(driver=self.driver, accepted=False, status='preparing')
+
+        sync_driver_available_orders_for_status(self.driver)
+
+        self.assertEqual(emit_available_order_remove_mock.call_count, 2)
+        emit_available_order_remove_mock.assert_any_call(self.driver.id, unassigned_order.id, 'driver_unavailable')
+        emit_available_order_remove_mock.assert_any_call(self.driver.id, pending_order.id, 'driver_unavailable')
+
+    def test_shop_cannot_assign_new_order_to_offline_driver(self):
+        order = self._create_order(driver=None, accepted=False, status='confirmed')
+
+        request = self.factory.put(
+            f'/api/shop/orders/{order.id}/',
+            {'driver_id': self.driver.id},
+            format='json',
+        )
+        force_authenticate(request, user=self.shop)
+
+        response = order_detail_view(request, order.id)
+
+        order.refresh_from_db()
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(order.driver_id)
+
+    def test_shop_can_assign_new_order_to_available_driver(self):
+        order = self._create_order(driver=None, accepted=False, status='confirmed')
+
+        request = self.factory.put(
+            f'/api/shop/orders/{order.id}/',
+            {'driver_id': self.other_driver.id},
+            format='json',
+        )
+        force_authenticate(request, user=self.shop)
+
+        response = order_detail_view(request, order.id)
+
+        order.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(order.driver_id, self.other_driver.id)
