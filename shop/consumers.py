@@ -18,12 +18,15 @@ from .models import (
     CustomerSupportMessage,
 )
 from .presence import (
+    CUSTOMER_PRESENCE_TIMEOUT_SECONDS,
     build_customer_presence_broadcast_batches,
     format_utc_iso8601,
     get_customer_phone_reveal_delay_seconds,
     get_order_customer_presence_snapshot,
+    mark_customer_connection_timed_out,
     mark_customer_websocket_connected,
     mark_customer_websocket_disconnected,
+    touch_customer_presence,
 )
 from user.models import ShopOwner
 from .serializers import (
@@ -533,6 +536,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.customer_presence_registered = False
             self.driver_presence_registered = False
             self.driver_presence_timeout_task = None
+            self.customer_presence_timeout_task = None
             self.customer_phone_availability_task = None
             
             # Join the chat group.
@@ -544,6 +548,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             if self.user_type == 'customer':
                 presence_state = await self.register_customer_presence('chat')
                 self.customer_presence_registered = bool(presence_state)
+                self.customer_presence_timeout_task = asyncio.create_task(self.watch_customer_presence_timeout())
             elif self.user_type == 'driver':
                 presence_state = await self.register_driver_presence('order_chat')
                 self.driver_presence_registered = bool(presence_state)
@@ -591,6 +596,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
         if getattr(self, 'customer_presence_registered', False):
+            self.cancel_customer_presence_timeout_task()
             presence_state = await self.unregister_customer_presence()
             if presence_state and presence_state.get('changed'):
                 await self.broadcast_presence_updates(presence_state)
@@ -606,6 +612,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         try:
             if not await ensure_socket_account_active(self, refresh=True):
                 return
+            await self.touch_customer_presence_if_needed()
             await self.touch_driver_presence_if_needed()
             data = json.loads(text_data)
             event_type = data.get('type', 'chat_message')
@@ -624,6 +631,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_typing(data)
             elif event_type == 'location':
                 await self.handle_location(data, request_id=request_id, action=event_type)
+            elif event_type in {'ping', 'presence_ping'}:
+                await self.send(text_data=_json_dumps({
+                    'type': 'pong',
+                    'request_id': request_id,
+                    'sent_at': format_utc_iso8601(timezone.now()),
+                }))
             else:
                 await self.send_error_event(
                     code='UNKNOWN_EVENT',
@@ -650,6 +663,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
         await self._touch_driver_presence()
 
+    async def touch_customer_presence_if_needed(self):
+        if getattr(self, 'user_type', None) != 'customer':
+            return
+        await self._touch_customer_presence()
+
     async def auth_session_revoked(self, event):
         await _handle_session_revoked(self, event)
 
@@ -667,6 +685,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             task.cancel()
             self.driver_presence_timeout_task = None
 
+    def cancel_customer_presence_timeout_task(self):
+        task = getattr(self, 'customer_presence_timeout_task', None)
+        if task:
+            task.cancel()
+            self.customer_presence_timeout_task = None
+
     async def watch_driver_presence_timeout(self):
         try:
             while True:
@@ -675,6 +699,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 if timed_out_state:
                     if timed_out_state.get('changed'):
                         await self.broadcast_driver_presence()
+                    await self.close(code=4001)
+                    return
+        except asyncio.CancelledError:
+            return
+
+    async def watch_customer_presence_timeout(self):
+        try:
+            while True:
+                await asyncio.sleep(15)
+                timed_out_state = await self.mark_customer_presence_timed_out()
+                if timed_out_state:
+                    if timed_out_state.get('changed'):
+                        await self.broadcast_presence_updates(timed_out_state)
                     await self.close(code=4001)
                     return
         except asyncio.CancelledError:
@@ -1134,6 +1171,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return mark_customer_websocket_disconnected(self.channel_name)
 
     @database_sync_to_async
+    def mark_customer_presence_timed_out(self):
+        return mark_customer_connection_timed_out(
+            self.channel_name,
+            timeout_seconds=CUSTOMER_PRESENCE_TIMEOUT_SECONDS,
+        )
+
+    @database_sync_to_async
     def register_driver_presence(self, connection_type):
         return mark_driver_connected(
             self.user.id,
@@ -1155,6 +1199,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _touch_driver_presence(self):
         return touch_driver_presence(self.channel_name, self.user.id)
+
+    @database_sync_to_async
+    def _touch_customer_presence(self):
+        return touch_customer_presence(self.channel_name, self.user.id)
 
     @database_sync_to_async
     def broadcast_driver_presence(self):
@@ -1488,6 +1536,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
                 return
 
             self.customer_presence_registered = False
+            self.customer_presence_timeout_task = None
 
             await self.channel_layer.group_add(self.room_group_name, self.channel_name)
             await self.channel_layer.group_add(self.session_group_name, self.channel_name)
@@ -1496,6 +1545,9 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             if self.user_type == 'customer':
                 presence_state = await self.register_customer_presence('support_chat')
                 self.customer_presence_registered = bool(presence_state)
+                self.customer_presence_timeout_task = asyncio.create_task(self.watch_customer_presence_timeout())
+                if presence_state and presence_state.get('changed'):
+                    await self.broadcast_presence_updates(presence_state)
 
             conversation = await self.get_conversation()
             await self.send(text_data=_json_dumps(_with_localized_message(
@@ -1530,12 +1582,16 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
         if getattr(self, 'customer_presence_registered', False):
-            await self.unregister_customer_presence()
+            self.cancel_customer_presence_timeout_task()
+            presence_state = await self.unregister_customer_presence()
+            if presence_state and presence_state.get('changed'):
+                await self.broadcast_presence_updates(presence_state)
 
     async def receive(self, text_data):
         try:
             if not await ensure_socket_account_active(self, refresh=True):
                 return
+            await self.touch_customer_presence_if_needed()
             data = json.loads(text_data)
             event_type = data.get('type', 'chat_message')
             request_id = data.get('request_id')
@@ -1576,6 +1632,30 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
                 message='حدث خطأ غير متوقع',
                 details={'error_detail': str(e)},
             )
+
+    async def touch_customer_presence_if_needed(self):
+        if getattr(self, 'user_type', None) != 'customer':
+            return
+        await self._touch_customer_presence()
+
+    def cancel_customer_presence_timeout_task(self):
+        task = getattr(self, 'customer_presence_timeout_task', None)
+        if task:
+            task.cancel()
+            self.customer_presence_timeout_task = None
+
+    async def watch_customer_presence_timeout(self):
+        try:
+            while True:
+                await asyncio.sleep(15)
+                timed_out_state = await self.mark_customer_presence_timed_out()
+                if timed_out_state:
+                    if timed_out_state.get('changed'):
+                        await self.broadcast_presence_updates(timed_out_state)
+                    await self.close(code=4001)
+                    return
+        except asyncio.CancelledError:
+            return
 
     async def handle_chat_message(self, data, request_id=None, action='chat_message'):
         content = data.get('content', '')
@@ -1831,6 +1911,38 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def unregister_customer_presence(self):
         return mark_customer_websocket_disconnected(self.channel_name)
+
+    @database_sync_to_async
+    def mark_customer_presence_timed_out(self):
+        return mark_customer_connection_timed_out(
+            self.channel_name,
+            timeout_seconds=CUSTOMER_PRESENCE_TIMEOUT_SECONDS,
+        )
+
+    @database_sync_to_async
+    def _touch_customer_presence(self):
+        return touch_customer_presence(self.channel_name, self.user.id)
+
+    @database_sync_to_async
+    def get_customer_presence_broadcast_batches(self, customer_id, is_online, last_seen):
+        return build_customer_presence_broadcast_batches(customer_id, is_online, last_seen)
+
+    async def broadcast_presence_updates(self, presence_state):
+        batches = await self.get_customer_presence_broadcast_batches(
+            presence_state.get('customer_id'),
+            presence_state.get('is_online'),
+            presence_state.get('last_seen'),
+        )
+
+        for batch in batches:
+            for group_name in batch['group_names']:
+                await self.channel_layer.group_send(
+                    group_name,
+                    {
+                        'type': 'presence_update',
+                        'data': batch['data'],
+                    }
+                )
 
     @database_sync_to_async
     def check_conversation_access(self, user, user_type):
@@ -2400,6 +2512,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             return
 
         self.customer_presence_registered = False
+        self.customer_presence_timeout_task = None
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.channel_layer.group_add(self.session_group_name, self.channel_name)
@@ -2407,6 +2520,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
 
         presence_state = await self.register_customer_presence('orders')
         self.customer_presence_registered = bool(presence_state)
+        self.customer_presence_timeout_task = asyncio.create_task(self.watch_customer_presence_timeout())
 
         await self.send(text_data=_json_dumps({
             'type': 'connection',
@@ -2427,6 +2541,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.session_group_name, self.channel_name)
 
         if getattr(self, 'customer_presence_registered', False):
+            self.cancel_customer_presence_timeout_task()
             presence_state = await self.unregister_customer_presence()
             if presence_state and presence_state.get('changed'):
                 await self.broadcast_presence_updates(presence_state)
@@ -2435,6 +2550,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         try:
             if not await ensure_socket_account_active(self, refresh=True):
                 return
+            await self.touch_customer_presence()
             data = json.loads(text_data)
             event_type = data.get('type')
             request_id = data.get('request_id')
@@ -2458,6 +2574,12 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
                 await self.send_on_way_snapshot(request_id=request_id)
             elif event_type == 'refresh_order_history':
                 await self.send_order_history_snapshot(request_id=request_id)
+            elif event_type in {'ping', 'presence_ping'}:
+                await self.send(text_data=_json_dumps({
+                    'type': 'pong',
+                    'request_id': request_id,
+                    'sent_at': format_utc_iso8601(timezone.now()),
+                }))
             else:
                 await _send_error_event(
                     self,
@@ -2483,6 +2605,25 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
 
     async def auth_session_revoked(self, event):
         await _handle_session_revoked(self, event)
+
+    def cancel_customer_presence_timeout_task(self):
+        task = getattr(self, 'customer_presence_timeout_task', None)
+        if task:
+            task.cancel()
+            self.customer_presence_timeout_task = None
+
+    async def watch_customer_presence_timeout(self):
+        try:
+            while True:
+                await asyncio.sleep(15)
+                timed_out_state = await self.mark_customer_presence_timed_out()
+                if timed_out_state:
+                    if timed_out_state.get('changed'):
+                        await self.broadcast_presence_updates(timed_out_state)
+                    await self.close(code=4001)
+                    return
+        except asyncio.CancelledError:
+            return
 
     async def order_update(self, event):
         order_id = self._extract_order_id(event.get('data'))
@@ -2747,8 +2888,19 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         return mark_customer_websocket_disconnected(self.channel_name)
 
     @database_sync_to_async
+    def mark_customer_presence_timed_out(self):
+        return mark_customer_connection_timed_out(
+            self.channel_name,
+            timeout_seconds=CUSTOMER_PRESENCE_TIMEOUT_SECONDS,
+        )
+
+    @database_sync_to_async
     def get_customer_presence_broadcast_batches(self, customer_id, is_online, last_seen):
         return build_customer_presence_broadcast_batches(customer_id, is_online, last_seen)
+
+    @database_sync_to_async
+    def touch_customer_presence(self):
+        return touch_customer_presence(self.channel_name, self.user.id)
 
 
 class DriverConsumer(AsyncWebsocketConsumer):

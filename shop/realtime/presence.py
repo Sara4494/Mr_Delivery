@@ -11,6 +11,9 @@ from user.utils import resolve_customer_profile_image_url
 from ..models import Customer, CustomerPresenceConnection, Order
 
 
+CUSTOMER_PRESENCE_TIMEOUT_SECONDS = 75
+
+
 def get_customer_phone_reveal_delay_seconds():
     raw_value = getattr(settings, 'CUSTOMER_PHONE_REVEAL_DELAY_SECONDS', 120)
     try:
@@ -18,6 +21,15 @@ def get_customer_phone_reveal_delay_seconds():
     except (TypeError, ValueError):
         delay_seconds = 120
     return max(delay_seconds, 0)
+
+
+def get_customer_presence_timeout_seconds():
+    raw_value = getattr(settings, 'CUSTOMER_PRESENCE_TIMEOUT_SECONDS', CUSTOMER_PRESENCE_TIMEOUT_SECONDS)
+    try:
+        timeout_seconds = int(raw_value)
+    except (TypeError, ValueError):
+        timeout_seconds = CUSTOMER_PRESENCE_TIMEOUT_SECONDS
+    return max(timeout_seconds, 15)
 
 
 def format_utc_iso8601(value):
@@ -48,6 +60,19 @@ def _apply_customer_presence_state(customer, is_online):
         customer.save(update_fields=update_fields)
 
     return changed
+
+
+def _stale_customer_presence_cutoff(timeout_seconds=None):
+    return timezone.now() - timedelta(seconds=int(timeout_seconds or get_customer_presence_timeout_seconds()))
+
+
+def _cleanup_stale_customer_connections(*, customer_id=None, timeout_seconds=None):
+    stale_qs = CustomerPresenceConnection.objects.filter(
+        last_heartbeat_at__lt=_stale_customer_presence_cutoff(timeout_seconds)
+    )
+    if customer_id is not None:
+        stale_qs = stale_qs.filter(customer_id=customer_id)
+    stale_qs.delete()
 
 
 def serialize_customer_presence(customer, order_id=None):
@@ -96,13 +121,20 @@ def serialize_customer_presence(customer, order_id=None):
 def mark_customer_websocket_connected(customer_id, channel_name, connection_type='websocket'):
     with transaction.atomic():
         customer = Customer.objects.select_for_update().get(id=customer_id)
-        CustomerPresenceConnection.objects.get_or_create(
+        _cleanup_stale_customer_connections(customer_id=customer.id)
+        connection, _ = CustomerPresenceConnection.objects.get_or_create(
             channel_name=channel_name,
             defaults={
                 'customer': customer,
                 'connection_type': connection_type,
+                'last_heartbeat_at': timezone.now(),
             },
         )
+        if connection.customer_id != customer.id:
+            connection.customer = customer
+            connection.connection_type = connection_type
+        connection.last_heartbeat_at = timezone.now()
+        connection.save(update_fields=['customer', 'connection_type', 'last_heartbeat_at'])
         has_connections = CustomerPresenceConnection.objects.filter(customer_id=customer_id).exists()
         changed = _apply_customer_presence_state(customer, has_connections)
         return {
@@ -124,6 +156,7 @@ def mark_customer_websocket_disconnected(channel_name):
 
         customer = Customer.objects.select_for_update().get(id=connection.customer_id)
         connection.delete()
+        _cleanup_stale_customer_connections(customer_id=customer.id)
         has_connections = CustomerPresenceConnection.objects.filter(customer_id=customer.id).exists()
         changed = _apply_customer_presence_state(customer, has_connections)
         return {
@@ -132,10 +165,65 @@ def mark_customer_websocket_disconnected(channel_name):
         }
 
 
+def touch_customer_presence(channel_name, customer_id=None):
+    with transaction.atomic():
+        connection = (
+            CustomerPresenceConnection.objects
+            .select_related('customer')
+            .filter(channel_name=channel_name)
+            .first()
+        )
+        if not connection:
+            return None
+        if customer_id is not None and int(connection.customer_id) != int(customer_id):
+            return None
+        connection.last_heartbeat_at = timezone.now()
+        connection.save(update_fields=['last_heartbeat_at'])
+        customer = connection.customer
+        _cleanup_stale_customer_connections(customer_id=customer.id)
+        has_connections = CustomerPresenceConnection.objects.filter(customer_id=customer.id).exists()
+        if customer.is_online != has_connections:
+            _apply_customer_presence_state(customer, has_connections)
+            customer.refresh_from_db(fields=['is_online', 'last_seen'])
+        return serialize_customer_presence(customer)
+
+
+def mark_customer_connection_timed_out(channel_name, timeout_seconds=None):
+    timeout_seconds = timeout_seconds or get_customer_presence_timeout_seconds()
+    with transaction.atomic():
+        connection = (
+            CustomerPresenceConnection.objects
+            .select_related('customer')
+            .filter(channel_name=channel_name)
+            .first()
+        )
+        if not connection:
+            return None
+        last_heartbeat_at = connection.last_heartbeat_at or connection.created_at
+        if last_heartbeat_at and last_heartbeat_at >= _stale_customer_presence_cutoff(timeout_seconds):
+            return None
+
+        customer = Customer.objects.select_for_update().get(id=connection.customer_id)
+        connection.delete()
+        _cleanup_stale_customer_connections(customer_id=customer.id, timeout_seconds=timeout_seconds)
+        has_connections = CustomerPresenceConnection.objects.filter(customer_id=customer.id).exists()
+        changed = _apply_customer_presence_state(customer, has_connections)
+        return {
+            **serialize_customer_presence(customer),
+            'changed': changed,
+            'timed_out': True,
+        }
+
+
 def get_order_customer_presence_snapshot(order_id):
     order = Order.objects.select_related('customer').filter(id=order_id).first()
     if not order or not order.customer_id:
         return None
+    _cleanup_stale_customer_connections(customer_id=order.customer_id)
+    has_connections = CustomerPresenceConnection.objects.filter(customer_id=order.customer_id).exists()
+    if order.customer.is_online != has_connections:
+        _apply_customer_presence_state(order.customer, has_connections)
+        order.customer.refresh_from_db(fields=['is_online', 'last_seen'])
     return serialize_customer_presence(order.customer, order_id=order.id)
 
 

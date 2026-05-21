@@ -9,7 +9,7 @@ from user.utils import build_absolute_file_url, resolve_base_url, resolve_custom
 
 from ..models import Driver, DriverOrderRejection, Order, ShopDriver
 from ..fcm.service import send_driver_new_order_notification, send_driver_order_update_notification
-from .presence import format_utc_iso8601
+from .presence import format_utc_iso8601, get_order_customer_presence_snapshot
 
 
 DRIVER_AVAILABLE_ORDER_STATUSES = frozenset({'confirmed', 'preparing'})
@@ -235,6 +235,7 @@ def build_driver_order_payload(order, *, request=None, scope=None, base_url=None
     customer = getattr(order, 'customer', None)
     shop_owner = getattr(order, 'shop_owner', None)
     conversation_id = f'order_{order.id}_driver_customer'
+    customer_presence = get_order_customer_presence_snapshot(order.id) if getattr(order, 'id', None) else None
 
     return {
         'order_id': order.id,
@@ -266,8 +267,16 @@ def build_driver_order_payload(order, *, request=None, scope=None, base_url=None
                 scope=scope,
                 base_url=base_url,
             ),
-            'is_online': bool(getattr(customer, 'is_online', False)),
-            'last_seen': format_utc_iso8601(getattr(customer, 'last_seen', None)),
+            'is_online': bool(
+                customer_presence.get('is_online')
+                if isinstance(customer_presence, dict)
+                else getattr(customer, 'is_online', False)
+            ),
+            'last_seen': (
+                customer_presence.get('last_seen')
+                if isinstance(customer_presence, dict)
+                else format_utc_iso8601(getattr(customer, 'last_seen', None))
+            ),
         },
         'delivery_address': _build_delivery_address_payload(order),
         'distance_km': None,

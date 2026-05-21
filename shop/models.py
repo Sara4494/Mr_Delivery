@@ -96,6 +96,7 @@ class CustomerPresenceConnection(models.Model):
     )
     channel_name = models.CharField(max_length=255, unique=True, verbose_name="اسم القناة")
     connection_type = models.CharField(max_length=50, default='websocket', verbose_name="نوع الاتصال")
+    last_heartbeat_at = models.DateTimeField(blank=True, null=True, verbose_name="آخر heartbeat")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
 
     class Meta:
@@ -104,6 +105,7 @@ class CustomerPresenceConnection(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['customer', '-created_at']),
+            models.Index(fields=['customer', '-last_heartbeat_at'], name='custprs_customer_heartbeat_idx'),
         ]
 
     def __str__(self):
