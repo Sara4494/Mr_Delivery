@@ -1951,7 +1951,11 @@ def staff_view(request):
         if STAFF_TYPE_DRIVER in requested_types:
             driver_queryset = driver_base_queryset.order_by('-updated_at')
             status_filter = request.query_params.get('status')
-            online_only = _query_flag_enabled(request, 'online_only', default=False)
+            online_only = _query_flag_enabled(
+                request,
+                'online_only',
+                default=(staff_type == STAFF_TYPE_DRIVER),
+            )
             if status_filter:
                 driver_queryset = driver_queryset.filter(status=status_filter)
             if online_only:

@@ -23,6 +23,9 @@ from user.otp_service import normalize_phone
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
+OFFLINE_DRIVER_ASSIGNMENT_MESSAGE = 'لا يمكن إسناد الطلب، هذا السائق غير متصل حالياً.'
+
+
 class ShopCategorySerializer(serializers.ModelSerializer):
     """Serializer for shop categories."""
 
@@ -1120,7 +1123,7 @@ class OrderCreateSerializer(serializers.Serializer):
             return value
         shop_owner = self.context['shop_owner']
         try:
-            ShopDriver.objects.select_related('driver').get(
+            relation = ShopDriver.objects.select_related('driver').get(
                 shop_owner=shop_owner,
                 driver_id=value,
                 status='active',
