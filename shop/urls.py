@@ -113,6 +113,7 @@ urlpatterns = [
     # ==================== Customer Auth ====================
     path('customer/register/', views.customer_register_view, name='customer_register'),
     re_path(r'^customer/login/?$', views.customer_login_view, name='customer_login'),
+    path('customer/logout/', views.customer_logout_view, name='customer_logout'),
     path('customer/profile/', views.customer_profile_view, name='customer_profile'),
     path('customer/profile/phone/send-otp/', views.customer_profile_phone_send_otp_view, name='customer_profile_phone_send_otp'),
     path('customer/profile/phone/verify-otp/', views.customer_profile_phone_verify_otp_view, name='customer_profile_phone_verify_otp'),

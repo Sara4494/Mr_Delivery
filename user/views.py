@@ -472,16 +472,18 @@ def _register_google_customer_fcm(*, customer, request):
         )
         return None
 
-    from shop.fcm.service import register_device_token
+    from shop.fcm.service import replace_user_device_token_on_login
 
-    token_record = register_device_token(
+    token_result = replace_user_device_token_on_login(
         user=customer,
         device_id=device_id,
         platform=platform,
         fcm_token=fcm_token,
         app_version=app_version,
-        action='register',
     )
+    token_record = token_result.get('token_record')
+    if not token_record:
+        return None
     logger.info(
         'customer.auth.fcm.registered customer_id=%s provider=google device_id=%s platform=%s',
         getattr(customer, 'id', None),
@@ -511,16 +513,18 @@ def _register_customer_fcm(*, customer, request):
         )
         return None
 
-    from shop.fcm.service import register_device_token
+    from shop.fcm.service import replace_user_device_token_on_login
 
-    token_record = register_device_token(
+    token_result = replace_user_device_token_on_login(
         user=customer,
         device_id=device_id,
         platform=platform,
         fcm_token=fcm_token,
         app_version=app_version,
-        action='register',
     )
+    token_record = token_result.get('token_record')
+    if not token_record:
+        return None
     logger.info(
         'customer.auth.fcm.registered customer_id=%s provider=email_password device_id=%s platform=%s',
         getattr(customer, 'id', None),
@@ -528,6 +532,27 @@ def _register_customer_fcm(*, customer, request):
         token_record.platform,
     )
     return token_record
+
+
+def _replace_login_fcm_device(*, user, request):
+    fcm_token = str(
+        request.data.get('fcm_token')
+        or request.data.get('fcmToken')
+        or ''
+    ).strip()
+    device_id = str(request.data.get('device_id') or request.data.get('deviceId') or '').strip()
+    platform = str(request.data.get('platform') or '').strip().lower()
+    app_version = request.data.get('app_version') or request.data.get('appVersion')
+
+    from shop.fcm.service import replace_user_device_token_on_login
+
+    return replace_user_device_token_on_login(
+        user=user,
+        device_id=device_id,
+        platform=platform,
+        fcm_token=fcm_token,
+        app_version=app_version,
+    )
 
 
 def _can_view_admin_desktop_users(user):
@@ -4532,23 +4557,34 @@ def unified_login_view(request):
             'driver',
             extra_claims={'shop_owner_id': primary_shop_id},
         )
-        
-        return success_response(
-            data={
-                'refresh': str(refresh),
-                'access': str(access_token),
-                'user': {
-                    'id': driver.id,
-                    'name': driver.name,
-                    'phone_number': driver.phone_number,
-                    'status': driver.status,
-                    'vehicle_type': driver.vehicle_type,
-                    'is_verified': driver.is_verified,
-                    'shop_owner_id': primary_shop_id,
-                    'active_shop_ids': active_shop_ids,
-                },
-                'role': 'driver'
+        fcm_device_result = _replace_login_fcm_device(user=driver, request=request)
+        token_record = fcm_device_result.get('token_record')
+
+        payload = {
+            'refresh': str(refresh),
+            'access': str(access_token),
+            'user': {
+                'id': driver.id,
+                'name': driver.name,
+                'phone_number': driver.phone_number,
+                'status': driver.status,
+                'vehicle_type': driver.vehicle_type,
+                'is_verified': driver.is_verified,
+                'shop_owner_id': primary_shop_id,
+                'active_shop_ids': active_shop_ids,
             },
+            'role': 'driver',
+        }
+        if token_record:
+            payload['fcm_device'] = {
+                'device_id': token_record.device_id,
+                'platform': token_record.platform,
+            }
+        if fcm_device_result.get('deleted_tokens_count'):
+            payload['force_logged_out_devices'] = fcm_device_result['deleted_tokens_count']
+
+        return success_response(
+            data=payload,
             message=t(request, 'login_successful')
         )
     

@@ -1279,6 +1279,45 @@ def _get_driver_from_request(request):
         return None
 
 
+def _extract_fcm_device_payload(request):
+    return {
+        'fcm_token': str(
+            request.data.get('fcm_token')
+            or request.data.get('fcmToken')
+            or ''
+        ).strip(),
+        'device_id': str(
+            request.data.get('device_id')
+            or request.data.get('deviceId')
+            or ''
+        ).strip(),
+        'platform': str(request.data.get('platform') or '').strip().lower(),
+        'app_version': request.data.get('app_version') or request.data.get('appVersion'),
+    }
+
+
+def _replace_login_fcm_device(user, request):
+    from .fcm.service import replace_user_device_token_on_login
+
+    return replace_user_device_token_on_login(
+        user=user,
+        **_extract_fcm_device_payload(request),
+    )
+
+
+def _logout_fcm_device(user, request):
+    from .fcm.service import unregister_device_token
+
+    payload = _extract_fcm_device_payload(request)
+    if not payload['device_id'] and not payload['fcm_token']:
+        return None
+    return unregister_device_token(
+        user=user,
+        device_id=payload['device_id'] or None,
+        fcm_token=payload['fcm_token'] or None,
+    )
+
+
 DRIVER_PHONE_CHANGE_OTP_TTL_SECONDS = 600
 
 
@@ -2807,7 +2846,7 @@ def driver_change_password_view(request):
 @permission_classes([IsDriver])
 def driver_logout_view(request):
     """
-    Log out the authenticated driver.
+    Log out the authenticated driver and unregister the current FCM token.
     POST /api/driver/logout/
     """
     driver = _get_driver_from_request(request)
@@ -2825,6 +2864,14 @@ def driver_logout_view(request):
         except Exception:
             pass
 
+    deactivated_tokens = _logout_fcm_device(driver, request)
+    if deactivated_tokens is None:
+        return error_response(
+            message='fcm_token or device_id is required.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
     DriverPresenceConnection.objects.filter(driver=driver).delete()
 
     update_fields = ['is_online', 'last_seen_at', 'updated_at']
@@ -2839,7 +2886,7 @@ def driver_logout_view(request):
         print(f"driver_status_updated WebSocket error: {e}")
 
     return success_response(
-        data={},
+        data={'deactivated_tokens': deactivated_tokens},
         message=t(request, 'logged_out_successfully'),
         status_code=status.HTTP_200_OK,
         request=request,
@@ -4953,8 +5000,21 @@ def driver_login_view(request):
             default_status=status.HTTP_401_UNAUTHORIZED,
         )
 
+    driver_id = ((serializer.validated_data or {}).get('driver') or {}).get('id')
+    driver = Driver.objects.filter(id=driver_id).first() if driver_id else None
+    fcm_device_result = _replace_login_fcm_device(driver, request) if driver else {'token_record': None}
+    response_payload = dict(serializer.validated_data)
+    token_record = fcm_device_result.get('token_record')
+    if token_record:
+        response_payload['fcm_device'] = {
+            'device_id': token_record.device_id,
+            'platform': token_record.platform,
+        }
+    if fcm_device_result.get('deleted_tokens_count'):
+        response_payload['force_logged_out_devices'] = fcm_device_result['deleted_tokens_count']
+
     return success_response(
-        data=serializer.validated_data,
+        data=response_payload,
         message=t(request, 'login_successful'),
         status_code=status.HTTP_200_OK
     )
@@ -5266,8 +5326,22 @@ def customer_login_view(request):
             errors=errors,
             default_status=status.HTTP_400_BAD_REQUEST,
         )
+
+    customer_id = ((serializer.validated_data or {}).get('customer') or {}).get('id')
+    customer = Customer.objects.filter(id=customer_id).first() if customer_id else None
+    fcm_device_result = _replace_login_fcm_device(customer, request) if customer else {'token_record': None}
+    response_payload = dict(serializer.validated_data)
+    token_record = fcm_device_result.get('token_record')
+    if token_record:
+        response_payload['fcm_device'] = {
+            'device_id': token_record.device_id,
+            'platform': token_record.platform,
+        }
+    if fcm_device_result.get('deleted_tokens_count'):
+        response_payload['force_logged_out_devices'] = fcm_device_result['deleted_tokens_count']
+
     return success_response(
-        data=serializer.validated_data,
+        data=response_payload,
         message=t(request, 'login_successful'),
         status_code=status.HTTP_200_OK
     )
@@ -5276,6 +5350,48 @@ def customer_login_view(request):
 def _get_customer_from_request(request):
     """العميل من الطلب (لـ JWT عميل)"""
     return _resolve_customer_user(request.user)
+
+
+@api_view(['POST'])
+@permission_classes([IsCustomer])
+def customer_logout_view(request):
+    """
+    Log out the authenticated customer and unregister the current FCM token.
+    POST /api/customer/logout/
+    """
+    customer = _get_customer_from_request(request)
+    if not customer:
+        return error_response(
+            message=t(request, 'customer_not_found'),
+            status_code=status.HTTP_404_NOT_FOUND,
+            request=request,
+        )
+
+    refresh_token = request.data.get('refresh') or request.data.get('refresh_token')
+    if refresh_token and django_apps.is_installed('rest_framework_simplejwt.token_blacklist'):
+        try:
+            RefreshToken(refresh_token).blacklist()
+        except Exception:
+            pass
+
+    deactivated_tokens = _logout_fcm_device(customer, request)
+    if deactivated_tokens is None:
+        return error_response(
+            message='fcm_token or device_id is required.',
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    customer.is_online = False
+    customer.last_seen = timezone.now()
+    customer.save(update_fields=['is_online', 'last_seen', 'updated_at'])
+
+    return success_response(
+        data={'deactivated_tokens': deactivated_tokens},
+        message=t(request, 'logged_out_successfully'),
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
 
 
 CUSTOMER_PHONE_CHANGE_OTP_TTL_SECONDS = 600

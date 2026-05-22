@@ -399,6 +399,118 @@ def unregister_device_token(*, user, device_id=None, fcm_token=None):
     return affected
 
 
+def send_force_logout_silent_push(token_records):
+    summary = {
+        'tokens_total': 0,
+        'tokens_sent': 0,
+        'tokens_failed': 0,
+        'tokens_invalidated': 0,
+    }
+    normalized_records = list(token_records or [])
+    if not normalized_records:
+        return summary
+
+    for token_record in normalized_records:
+        result = send_push_to_token_record(
+            token_record,
+            title='',
+            body='',
+            data={'type': 'force_logout'},
+            channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
+            sound='default',
+            ios_sound='default',
+            high_priority=True,
+            ttl='60s',
+            click_action='FORCE_LOGOUT',
+            notification_priority='high',
+            tag=f'force_logout_{token_record.user_type}_{token_record.user_id}',
+            data_only=True,
+        )
+        summary['tokens_total'] += 1
+        if result.get('success'):
+            summary['tokens_sent'] += 1
+        else:
+            summary['tokens_failed'] += 1
+            if result.get('invalid_token'):
+                summary['tokens_invalidated'] += 1
+
+    logger.info(
+        'fcm.force_logout.dispatch tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+        summary['tokens_total'],
+        summary['tokens_sent'],
+        summary['tokens_failed'],
+        summary['tokens_invalidated'],
+    )
+    return summary
+
+
+def replace_user_device_token_on_login(
+    *,
+    user,
+    device_id='',
+    platform='',
+    fcm_token='',
+    app_version=_UNSET,
+    send_force_logout_push=True,
+):
+    user_type, user_id = resolve_user_identity(user)
+    normalized_device_id = str(device_id or '').strip()
+    normalized_platform = str(platform or '').strip().lower()
+    normalized_fcm_token = str(fcm_token or '').strip()
+    has_current_device_payload = bool(
+        normalized_device_id and normalized_fcm_token and normalized_platform in {'android', 'ios'}
+    )
+
+    stale_queryset = FCMDeviceToken.objects.filter(
+        user_type=user_type,
+        user_id=user_id,
+        is_active=True,
+    )
+    if normalized_device_id:
+        stale_queryset = stale_queryset.exclude(device_id=normalized_device_id)
+    elif normalized_fcm_token:
+        stale_queryset = stale_queryset.exclude(fcm_token=normalized_fcm_token)
+
+    stale_token_records = list(stale_queryset.order_by('-updated_at', '-created_at'))
+    silent_push_summary = {
+        'tokens_total': 0,
+        'tokens_sent': 0,
+        'tokens_failed': 0,
+        'tokens_invalidated': 0,
+    }
+    if send_force_logout_push and stale_token_records:
+        silent_push_summary = send_force_logout_silent_push(stale_token_records)
+
+    deleted_tokens_count = 0
+    stale_token_ids = [token_record.id for token_record in stale_token_records if token_record.id]
+    if stale_token_ids:
+        deleted_tokens_count, _ = FCMDeviceToken.objects.filter(pk__in=stale_token_ids).delete()
+
+    token_record = None
+    if has_current_device_payload:
+        token_record = register_device_token(
+            user=user,
+            device_id=normalized_device_id,
+            platform=normalized_platform,
+            fcm_token=normalized_fcm_token,
+            app_version=app_version,
+            action='login',
+        )
+
+    logger.info(
+        'fcm.token.login_replace user_type=%s user_id=%s deleted_tokens=%s registered_current=%s',
+        user_type,
+        user_id,
+        deleted_tokens_count,
+        bool(token_record),
+    )
+    return {
+        'token_record': token_record,
+        'deleted_tokens_count': deleted_tokens_count,
+        'silent_push': silent_push_summary,
+    }
+
+
 def _android_priority(high_priority):
     return 'high' if high_priority else 'normal'
 
