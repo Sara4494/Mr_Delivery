@@ -2262,6 +2262,12 @@ def build_chat_message_payload(*, order, chat_type, message_payload, shop_name=N
 
 
 def build_shop_chat_message_payload(*, order, message_payload):
+    customer = getattr(order, 'customer', None)
+    sender_name = _trim_text(
+        message_payload.get('sender_name') or getattr(customer, 'name', None),
+        default='العميل',
+        max_length=120,
+    )
     return {
         'type': 'chat',
         'thread_id': str(order.id),
@@ -2269,6 +2275,18 @@ def build_shop_chat_message_payload(*, order, message_payload):
         'message_id': str(message_payload.get('id') or ''),
         'chat_type': 'shop_customer',
         'order_id': str(order.id),
+        'chat_id': str(order.id),
+        'order_number': str(getattr(order, 'order_number', '') or ''),
+        'shop_id': str(getattr(order, 'shop_owner_id', '') or ''),
+        'shop_name': str(getattr(getattr(order, 'shop_owner', None), 'shop_name', '') or 'Mr Delivery'),
+        'customer_id': str(getattr(order, 'customer_id', '') or ''),
+        'customer_name': sender_name,
+        'sender_type': str(message_payload.get('sender_type') or 'customer'),
+        'sender_name': sender_name,
+        'message_type': str(message_payload.get('message_type') or 'text'),
+        'message_preview': _message_preview(message_payload),
+        'route': '/chat',
+        'click_action': 'OPEN_CHAT',
     }
 
 
