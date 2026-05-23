@@ -289,6 +289,15 @@ def _firebase_app(user_type=None):
         service_account_file = app_settings['service_account_file']
         project_id = app_settings['project_id']
 
+        logger.info(
+            'fcm.app.init profile=%s user_type=%s project_id=%s service_account_file=%s has_json=%s',
+            profile,
+            user_type,
+            project_id or '',
+            service_account_file or '',
+            bool(service_account_json),
+        )
+
         if service_account_json:
             try:
                 cert_value = json.loads(service_account_json)
@@ -881,11 +890,12 @@ def send_push_to_token_record(
     data_only=False,
 ):
     logger.info(
-        'fcm.send.attempt token_id=%s user_type=%s user_id=%s platform=%s token=%s',
+        'fcm.send.attempt token_id=%s user_type=%s user_id=%s platform=%s profile=%s token=%s',
         token_record.id,
         token_record.user_type,
         token_record.user_id,
         token_record.platform,
+        _firebase_app_profile(token_record.user_type),
         _mask_token(token_record.fcm_token),
     )
 

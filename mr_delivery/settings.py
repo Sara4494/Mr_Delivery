@@ -345,6 +345,9 @@ _DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES = [
 ]
 _DEFAULT_FCM_SHOP_SERVICE_ACCOUNT_CANDIDATES = [
     BASE_DIR / "zaygo-eg-firebase-adminsdk-fbsvc-c8cf9bb8b4.json",
+    BASE_DIR / "zaygo-eg-firebase-adminsdk-fbsvc-c8cf9bb8b4",
+    BASE_DIR.parent / "zaygo-eg-firebase-adminsdk-fbsvc-c8cf9bb8b4.json",
+    BASE_DIR.parent / "zaygo-eg-firebase-adminsdk-fbsvc-c8cf9bb8b4",
     BASE_DIR / "zaygo-user-firebase-adminsdk-fbsvc-fc21d26812.json",
 ]
 DEFAULT_FCM_SERVICE_ACCOUNT_FILE = next(
