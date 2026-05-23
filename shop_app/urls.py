@@ -1,6 +1,6 @@
 from django.urls import path
 
-from shop import driver_chat_views, views as shop_views
+from shop import driver_chat_views, fcm_views, views as shop_views
 from user import views as user_views
 
 
@@ -9,6 +9,7 @@ app_name = 'shop_app'
 urlpatterns = [
     path('shop/login/', user_views.ShopOwnerTokenObtainPairView.as_view(), name='shop_login'),
     path('shop/token/refresh/', user_views.ShopOwnerTokenRefreshView.as_view(), name='token_refresh'),
+    path('fcm/devices/', fcm_views.fcm_shop_device_upsert_view, name='shop_fcm_devices'),
     path('shop/dashboard-ui/', shop_views.shop_dashboard_ui_view, name='shop_dashboard_ui'),
     path('shop/portfolio-ui/', shop_views.shop_portfolio_ui_view, name='shop_portfolio_ui'),
     path('shop/driver-chats/ui/', shop_views.driver_chats_ui_view, name='shop_driver_chats_ui'),

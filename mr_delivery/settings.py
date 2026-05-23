@@ -343,9 +343,17 @@ _DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES = [
     BASE_DIR / "zaygo-captains-firebase-adminsdk-fbsvc-54aab8b36c.json",
     BASE_DIR / "zaygo-user-firebase-adminsdk-fbsvc-fc21d26812.json",
 ]
+_DEFAULT_FCM_SHOP_SERVICE_ACCOUNT_CANDIDATES = [
+    BASE_DIR / "zaygo-eg-firebase-adminsdk-fbsvc-c8cf9bb8b4.json",
+    BASE_DIR / "zaygo-user-firebase-adminsdk-fbsvc-fc21d26812.json",
+]
 DEFAULT_FCM_SERVICE_ACCOUNT_FILE = next(
     (path for path in _DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES if path.exists()),
     _DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES[0],
+)
+DEFAULT_FCM_SHOP_SERVICE_ACCOUNT_FILE = next(
+    (path for path in _DEFAULT_FCM_SHOP_SERVICE_ACCOUNT_CANDIDATES if path.exists()),
+    _DEFAULT_FCM_SHOP_SERVICE_ACCOUNT_CANDIDATES[0],
 )
 FCM_SERVICE_ACCOUNT_FILE = os.environ.get(
     "FCM_SERVICE_ACCOUNT_FILE",
@@ -353,6 +361,12 @@ FCM_SERVICE_ACCOUNT_FILE = os.environ.get(
 ).strip()
 FCM_SERVICE_ACCOUNT_JSON = os.environ.get("FCM_SERVICE_ACCOUNT_JSON", "").strip()
 FCM_PROJECT_ID = os.environ.get("FCM_PROJECT_ID", "").strip()
+FCM_SHOP_SERVICE_ACCOUNT_FILE = os.environ.get(
+    "FCM_SHOP_SERVICE_ACCOUNT_FILE",
+    str(DEFAULT_FCM_SHOP_SERVICE_ACCOUNT_FILE if DEFAULT_FCM_SHOP_SERVICE_ACCOUNT_FILE.exists() else ""),
+).strip()
+FCM_SHOP_SERVICE_ACCOUNT_JSON = os.environ.get("FCM_SHOP_SERVICE_ACCOUNT_JSON", "").strip()
+FCM_SHOP_PROJECT_ID = os.environ.get("FCM_SHOP_PROJECT_ID", "").strip()
 FCM_DRIVER_SERVICE_ACCOUNT_FILE = os.environ.get(
     "FCM_DRIVER_SERVICE_ACCOUNT_FILE",
     str(BASE_DIR / "zaygo-captains-firebase-adminsdk-fbsvc-54aab8b36c.json"),
@@ -370,6 +384,8 @@ FCM_ENABLED = _env_bool(
     default=bool(
         FCM_SERVICE_ACCOUNT_FILE
         or FCM_SERVICE_ACCOUNT_JSON
+        or FCM_SHOP_SERVICE_ACCOUNT_FILE
+        or FCM_SHOP_SERVICE_ACCOUNT_JSON
         or FCM_DRIVER_SERVICE_ACCOUNT_FILE
         or FCM_DRIVER_SERVICE_ACCOUNT_JSON
         or FCM_CUSTOMER_SERVICE_ACCOUNT_FILE
@@ -378,6 +394,7 @@ FCM_ENABLED = _env_bool(
 )
 FCM_RING_CHANNEL_ID = os.environ.get("FCM_RING_CHANNEL_ID", "delivery_general").strip() or "delivery_general"
 FCM_CHAT_CHANNEL_ID = os.environ.get("FCM_CHAT_CHANNEL_ID", "delivery_general").strip() or "delivery_general"
+FCM_SHOP_CHAT_CHANNEL_ID = os.environ.get("FCM_SHOP_CHAT_CHANNEL_ID", "chat_notifications").strip() or "chat_notifications"
 FCM_RING_SOUND = os.environ.get("FCM_RING_SOUND", "default").strip() or "default"
 FCM_RING_IOS_SOUND = os.environ.get("FCM_RING_IOS_SOUND", "default").strip() or "default"
 FCM_CHAT_SOUND = os.environ.get("FCM_CHAT_SOUND", "default").strip() or "default"

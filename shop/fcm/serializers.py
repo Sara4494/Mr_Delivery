@@ -81,3 +81,30 @@ class FCMDeviceUnregisterSerializer(FCMAccessTokenSerializer):
         if fcm_token:
             attrs['fcm_token'] = fcm_token
         return attrs
+
+
+class ShopFCMDeviceUpsertSerializer(serializers.Serializer):
+    registration_id = serializers.CharField(required=False, allow_blank=True)
+    fcm_token = serializers.CharField(required=False, allow_blank=True)
+    device_id = serializers.CharField(max_length=191, required=False, allow_blank=True)
+    type = serializers.CharField(required=False, allow_blank=True)
+    device_type = serializers.CharField(required=False, allow_blank=True)
+    active = serializers.BooleanField(required=False, default=True)
+
+    def validate(self, attrs):
+        fcm_token = str(attrs.get('fcm_token') or attrs.get('registration_id') or '').strip()
+        if not fcm_token:
+            raise serializers.ValidationError({'fcm_token': 'fcm_token or registration_id is required.'})
+
+        device_id = str(attrs.get('device_id') or fcm_token).strip()
+        if not device_id:
+            raise serializers.ValidationError({'device_id': 'device_id is required.'})
+
+        platform = str(attrs.get('device_type') or attrs.get('type') or '').strip().lower()
+        if platform not in {'android', 'ios'}:
+            raise serializers.ValidationError({'device_type': 'device_type or type must be android or ios.'})
+
+        attrs['fcm_token'] = fcm_token
+        attrs['device_id'] = device_id
+        attrs['platform'] = platform
+        return attrs

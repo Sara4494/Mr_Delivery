@@ -48,8 +48,8 @@ _DRIVER_CHAT_NOTIFICATION_TYPES = {
 _FCM_USER_TYPE_APP_PROFILE = {
     'driver': 'driver',
     'customer': 'customer',
-    'shop_owner': 'customer',
-    'employee': 'customer',
+    'shop_owner': 'shop',
+    'employee': 'shop',
 }
 FCM_BROADCAST_AUDIENCE_CUSTOMERS = 'customers'
 FCM_BROADCAST_AUDIENCE_DRIVERS = 'drivers'
@@ -239,6 +239,21 @@ def _firebase_app_settings(profile):
             'service_account_json': str(getattr(settings, 'FCM_DRIVER_SERVICE_ACCOUNT_JSON', '') or '').strip(),
             'service_account_file': str(getattr(settings, 'FCM_DRIVER_SERVICE_ACCOUNT_FILE', '') or '').strip(),
             'project_id': str(getattr(settings, 'FCM_DRIVER_PROJECT_ID', '') or '').strip(),
+        }
+    if normalized_profile == 'shop':
+        return {
+            'service_account_json': (
+                str(getattr(settings, 'FCM_SHOP_SERVICE_ACCOUNT_JSON', '') or '').strip()
+                or str(getattr(settings, 'FCM_CUSTOMER_SERVICE_ACCOUNT_JSON', '') or '').strip()
+            ),
+            'service_account_file': (
+                str(getattr(settings, 'FCM_SHOP_SERVICE_ACCOUNT_FILE', '') or '').strip()
+                or str(getattr(settings, 'FCM_CUSTOMER_SERVICE_ACCOUNT_FILE', '') or '').strip()
+            ),
+            'project_id': (
+                str(getattr(settings, 'FCM_SHOP_PROJECT_ID', '') or '').strip()
+                or str(getattr(settings, 'FCM_CUSTOMER_PROJECT_ID', '') or '').strip()
+            ),
         }
     if normalized_profile == 'customer':
         return {
@@ -1986,9 +2001,23 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
         shop_name=shop_name,
         shop_profile_image_url=shop_profile_image_url,
     )
-    push_title = shop_name
-    if chat_type == 'driver_customer':
-        push_title = payload.get('sender_name') or push_title
+    if chat_type == 'shop_customer' and sender_type == 'customer':
+        payload = build_shop_chat_message_payload(order=order, message_payload=message_payload)
+        push_title = 'رسالة جديدة'
+        channel_id = getattr(settings, 'FCM_SHOP_CHAT_CHANNEL_ID', 'chat_notifications')
+        sound = 'default'
+        ios_sound = 'default'
+        high_priority = True
+        notification_priority = 'high'
+    else:
+        push_title = shop_name
+        if chat_type == 'driver_customer':
+            push_title = payload.get('sender_name') or push_title
+        channel_id = getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general')
+        sound = getattr(settings, 'FCM_CHAT_SOUND', 'default')
+        ios_sound = getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default')
+        high_priority = False
+        notification_priority = None
     logger.info(
         'fcm.chat.dispatch order_id=%s chat_type=%s sender_type=%s recipients=%s',
         order.id,
@@ -2001,10 +2030,13 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
         title=_trim_text(push_title, default='Mr Delivery', max_length=120),
         body=_trim_text(message_preview, default='رسالة جديدة', max_length=180),
         data=payload,
-        channel_id=getattr(settings, 'FCM_CHAT_CHANNEL_ID', 'delivery_general'),
-        sound=getattr(settings, 'FCM_CHAT_SOUND', 'default'),
-        ios_sound=getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default'),
-        high_priority=False,
+        channel_id=channel_id,
+        sound=sound,
+        ios_sound=ios_sound,
+        high_priority=high_priority,
+        click_action='OPEN_CHAT',
+        notification_priority=notification_priority,
+        tag=f'chat_{chat_type}_{order.id}',
     )
     logger.info(
         'fcm.chat.result order_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
@@ -2216,6 +2248,17 @@ def build_chat_message_payload(*, order, chat_type, message_payload, shop_name=N
         'message_preview': _message_preview(message_payload),
         'route': '/chat',
         'click_action': 'OPEN_CHAT',
+    }
+
+
+def build_shop_chat_message_payload(*, order, message_payload):
+    return {
+        'type': 'chat',
+        'thread_id': str(order.id),
+        'sender_id': str(message_payload.get('sender_id') or getattr(order, 'customer_id', '') or ''),
+        'message_id': str(message_payload.get('id') or ''),
+        'chat_type': 'shop_customer',
+        'order_id': str(order.id),
     }
 
 

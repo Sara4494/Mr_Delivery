@@ -32,6 +32,7 @@ from shop.views import _attach_notification_to_user, driver_invitation_action_vi
 from shop.fcm_views import (
     fcm_refresh_device_view,
     fcm_register_device_view,
+    fcm_shop_device_upsert_view,
     fcm_unregister_device_view,
 )
 from user.authentication import build_session_refresh_token, rotate_user_session
@@ -389,6 +390,62 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(FCMDeviceToken.objects.filter(pk=own_token.pk).exists())
 
+    def test_shop_device_endpoint_registers_owner_token_from_authorization_user(self):
+        response = self._request(
+            fcm_shop_device_upsert_view,
+            'POST',
+            '/api/fcm/devices/',
+            self.shop,
+            {
+                'registration_id': 'shop-token-123',
+                'fcm_token': 'shop-token-123',
+                'device_id': 'shop-token-123',
+                'type': 'android',
+                'device_type': 'android',
+                'active': True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        token = FCMDeviceToken.objects.get(device_id='shop-token-123')
+        self.assertEqual(token.user_type, 'shop_owner')
+        self.assertEqual(token.user_id, self.shop.id)
+        self.assertEqual(token.platform, 'android')
+        self.assertEqual(token.fcm_token, 'shop-token-123')
+
+    def test_shop_device_endpoint_updates_existing_token_instead_of_duplicate(self):
+        FCMDeviceToken.objects.create(
+            user_type='shop_owner',
+            user_id=self.shop.id,
+            device_id='shared-shop-device',
+            platform='android',
+            fcm_token='old-shop-token',
+            is_active=True,
+        )
+
+        response = self._request(
+            fcm_shop_device_upsert_view,
+            'POST',
+            '/api/fcm/devices/',
+            self.shop,
+            {
+                'registration_id': 'new-shop-token',
+                'fcm_token': 'new-shop-token',
+                'device_id': 'shared-shop-device',
+                'type': 'android',
+                'device_type': 'android',
+                'active': True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            FCMDeviceToken.objects.filter(user_type='shop_owner', user_id=self.shop.id).count(),
+            1,
+        )
+        token = FCMDeviceToken.objects.get(user_type='shop_owner', user_id=self.shop.id)
+        self.assertEqual(token.fcm_token, 'new-shop-token')
+
 
 class FCMFallbackDispatchTests(TestCase):
     def setUp(self):
@@ -470,6 +527,42 @@ class FCMFallbackDispatchTests(TestCase):
         target_record = mock_send.call_args[0][0]
         self.assertEqual(target_record.user_type, 'customer')
         self.assertEqual(target_record.user_id, self.customer.id)
+
+    @patch('shop.fcm_service.send_push_to_user', return_value={'users_targeted': 1, 'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
+    def test_chat_fallback_uses_shop_channel_for_customer_message_to_shop(self, mock_send):
+        Employee.objects.create(
+            shop_owner=self.shop,
+            name='Cashier',
+            phone_number='01040009999',
+            password='secret123',
+            role='cashier',
+            is_active=True,
+        )
+
+        summary = send_order_chat_push_fallback(
+            self.order.id,
+            'shop_customer',
+            {
+                'id': 88,
+                'sender_id': self.customer.id,
+                'sender_type': 'customer',
+                'message_type': 'text',
+                'content': 'Hello from customer',
+            },
+        )
+
+        self.assertEqual(summary['tokens_total'], 2)
+        self.assertEqual(mock_send.call_count, 2)
+        first_call = mock_send.call_args_list[0].kwargs
+        self.assertEqual(first_call['channel_id'], 'chat_notifications')
+        self.assertTrue(first_call['high_priority'])
+        self.assertEqual(first_call['notification_priority'], 'high')
+        self.assertEqual(first_call['title'], 'رسالة جديدة')
+        self.assertEqual(first_call['body'], 'Hello from customer')
+        self.assertEqual(first_call['data']['type'], 'chat')
+        self.assertEqual(first_call['data']['thread_id'], str(self.order.id))
+        self.assertEqual(first_call['data']['sender_id'], str(self.customer.id))
+        self.assertEqual(first_call['data']['message_id'], '88')
 
     @patch('shop.fcm_service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
     def test_chat_fallback_uses_delegate_sender_name_as_title_for_driver_customer_message(self, mock_send):

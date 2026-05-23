@@ -135,6 +135,7 @@ urlpatterns = [
     path('customer/payment-methods/<int:method_id>/', views.payment_method_delete_view, name='payment_method_delete'),
 
     # ==================== Firebase Cloud Messaging ====================
+    path('fcm/devices/', fcm_views.fcm_shop_device_upsert_view, name='fcm_shop_device_upsert'),
     re_path(r'^devices/fcm/register/?$', fcm_views.fcm_register_device_view, name='fcm_register_device'),
     re_path(r'^devices/fcm/refresh/?$', fcm_views.fcm_refresh_device_view, name='fcm_refresh_device'),
     re_path(r'^devices/fcm/unregister/?$', fcm_views.fcm_unregister_device_view, name='fcm_unregister_device'),

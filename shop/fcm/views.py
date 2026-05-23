@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.exceptions import InvalidToken
 
 from user.account_status import ensure_account_is_active
@@ -12,6 +12,7 @@ from .serializers import (
     FCMDeviceRefreshSerializer,
     FCMDeviceRegisterSerializer,
     FCMDeviceTokenSerializer,
+    ShopFCMDeviceUpsertSerializer,
     FCMDeviceUnregisterSerializer,
 )
 from .service import register_device_token, resolve_user_identity, unregister_device_token
@@ -152,6 +153,43 @@ def fcm_unregister_device_view(request):
     return success_response(
         data={'deactivated_tokens': affected},
         message='FCM device token unregistered successfully.',
+        status_code=status.HTTP_200_OK,
+        request=request,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def fcm_shop_device_upsert_view(request):
+    user = ensure_account_is_active(request.user, request=request)
+    user_type, _ = resolve_user_identity(user)
+    if user_type not in {'shop_owner', 'employee'}:
+        return error_response(
+            message='This endpoint is available for shop accounts only.',
+            status_code=status.HTTP_403_FORBIDDEN,
+            request=request,
+        )
+
+    serializer = ShopFCMDeviceUpsertSerializer(data=request.data)
+    if not serializer.is_valid():
+        return error_response(
+            message='Invalid FCM registration payload.',
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            request=request,
+        )
+
+    validated_data = serializer.validated_data
+    token_record = register_device_token(
+        user=user,
+        device_id=validated_data['device_id'],
+        platform=validated_data['platform'],
+        fcm_token=validated_data['fcm_token'],
+        action='register',
+    )
+    return success_response(
+        data=FCMDeviceTokenSerializer(token_record).data,
+        message='FCM device token registered successfully.',
         status_code=status.HTTP_200_OK,
         request=request,
     )
