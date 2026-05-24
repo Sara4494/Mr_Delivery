@@ -643,8 +643,19 @@ def broadcast_message_created(
     )
     if send_push:
         try:
-            from ..fcm.service import send_driver_chat_push_fallback
+            from ..fcm.service import (
+                send_driver_chat_push_fallback,
+                send_shop_driver_chat_push_fallback,
+            )
+
             send_driver_chat_push_fallback(
+                message.conversation,
+                serialized,
+                request=request,
+                scope=scope,
+                base_url=base_url,
+            )
+            send_shop_driver_chat_push_fallback(
                 message.conversation,
                 serialized,
                 request=request,

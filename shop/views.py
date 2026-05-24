@@ -6043,6 +6043,15 @@ def _attach_notification_to_user(
         transaction.on_commit(
             lambda: send_customer_notification_from_record(user, notification)
         )
+    if user_type in {'shop_owner', 'employee'} and notification_type in {'order_update', 'order_status'}:
+        from .fcm.service import send_shop_notification_from_record
+
+        transaction.on_commit(
+            lambda current_user=user, current_notification=notification: send_shop_notification_from_record(
+                current_user,
+                current_notification,
+            )
+        )
 
     return notification
 

@@ -398,10 +398,35 @@ FCM_ENABLED = _env_bool(
 FCM_RING_CHANNEL_ID = os.environ.get("FCM_RING_CHANNEL_ID", "delivery_general").strip() or "delivery_general"
 FCM_CHAT_CHANNEL_ID = os.environ.get("FCM_CHAT_CHANNEL_ID", "delivery_general").strip() or "delivery_general"
 FCM_SHOP_CHAT_CHANNEL_ID = os.environ.get("FCM_SHOP_CHAT_CHANNEL_ID", "chat_notifications").strip() or "chat_notifications"
+FCM_SHOP_ORDERS_CHANNEL_ID = (
+    os.environ.get("FCM_SHOP_ORDERS_CHANNEL_ID", "orders_notifications").strip()
+    or "orders_notifications"
+)
+FCM_SHOP_DRIVER_CHANNEL_ID = (
+    os.environ.get("FCM_SHOP_DRIVER_CHANNEL_ID", "driver_notifications").strip()
+    or "driver_notifications"
+)
 FCM_RING_SOUND = os.environ.get("FCM_RING_SOUND", "default").strip() or "default"
 FCM_RING_IOS_SOUND = os.environ.get("FCM_RING_IOS_SOUND", "default").strip() or "default"
 FCM_CHAT_SOUND = os.environ.get("FCM_CHAT_SOUND", "default").strip() or "default"
 FCM_CHAT_IOS_SOUND = os.environ.get("FCM_CHAT_IOS_SOUND", "default").strip() or "default"
+FCM_SHOP_ORDERS_SOUND = os.environ.get("FCM_SHOP_ORDERS_SOUND", "order_ring").strip() or "order_ring"
+FCM_SHOP_ORDERS_IOS_SOUND = (
+    os.environ.get("FCM_SHOP_ORDERS_IOS_SOUND", "order_ring.aiff").strip()
+    or "order_ring.aiff"
+)
+FCM_SHOP_CHAT_SOUND = os.environ.get("FCM_SHOP_CHAT_SOUND", "chat_ring").strip() or "chat_ring"
+FCM_SHOP_CHAT_IOS_SOUND = (
+    os.environ.get("FCM_SHOP_CHAT_IOS_SOUND", "chat_ring.aiff").strip()
+    or "chat_ring.aiff"
+)
+FCM_SHOP_DRIVER_SOUND = os.environ.get("FCM_SHOP_DRIVER_SOUND", "driver_ring").strip() or "driver_ring"
+FCM_SHOP_DRIVER_IOS_SOUND = (
+    os.environ.get("FCM_SHOP_DRIVER_IOS_SOUND", "driver_ring.aiff").strip()
+    or "driver_ring.aiff"
+)
+FCM_SHOP_LIVE_TTL = os.environ.get("FCM_SHOP_LIVE_TTL", "120s").strip() or "120s"
+FCM_SHOP_ORDER_TTL = os.environ.get("FCM_SHOP_ORDER_TTL", "300s").strip() or "300s"
 FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID = (
     os.environ.get("FCM_DRIVER_INCOMING_CALLS_CHANNEL_ID", "delivery_incoming_calls_v3").strip()
     or "delivery_incoming_calls_v3"

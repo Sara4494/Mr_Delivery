@@ -18,10 +18,12 @@ from shop.fcm_service import (
     send_driver_chat_call_ringing_push_fallback,
     send_admin_topic_broadcast,
     send_order_chat_push_fallback,
+    send_shop_driver_chat_push_fallback,
     send_driver_new_order_notification,
     send_driver_store_invite_notification,
     send_driver_system_notification,
     send_driver_system_notifications,
+    send_shop_notification_from_record,
     send_to_topic,
     send_push_to_token_record,
     send_push_to_user,
@@ -555,9 +557,12 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(mock_send.call_count, 2)
         first_call = mock_send.call_args_list[0].kwargs
         self.assertEqual(first_call['channel_id'], 'chat_notifications')
+        self.assertEqual(first_call['sound'], 'chat_ring')
+        self.assertEqual(first_call['ios_sound'], 'chat_ring.aiff')
         self.assertTrue(first_call['high_priority'])
         self.assertEqual(first_call['notification_priority'], 'high')
-        self.assertEqual(first_call['title'], 'رسالة جديدة')
+        self.assertEqual(first_call['ttl'], '120s')
+        self.assertEqual(first_call['title'], 'رسالة جديدة من العميل')
         self.assertEqual(first_call['body'], 'Hello from customer')
         self.assertEqual(first_call['data']['type'], 'chat')
         self.assertEqual(first_call['data']['thread_id'], str(self.order.id))
@@ -1494,6 +1499,126 @@ class DriverNotificationModeTests(TestCase):
         self.assertEqual(sent_payload['type'], 'chat_message')
         self.assertEqual(sent_payload['screen'], 'chat')
         self.assertEqual(sent_payload['conversation_id'], conversation.public_id)
+
+
+class ShopNotificationModeTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.category = ShopCategory.objects.create(name='Groceries')
+        self.shop = ShopOwner.objects.create(
+            owner_name='Owner',
+            shop_name='Store',
+            shop_number='SHOP-500',
+            phone_number='01010000006',
+            password='secret123',
+            shop_category=self.category,
+        )
+        self.employee = Employee.objects.create(
+            shop_owner=self.shop,
+            name='Cashier',
+            phone_number='01040000006',
+            password='secret123',
+            role='cashier',
+            is_active=True,
+        )
+        self.driver = Driver.objects.create(
+            name='Driver One',
+            phone_number='01030000006',
+            password='secret123',
+        )
+        self.order = Order.objects.create(
+            shop_owner=self.shop,
+            driver=self.driver,
+            order_number='OD500',
+            status='new',
+            items='["Item"]',
+            total_amount='80.00',
+            delivery_fee='10.00',
+            address='Street',
+            notes='',
+        )
+
+    @patch('shop.fcm_service.send_to_user', return_value={'users_targeted': 1, 'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
+    def test_shop_order_notification_from_record_uses_orders_channel_payload(self, mock_send):
+        notification = Notification.objects.create(
+            shop_owner=self.shop,
+            notification_type='order_update',
+            title='طلب جديد',
+            message='تم استلام طلب جديد رقم #OD500',
+            order_id=self.order.id,
+            data={
+                'order_id': self.order.id,
+                'thread_id': self.order.id,
+                'order_number': self.order.order_number,
+                'status': 'new',
+            },
+        )
+
+        result = send_shop_notification_from_record(self.shop, notification)
+
+        self.assertIsNotNone(result['notification'])
+        sent_payload = mock_send.call_args.kwargs['data']
+        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'orders_notifications')
+        self.assertEqual(mock_send.call_args.kwargs['sound'], 'order_ring')
+        self.assertEqual(mock_send.call_args.kwargs['ios_sound'], 'order_ring.aiff')
+        self.assertEqual(mock_send.call_args.kwargs['ttl'], '300s')
+        self.assertEqual(mock_send.call_args.kwargs['click_action'], 'OPEN_ORDER')
+        self.assertEqual(sent_payload['type'], 'order_update')
+        self.assertEqual(sent_payload['route'], '/orders')
+        self.assertEqual(sent_payload['order_id'], str(self.order.id))
+        self.assertEqual(sent_payload['thread_id'], str(self.order.id))
+        self.assertEqual(sent_payload['order_number'], self.order.order_number)
+        self.assertEqual(sent_payload['status'], 'new')
+
+    @patch('shop.fcm_service.send_to_user', return_value={'users_targeted': 1, 'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
+    def test_attach_shop_notification_dispatches_fcm_after_commit(self, mock_send):
+        with self.captureOnCommitCallbacks(execute=True):
+            notification = _attach_notification_to_user(
+                'shop_owner',
+                self.shop,
+                title='طلب جديد',
+                message='تم استلام طلب جديد رقم #OD500',
+                notification_type='order_update',
+                data={'order_id': self.order.id, 'thread_id': self.order.id, 'order_number': self.order.order_number, 'status': 'new'},
+            )
+
+        self.assertIsNotNone(notification)
+        sent_payload = mock_send.call_args.kwargs['data']
+        self.assertEqual(mock_send.call_args.kwargs['channel_id'], 'orders_notifications')
+        self.assertEqual(sent_payload['type'], 'order_update')
+        self.assertEqual(sent_payload['route'], '/orders')
+        self.assertEqual(sent_payload['click_action'], 'OPEN_ORDER')
+        self.assertEqual(sent_payload['order_id'], str(self.order.id))
+
+    @patch('shop.fcm_service.send_push_to_user', return_value={'users_targeted': 1, 'tokens_total': 1, 'tokens_sent': 1, 'tokens_failed': 0, 'tokens_invalidated': 0})
+    def test_shop_driver_chat_push_fallback_targets_shop_team(self, mock_send):
+        summary = send_shop_driver_chat_push_fallback(
+            DriverChatConversation.objects.create(
+                shop_owner=self.shop,
+                driver=self.driver,
+                status='waiting_reply',
+            ),
+            {
+                'id': 'msg_390',
+                'sender': 'driver',
+                'type': 'text',
+                'text': 'تم قبول الطلب',
+            },
+        )
+
+        self.assertEqual(summary['tokens_total'], 2)
+        self.assertEqual(mock_send.call_count, 2)
+        first_call = mock_send.call_args_list[0].kwargs
+        self.assertEqual(first_call['channel_id'], 'driver_notifications')
+        self.assertEqual(first_call['sound'], 'driver_ring')
+        self.assertEqual(first_call['ios_sound'], 'driver_ring.aiff')
+        self.assertEqual(first_call['ttl'], '120s')
+        self.assertEqual(first_call['click_action'], 'OPEN_CHAT')
+        self.assertEqual(first_call['data']['type'], 'chat')
+        self.assertEqual(first_call['data']['chat_type'], 'driver_chat')
+        self.assertEqual(first_call['data']['message_id'], 'msg_390')
+        self.assertEqual(first_call['data']['message_type'], 'text')
+        self.assertEqual(first_call['data']['message_preview'], 'تم قبول الطلب')
 
 
 class DriverInvitationWelcomeChatTests(TestCase):

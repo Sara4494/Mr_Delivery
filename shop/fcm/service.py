@@ -109,7 +109,10 @@ def _stringify_payload(data):
 
 def _message_preview(message_payload):
     message_type = str((message_payload or {}).get('message_type') or 'text').strip().lower()
-    content = _trim_text((message_payload or {}).get('content'), max_length=120)
+    content = _trim_text(
+        (message_payload or {}).get('content') or (message_payload or {}).get('text'),
+        max_length=120,
+    )
 
     if message_type == 'text':
         return content or 'رسالة جديدة'
@@ -203,6 +206,39 @@ def _customer_driver_chat_ring_profile():
         'high_priority': True,
         'ttl': '60s',
         'notification_priority': 'max',
+    }
+
+
+def _shop_orders_notification_profile():
+    return {
+        'channel_id': getattr(settings, 'FCM_SHOP_ORDERS_CHANNEL_ID', 'orders_notifications'),
+        'sound': getattr(settings, 'FCM_SHOP_ORDERS_SOUND', 'order_ring'),
+        'ios_sound': getattr(settings, 'FCM_SHOP_ORDERS_IOS_SOUND', 'order_ring.aiff'),
+        'high_priority': True,
+        'ttl': getattr(settings, 'FCM_SHOP_ORDER_TTL', '300s'),
+        'notification_priority': 'high',
+    }
+
+
+def _shop_customer_chat_notification_profile():
+    return {
+        'channel_id': getattr(settings, 'FCM_SHOP_CHAT_CHANNEL_ID', 'chat_notifications'),
+        'sound': getattr(settings, 'FCM_SHOP_CHAT_SOUND', 'chat_ring'),
+        'ios_sound': getattr(settings, 'FCM_SHOP_CHAT_IOS_SOUND', 'chat_ring.aiff'),
+        'high_priority': True,
+        'ttl': getattr(settings, 'FCM_SHOP_LIVE_TTL', '120s'),
+        'notification_priority': 'high',
+    }
+
+
+def _shop_driver_chat_notification_profile():
+    return {
+        'channel_id': getattr(settings, 'FCM_SHOP_DRIVER_CHANNEL_ID', 'driver_notifications'),
+        'sound': getattr(settings, 'FCM_SHOP_DRIVER_SOUND', 'driver_ring'),
+        'ios_sound': getattr(settings, 'FCM_SHOP_DRIVER_IOS_SOUND', 'driver_ring.aiff'),
+        'high_priority': True,
+        'ttl': getattr(settings, 'FCM_SHOP_LIVE_TTL', '120s'),
+        'notification_priority': 'high',
     }
 
 
@@ -651,6 +687,32 @@ def build_driver_inbox_notification_payload(
     return payload
 
 
+def build_shop_order_notification_payload(
+    *,
+    notification_type,
+    notification_id,
+    data=None,
+):
+    payload = dict(data or {})
+    order_id = payload.get('order_id')
+    thread_id = payload.get('thread_id') or order_id
+
+    payload['type'] = 'order_update'
+    payload['notification_id'] = str(notification_id)
+    payload['route'] = '/orders'
+    payload['click_action'] = 'OPEN_ORDER'
+    if order_id not in (None, ''):
+        payload['order_id'] = str(order_id)
+    if thread_id not in (None, ''):
+        payload['thread_id'] = str(thread_id)
+    if payload.get('order_number') not in (None, ''):
+        payload['order_number'] = str(payload['order_number'])
+    if payload.get('status') not in (None, ''):
+        payload['status'] = str(payload['status'])
+    payload.setdefault('source_notification_type', str(notification_type or '').strip() or 'order_update')
+    return payload
+
+
 def send_driver_notification_from_record(driver, notification):
     if not driver or not notification:
         return {
@@ -691,6 +753,45 @@ def send_driver_notification_from_record(driver, notification):
             click_action=payload['click_action'],
             notification_priority=profile['notification_priority'],
             tag=tag,
+        ),
+    }
+
+
+def send_shop_notification_from_record(user, notification):
+    if not user or not notification:
+        return {
+            'notification': notification,
+            'push': {
+                'users_targeted': 0,
+                'tokens_total': 0,
+                'tokens_sent': 0,
+                'tokens_failed': 0,
+                'tokens_invalidated': 0,
+            },
+        }
+
+    payload = build_shop_order_notification_payload(
+        notification_type=notification.notification_type,
+        notification_id=notification.id,
+        data=notification.data or {},
+    )
+    profile = _shop_orders_notification_profile()
+
+    return {
+        'notification': notification,
+        'push': send_to_user(
+            user,
+            title=notification.title,
+            body=notification.message,
+            data=payload,
+            high_priority=profile['high_priority'],
+            channel_id=profile['channel_id'],
+            sound=profile['sound'],
+            ios_sound=profile['ios_sound'],
+            ttl=profile['ttl'],
+            click_action=payload['click_action'],
+            notification_priority=profile['notification_priority'],
+            tag=f"shop_order_{notification.id}",
         ),
     }
 
@@ -852,6 +953,15 @@ def _is_invalid_token_error(exc):
     return any(marker in text for marker in markers)
 
 
+def _extract_fcm_error_code(exc):
+    if exc is None:
+        return ''
+    explicit_code = getattr(exc, 'code', None)
+    if explicit_code not in (None, ''):
+        return str(explicit_code)
+    return exc.__class__.__name__
+
+
 def _deactivate_token_record(token_record):
     FCMDeviceToken.objects.filter(pk=token_record.pk).delete()
 
@@ -921,29 +1031,34 @@ def send_push_to_token_record(
         return {
             'success': False,
             'error': str(exc),
+            'error_code': 'FCMConfigurationError',
             'invalid_token': False,
         }
     except Exception as exc:
         invalid_token = _is_invalid_token_error(exc)
+        error_code = _extract_fcm_error_code(exc)
         if invalid_token:
             _deactivate_token_record(token_record)
             logger.warning(
-                'fcm.token.invalid_cleanup token_id=%s user_type=%s user_id=%s error=%s',
+                'fcm.token.invalid_cleanup token_id=%s user_type=%s user_id=%s error_code=%s error=%s',
                 token_record.id,
                 token_record.user_type,
                 token_record.user_id,
+                error_code,
                 exc,
             )
         else:
             logger.exception(
-                'fcm.send.failed token_id=%s user_type=%s user_id=%s',
+                'fcm.send.failed token_id=%s user_type=%s user_id=%s error_code=%s',
                 token_record.id,
                 token_record.user_type,
                 token_record.user_id,
+                error_code,
             )
         return {
             'success': False,
             'error': str(exc),
+            'error_code': error_code,
             'invalid_token': invalid_token,
         }
 
@@ -963,6 +1078,7 @@ def send_push_to_token_record(
     return {
         'success': True,
         'response_id': response_id,
+        'error_code': '',
         'invalid_token': False,
     }
 
@@ -1065,21 +1181,25 @@ def _send_push_to_token_records(
                 summary['tokens_failed'] += 1
                 exc = getattr(send_response, 'exception', None)
                 if exc and _is_invalid_token_error(exc):
+                    error_code = _extract_fcm_error_code(exc)
                     summary['tokens_invalidated'] += 1
                     _deactivate_token_record(token_record)
                     logger.warning(
-                        'fcm.token.invalid_cleanup token_id=%s user_type=%s user_id=%s error=%s',
+                        'fcm.token.invalid_cleanup token_id=%s user_type=%s user_id=%s error_code=%s error=%s',
                         token_record.id,
                         token_record.user_type,
                         token_record.user_id,
+                        error_code,
                         exc,
                     )
                 elif exc:
+                    error_code = _extract_fcm_error_code(exc)
                     logger.warning(
-                        'fcm.send.failed token_id=%s user_type=%s user_id=%s error=%s',
+                        'fcm.send.failed token_id=%s user_type=%s user_id=%s error_code=%s error=%s',
                         token_record.id,
                         token_record.user_type,
                         token_record.user_id,
+                        error_code,
                         exc,
                     )
 
@@ -2013,12 +2133,14 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
     )
     if chat_type == 'shop_customer' and sender_type == 'customer':
         payload = build_shop_chat_message_payload(order=order, message_payload=message_payload)
-        push_title = 'رسالة جديدة'
-        channel_id = getattr(settings, 'FCM_SHOP_CHAT_CHANNEL_ID', 'chat_notifications')
-        sound = 'default'
-        ios_sound = 'default'
-        high_priority = True
-        notification_priority = 'high'
+        profile = _shop_customer_chat_notification_profile()
+        push_title = 'رسالة جديدة من العميل'
+        channel_id = profile['channel_id']
+        sound = profile['sound']
+        ios_sound = profile['ios_sound']
+        high_priority = profile['high_priority']
+        notification_priority = profile['notification_priority']
+        ttl = profile['ttl']
     else:
         push_title = shop_name
         if chat_type == 'driver_customer':
@@ -2028,6 +2150,7 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
         ios_sound = getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default')
         high_priority = False
         notification_priority = None
+        ttl = None
     logger.info(
         'fcm.chat.dispatch order_id=%s chat_type=%s sender_type=%s recipients=%s',
         order.id,
@@ -2044,6 +2167,7 @@ def send_order_chat_push_fallback(order_id, chat_type, message_payload, *, reque
         sound=sound,
         ios_sound=ios_sound,
         high_priority=high_priority,
+        ttl=ttl,
         click_action='OPEN_CHAT',
         notification_priority=notification_priority,
         tag=f'chat_{chat_type}_{order.id}',
@@ -2290,6 +2414,37 @@ def build_shop_chat_message_payload(*, order, message_payload):
     }
 
 
+def build_shop_driver_chat_message_payload(*, conversation, message_payload, order_id=None):
+    message_payload = message_payload or {}
+    order_number = ''
+    if order_id not in (None, ''):
+        order_number = (
+            conversation.orders
+            .filter(order_id=order_id)
+            .values_list('order__order_number', flat=True)
+            .first()
+            or ''
+        )
+    return {
+        'type': 'chat',
+        'route': '/chat',
+        'chat_type': 'driver_chat',
+        'conversation_id': str(getattr(conversation, 'public_id', '') or ''),
+        'driver_id': str(getattr(conversation, 'driver_id', '') or ''),
+        'driver_name': _trim_text(
+            getattr(getattr(conversation, 'driver', None), 'name', None),
+            default='الدليفري',
+            max_length=120,
+        ),
+        'order_id': str(order_id or ''),
+        'order_number': str(order_number or ''),
+        'message_id': str(message_payload.get('id') or message_payload.get('message_id') or ''),
+        'message_type': str(message_payload.get('type') or message_payload.get('message_type') or 'text'),
+        'message_preview': _message_preview(message_payload),
+        'click_action': 'OPEN_CHAT',
+    }
+
+
 def build_driver_store_chat_message_payload(*, conversation, message_payload, order_id=None, shop_name=None, shop_profile_image_url=None):
     message_payload = message_payload or {}
     return {
@@ -2306,6 +2461,61 @@ def build_driver_store_chat_message_payload(*, conversation, message_payload, or
         'message_type': message_payload.get('type') or message_payload.get('message_type') or 'text',
         'message_preview': _message_preview(message_payload),
     }
+
+
+def send_shop_driver_chat_push_fallback(conversation, message_payload, *, request=None, scope=None, base_url=None):
+    if not conversation or not getattr(conversation, 'shop_owner_id', None):
+        return {'users_targeted': 0, 'tokens_total': 0, 'tokens_sent': 0, 'tokens_failed': 0, 'tokens_invalidated': 0}
+
+    sender_type = str((message_payload or {}).get('sender') or (message_payload or {}).get('sender_type') or '').strip()
+    if sender_type != 'driver':
+        return {'users_targeted': 0, 'tokens_total': 0, 'tokens_sent': 0, 'tokens_failed': 0, 'tokens_invalidated': 0}
+
+    order_link = (
+        conversation.orders
+        .select_related('order')
+        .order_by('-is_active', '-updated_at', '-created_at')
+        .first()
+    )
+    order_id = order_link.order_id if order_link else None
+    payload = build_shop_driver_chat_message_payload(
+        conversation=conversation,
+        message_payload=message_payload,
+        order_id=order_id,
+    )
+    profile = _shop_driver_chat_notification_profile()
+    recipient_identities = _get_shop_identities(conversation.shop_owner_id)
+    logger.info(
+        'fcm.shop_driver_chat.dispatch conversation_id=%s shop_owner_id=%s driver_id=%s recipients=%s',
+        conversation.public_id,
+        conversation.shop_owner_id,
+        conversation.driver_id,
+        recipient_identities,
+    )
+    summary = send_push_to_identities(
+        recipient_identities,
+        title='رسالة جديدة من الدليفري',
+        body=_trim_text(payload.get('message_preview'), default='لديك رسالة جديدة', max_length=180),
+        data=payload,
+        channel_id=profile['channel_id'],
+        sound=profile['sound'],
+        ios_sound=profile['ios_sound'],
+        high_priority=profile['high_priority'],
+        ttl=profile['ttl'],
+        click_action='OPEN_CHAT',
+        notification_priority=profile['notification_priority'],
+        tag=f'driver_chat_{conversation.public_id}',
+    )
+    logger.info(
+        'fcm.shop_driver_chat.result conversation_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
+        conversation.public_id,
+        summary['users_targeted'],
+        summary['tokens_total'],
+        summary['tokens_sent'],
+        summary['tokens_failed'],
+        summary['tokens_invalidated'],
+    )
+    return summary
 
 
 def send_driver_chat_push_fallback(conversation, message_payload, *, request=None, scope=None, base_url=None):
@@ -2354,6 +2564,7 @@ def send_driver_chat_push_fallback(conversation, message_payload, *, request=Non
         sound=getattr(settings, 'FCM_CHAT_SOUND', 'default'),
         ios_sound=getattr(settings, 'FCM_CHAT_IOS_SOUND', 'default'),
         high_priority=False,
+        ttl='120s',
     )
     logger.info(
         'fcm.driver_chat.result conversation_id=%s users_targeted=%s tokens_total=%s tokens_sent=%s tokens_failed=%s tokens_invalidated=%s',
