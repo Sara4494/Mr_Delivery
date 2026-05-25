@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="ar">
 <head>
@@ -41,255 +42,332 @@
     }
 
     .page {
-      min-height: 100vh;
-      padding: 32px 16px 48px;
-      background:
-        radial-gradient(circle at top left, rgba(34, 197, 94, 0.14), transparent 28%),
-        radial-gradient(circle at top right, rgba(74, 222, 128, 0.16), transparent 22%),
-        linear-gradient(180deg, #F3FBF7 0%, #F9FAFB 100%);
-    }
-
-    .container {
-      max-width: 920px;
+      width: min(100%, 920px);
       margin: 0 auto;
+      padding: 28px 18px 48px;
     }
 
     .hero {
-      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-      color: var(--text-on-primary);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: var(--radius-lg);
-      padding: 36px 28px;
       box-shadow: var(--shadow);
-      margin-bottom: 24px;
-      position: relative;
-      overflow: hidden;
+      padding: 28px;
+      margin-bottom: 22px;
     }
 
-    .hero::after {
-      content: "";
-      position: absolute;
-      inset: auto -80px -80px auto;
-      width: 220px;
-      height: 220px;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 50%;
-    }
-
-    .hero-badge {
-      display: inline-flex;
+    .brand-row {
+      display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px 14px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.16);
-      font-size: 14px;
+      gap: 14px;
       margin-bottom: 18px;
-      backdrop-filter: blur(6px);
+    }
+
+    .brand-logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      background: var(--primary-surface);
+      object-fit: contain;
+      padding: 8px;
+    }
+
+    .brand-name {
+      margin: 0;
+      color: var(--primary);
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 600;
     }
 
     h1 {
-      margin: 0 0 12px;
-      font-size: clamp(30px, 5vw, 42px);
+      margin: 0 0 10px;
+      font-size: clamp(28px, 5vw, 42px);
       line-height: 1.2;
+      font-weight: 900;
+      letter-spacing: 0;
     }
 
-    .hero p {
+    .lead {
       margin: 0;
-      max-width: 720px;
-      color: rgba(255, 255, 255, 0.92);
-      font-size: 16px;
+      color: var(--text-secondary);
+      font-size: 17px;
+      font-weight: 500;
     }
 
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 20px;
-    }
-
-    .meta-chip {
-      background: rgba(255, 255, 255, 0.12);
-      padding: 10px 14px;
-      border-radius: 14px;
-      font-size: 14px;
-    }
-
-    .content-card {
+    .language-section {
       background: var(--surface);
-      border: 1px solid rgba(34, 197, 94, 0.10);
+      border: 1px solid var(--border);
       border-radius: var(--radius-lg);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-
-    .section {
-      padding: 28px 24px;
-      border-bottom: 1px solid var(--divider);
-    }
-
-    .section:last-child {
-      border-bottom: none;
-    }
-
-    h2 {
-      margin: 0 0 14px;
-      font-size: 22px;
-      color: var(--primary-dark);
-    }
-
-    p {
-      margin: 0 0 14px;
-      color: var(--text-primary);
-    }
-
-    p:last-child {
-      margin-bottom: 0;
-    }
-
-    ul {
-      margin: 0;
-      padding-inline-start: 20px;
-      color: var(--text-primary);
-    }
-
-    li + li {
-      margin-top: 10px;
-    }
-
-    .highlight {
-      background: var(--primary-surface);
-      border: 1px solid rgba(34, 197, 94, 0.16);
-      border-radius: var(--radius-md);
-      padding: 18px;
+      padding: 26px;
       margin-top: 18px;
     }
 
-    .footer {
-      margin-top: 22px;
-      text-align: center;
+    .language-section[dir="rtl"] {
+      text-align: right;
+    }
+
+    .language-section[dir="ltr"] {
+      text-align: left;
+    }
+
+    .section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: var(--primary-surface);
+      color: var(--primary-dark);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 25px;
+      line-height: 1.35;
+      font-weight: 900;
+    }
+
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 18px;
+      font-weight: 900;
+      color: var(--text-primary);
+    }
+
+    p {
+      margin: 0 0 12px;
       color: var(--text-secondary);
+      font-size: 15.5px;
+      font-weight: 500;
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-inline-start: 22px;
+      color: var(--text-secondary);
+    }
+
+    li {
+      margin-bottom: 9px;
+      padding-inline-start: 4px;
+    }
+
+    .notice {
+      margin: 18px 0;
+      padding: 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(34, 197, 94, 0.28);
+      background: var(--primary-surface);
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+
+    .warning {
+      margin: 18px 0;
+      padding: 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(202, 138, 4, 0.28);
+      background: #FEFCE8;
+      color: #713F12;
+      font-weight: 700;
+    }
+
+    .muted {
+      color: var(--text-light);
       font-size: 14px;
     }
 
-    @media (max-width: 640px) {
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      color: var(--text-light);
+      font-size: 13px;
+    }
+
+    a {
+      color: var(--primary-dark);
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    @media (max-width: 560px) {
       .page {
-        padding: 20px 12px 32px;
+        padding: 18px 12px 34px;
       }
 
-      .hero {
-        padding: 28px 20px;
-        border-radius: 22px;
+      .hero,
+      .language-section {
+        border-radius: 24px;
+        padding: 20px;
       }
 
-      .section {
-        padding: 24px 18px;
+      .brand-logo {
+        width: 48px;
+        height: 48px;
       }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="container">
-      <section class="hero">
-        <div class="hero-badge">Terms and Conditions</div>
-        <h1>ZAYGO Captains Driver App Terms and Conditions</h1>
-        <p>
-          These Terms and Conditions govern the use of the ZAYGO Captains driver application and
-          related delivery services. By using the app, the driver agrees to comply with these terms.
-        </p>
-        <div class="meta">
-          <div class="meta-chip">Applies to all driver accounts</div>
-          <div class="meta-chip">Covers usage, conduct, and operational rules</div>
+  <main class="page">
+    <header class="hero">
+      <div class="brand-row">
+        <img class="brand-logo" src="{% static 'shop/logo.svg' %}" alt="ZAYGO logo">
+        <div>
+          <p class="brand-name">ZAYGO Captains</p>
+          <p class="eyebrow">Driver App</p>
         </div>
-      </section>
-
-      <main class="content-card">
-        <section class="section">
-          <h2>1. Acceptance of Terms</h2>
-          <p>
-            By registering for or using the driver app, you confirm that you have read, understood,
-            and accepted these Terms and Conditions. If you do not agree, you must stop using the app.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>2. Driver Responsibilities</h2>
-          <p>Drivers are expected to use the service professionally and responsibly. This includes:</p>
-          <ul>
-            <li>Providing accurate account and vehicle information.</li>
-            <li>Maintaining legal eligibility to perform delivery services.</li>
-            <li>Following assigned delivery procedures and updating order status truthfully.</li>
-            <li>Treating customers, merchants, and support staff respectfully.</li>
-          </ul>
-        </section>
-
-        <section class="section">
-          <h2>3. Account Use</h2>
-          <p>
-            Each driver is responsible for securing their account credentials. The driver must not share
-            login access with others or impersonate another person while using the platform.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>4. Location and Operational Access</h2>
-          <p>
-            The app may require access to location services, notifications, camera, microphone, or media
-            uploads where needed for delivery operations, communication, verification, or support.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>5. Prohibited Conduct</h2>
-          <p>Drivers must not engage in behavior that harms the platform or its users, including:</p>
-          <ul>
-            <li>Fraudulent activity, false status updates, or misuse of orders.</li>
-            <li>Abusive, threatening, or inappropriate communication.</li>
-            <li>Attempting to disrupt, hack, reverse engineer, or misuse the service.</li>
-            <li>Using the app in violation of applicable law or safety requirements.</li>
-          </ul>
-        </section>
-
-        <section class="section">
-          <h2>6. Suspension or Termination</h2>
-          <p>
-            The platform may suspend, restrict, or terminate driver access at its discretion when needed
-            for security, operational integrity, policy violations, or legal compliance.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>7. Payments and Earnings</h2>
-          <p>
-            Any earnings, balances, fees, or settlement processes are subject to the operating rules of
-            the platform and may depend on completed deliveries, disputes, cancellations, or internal review.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>8. Limitation of Liability</h2>
-          <p>
-            The service is provided on an operational basis, and while reasonable efforts are made to keep
-            it available and accurate, the platform does not guarantee uninterrupted or error-free access at all times.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>9. Changes to the Terms</h2>
-          <p>
-            These terms may be updated periodically. Continued use of the app after updated terms are
-            published indicates acceptance of the revised version.
-          </p>
-          <div class="highlight">
-            If the driver continues using the application after an update, the updated terms will apply from the publication date.
-          </div>
-        </section>
-      </main>
-
-      <div class="footer">
-        ZAYGO Captains Driver App Terms and Conditions
       </div>
-    </div>
-  </div>
+      <h1>Terms and Conditions</h1>
+      <p class="lead">These terms define the obligations, operating rules, commissions, cash settlement requirements, and account suspension cases for ZAYGO delivery captains.</p>
+      <p class="muted">Last updated: May 25, 2026</p>
+    </header>
+
+    <section class="language-section" dir="rtl" lang="ar">
+      <span class="section-label">العربية</span>
+      <h2>الشروط والأحكام لتطبيق مندوبي ZAYGO</h2>
+      <p>تنظم هذه الشروط استخدام تطبيق ZAYGO Captains من قبل مندوبي التوصيل. باستخدام التطبيق أو قبول الطلبات من خلاله، فإنك توافق على الالتزام بهذه الشروط وأي سياسات تشغيلية تعلنها ZAYGO.</p>
+
+      <div class="notice">يجب على المندوب استخدام التطبيق بمهنية، والمحافظة على جودة الطلب، والالتزام بتعليمات المتجر والعميل وسياسات ZAYGO.</div>
+
+      <h3>1. الأهلية وتفعيل الحساب</h3>
+      <ul>
+        <li>يجب أن تكون البيانات المقدمة صحيحة وحديثة، بما في ذلك رقم الهاتف، الهوية، رخصة القيادة، وبيانات المركبة.</li>
+        <li>يحق لـ ZAYGO مراجعة المستندات وقبول أو رفض أو تعليق الحساب إذا كانت البيانات غير مكتملة أو غير صحيحة.</li>
+        <li>لا يجوز مشاركة الحساب أو استخدام حساب شخص آخر لاستلام أو توصيل الطلبات.</li>
+      </ul>
+
+      <h3>2. التزامات المندوب أثناء التوصيل</h3>
+      <ul>
+        <li>قبول الطلبات وتنفيذها بجدية وفي الوقت المناسب.</li>
+        <li>الحفاظ على جودة الطلب وسلامته من لحظة الاستلام وحتى التسليم.</li>
+        <li>التعامل باحترام ومهنية مع العملاء، المتاجر، فريق الدعم، وباقي المندوبين.</li>
+        <li>الالتزام بمسار التوصيل المعقول وعدم التأخير المتعمد أو تغيير وجهة الطلب دون سبب مشروع.</li>
+        <li>التأكد من مطابقة الطلب قبل مغادرة المتجر عند توفر ذلك، وإبلاغ الدعم فوراً عند وجود مشكلة.</li>
+        <li>عدم فتح الطلب أو استخدامه أو استبداله أو العبث بمحتوياته.</li>
+      </ul>
+
+      <h3>3. الموقع والتوفر</h3>
+      <p>يجب تفعيل خدمات الموقع عند استخدام التطبيق أو أثناء وجود طلب نشط. قد يؤدي تعطيل الموقع أو تقديم موقع غير دقيق إلى تعذر استقبال الطلبات أو تعليق بعض خصائص الحساب.</p>
+
+      <h3>4. العمولات والمستحقات</h3>
+      <ul>
+        <li>يتم احتساب عمولة أو مستحقات المندوب وفقاً للسياسة المعتمدة داخل التطبيق أو الاتفاق التشغيلي مع ZAYGO.</li>
+        <li>قد تختلف قيمة التوصيل أو الحوافز حسب المنطقة، وقت الطلب، نوع الطلب، المسافة، أو الحملات الترويجية.</li>
+        <li>يحق لـ ZAYGO مراجعة المستحقات وتصحيح أي خطأ ناتج عن خلل تقني، إلغاء، احتيال، أو مخالفة تشغيلية.</li>
+        <li>لا يستحق المندوب أي مبالغ عن طلبات غير مكتملة أو تم إلغاؤها بسبب خطأ أو مخالفة من جانبه، ما لم تقرر ZAYGO خلاف ذلك.</li>
+      </ul>
+
+      <h3>5. تسوية المبالغ النقدية المحصلة</h3>
+      <ul>
+        <li>أي مبالغ كاش يتم تحصيلها من العميل تعتبر أموالاً مستحقة لـ ZAYGO أو المتجر إلى حين تسويتها.</li>
+        <li>يلتزم المندوب بتسليم أو تحويل المبالغ النقدية في المواعيد والطرق التي تحددها ZAYGO.</li>
+        <li>قد يتم خصم المستحقات أو إيقاف استقبال الطلبات عند وجود مبالغ غير مسددة أو تأخير في التسوية.</li>
+        <li>يجب الإبلاغ فوراً عن أي اختلاف في قيمة التحصيل أو الدفع أو وجود مشكلة مع العميل.</li>
+      </ul>
+
+      <h3>6. إثبات التسليم واستخدام الكاميرا</h3>
+      <p>قد يُطلب من المندوب التقاط صورة، إدخال كود، الحصول على توقيع، أو تنفيذ خطوة تحقق لإثبات تسليم الطلب. يجب أن تكون أي صور أو بيانات مرفوعة صحيحة وواضحة ومرتبطة بالطلب فقط.</p>
+
+      <h3>7. السلوك المحظور</h3>
+      <ul>
+        <li>الاحتيال أو تقديم بيانات مزيفة أو التلاعب بالموقع أو حالة الطلب.</li>
+        <li>تحصيل مبالغ غير مستحقة من العملاء أو الامتناع عن تسوية الكاش.</li>
+        <li>التأخير المتعمد، رفض التسليم بعد الاستلام، أو إلغاء الطلبات بشكل متكرر دون سبب مقبول.</li>
+        <li>الإساءة اللفظية أو السلوك غير المهني مع العملاء أو المتاجر أو فريق الدعم.</li>
+        <li>إتلاف الطلب، فتحه، استبداله، أو استخدامه لأي غرض شخصي.</li>
+        <li>مشاركة بيانات العملاء أو الطلبات خارج نطاق تنفيذ خدمة التوصيل.</li>
+      </ul>
+
+      <h3>8. إيقاف أو تعليق الحساب</h3>
+      <div class="warning">قد يؤدي الاحتيال، التقييم المنخفض المتكرر، التأخير المتعمد، عدم تسوية الكاش، إساءة التعامل، أو مخالفة سياسات ZAYGO إلى تعليق الحساب مؤقتاً أو إيقافه نهائياً.</div>
+      <p>يجوز لـ ZAYGO اتخاذ إجراءات مثل التنبيه، تقييد استقبال الطلبات، خصم مبالغ مستحقة، تعليق الحساب، أو إنهاء العلاقة التشغيلية وفقاً لطبيعة المخالفة وتأثيرها.</p>
+
+      <h3>9. السلامة والمسؤولية</h3>
+      <p>المندوب مسؤول عن الالتزام بقوانين المرور والسلامة، واستخدام مركبة صالحة، وتجنب أي سلوك يعرضه أو يعرض الآخرين للخطر. ZAYGO لا تتحمل مسؤولية المخالفات المرورية أو الأضرار الناتجة عن مخالفة القوانين أو الإهمال الشخصي.</p>
+
+      <h3>10. تعديل الشروط</h3>
+      <p>يجوز لـ ZAYGO تحديث هذه الشروط عند الحاجة. استمرار استخدام التطبيق بعد نشر التحديث يعني الموافقة على النسخة المحدثة.</p>
+    </section>
+
+    <section class="language-section" dir="ltr" lang="en">
+      <span class="section-label">English</span>
+      <h2>ZAYGO Driver App Terms and Conditions</h2>
+      <p>These terms govern the use of ZAYGO Captains by delivery drivers. By using the app or accepting orders through it, you agree to follow these terms and any operational policies published by ZAYGO.</p>
+
+      <div class="notice">Drivers must use the app professionally, protect order quality, and follow merchant, customer, and ZAYGO operating instructions.</div>
+
+      <h3>1. Eligibility and Account Activation</h3>
+      <ul>
+        <li>You must provide accurate and up-to-date information, including phone number, identity documents, driving license, and vehicle details.</li>
+        <li>ZAYGO may review documents and approve, reject, or suspend accounts if information is incomplete or inaccurate.</li>
+        <li>You may not share your account or use another person's account to receive or deliver orders.</li>
+      </ul>
+
+      <h3>2. Driver Obligations During Delivery</h3>
+      <ul>
+        <li>Accept and complete orders responsibly and on time.</li>
+        <li>Protect the quality and safety of the order from pickup until delivery.</li>
+        <li>Deal respectfully and professionally with customers, merchants, support teams, and other drivers.</li>
+        <li>Follow a reasonable delivery route and avoid intentional delays or unauthorized destination changes.</li>
+        <li>Check order consistency before leaving the merchant where possible, and notify support immediately if an issue occurs.</li>
+        <li>Do not open, use, replace, tamper with, or interfere with order contents.</li>
+      </ul>
+
+      <h3>3. Location and Availability</h3>
+      <p>Location services must be enabled while using the app or during an active order. Disabling location or providing inaccurate location data may prevent order assignment or lead to account restrictions.</p>
+
+      <h3>4. Commissions and Earnings</h3>
+      <ul>
+        <li>Driver commissions or earnings are calculated according to the policy shown in the app or the operational agreement with ZAYGO.</li>
+        <li>Delivery fees or incentives may vary by area, order time, order type, distance, or promotional campaigns.</li>
+        <li>ZAYGO may review and correct earnings affected by technical errors, cancellations, fraud, or operational violations.</li>
+        <li>The driver may not be entitled to payment for incomplete orders or orders cancelled due to the driver's fault or violation, unless ZAYGO decides otherwise.</li>
+      </ul>
+
+      <h3>5. Cash Collection and Settlement</h3>
+      <ul>
+        <li>Any cash collected from customers is considered money owed to ZAYGO or the merchant until properly settled.</li>
+        <li>The driver must hand over or transfer collected cash according to the timing and methods defined by ZAYGO.</li>
+        <li>ZAYGO may deduct earnings or restrict order assignment when cash balances remain unpaid or settlement is delayed.</li>
+        <li>Any discrepancy in collection amount, payment, or customer cash issue must be reported immediately.</li>
+      </ul>
+
+      <h3>6. Delivery Proof and Camera Use</h3>
+      <p>The driver may be required to take a photo, enter a code, obtain a signature, or complete a verification step to prove delivery. Any uploaded images or data must be accurate, clear, and related only to the relevant order.</p>
+
+      <h3>7. Prohibited Conduct</h3>
+      <ul>
+        <li>Fraud, false information, location manipulation, or order status manipulation.</li>
+        <li>Collecting unauthorized amounts from customers or failing to settle cash.</li>
+        <li>Intentional delays, refusal to deliver after pickup, or repeated cancellations without acceptable reason.</li>
+        <li>Verbal abuse or unprofessional behavior toward customers, merchants, or support teams.</li>
+        <li>Damaging, opening, replacing, or using an order for personal purposes.</li>
+        <li>Sharing customer or order information outside the scope of delivery service.</li>
+      </ul>
+
+      <h3>8. Account Suspension or Termination</h3>
+      <div class="warning">Fraud, repeated low ratings, intentional delays, unpaid cash balances, misconduct, or violation of ZAYGO policies may result in temporary suspension or permanent account termination.</div>
+      <p>ZAYGO may take actions such as warnings, order assignment restrictions, deductions, account suspension, or termination of the operational relationship depending on the violation and its impact.</p>
+
+      <h3>9. Safety and Responsibility</h3>
+      <p>The driver is responsible for following traffic and safety laws, using a roadworthy vehicle, and avoiding conduct that endangers the driver or others. ZAYGO is not responsible for traffic violations or damages resulting from legal violations or personal negligence.</p>
+
+      <h3>10. Changes to Terms</h3>
+      <p>ZAYGO may update these terms when needed. Continued use of the app after updates are published means acceptance of the updated version.</p>
+    </section>
+
+    <p class="footer">© 2026 ZAYGO. All rights reserved.</p>
+  </main>
 </body>
 </html>

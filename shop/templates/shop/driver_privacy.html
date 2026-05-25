@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="ar">
 <head>
@@ -41,259 +42,310 @@
     }
 
     .page {
-      min-height: 100vh;
-      padding: 32px 16px 48px;
-      background:
-        radial-gradient(circle at top left, rgba(34, 197, 94, 0.14), transparent 28%),
-        radial-gradient(circle at top right, rgba(74, 222, 128, 0.16), transparent 22%),
-        linear-gradient(180deg, #F3FBF7 0%, #F9FAFB 100%);
-    }
-
-    .container {
-      max-width: 920px;
+      width: min(100%, 920px);
       margin: 0 auto;
+      padding: 28px 18px 48px;
     }
 
     .hero {
-      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-      color: var(--text-on-primary);
-      border-radius: var(--radius-lg);
-      padding: 36px 28px;
-      box-shadow: var(--shadow);
-      margin-bottom: 24px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .hero::after {
-      content: "";
-      position: absolute;
-      inset: auto -80px -80px auto;
-      width: 220px;
-      height: 220px;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 50%;
-    }
-
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 14px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.16);
-      font-size: 14px;
-      margin-bottom: 18px;
-      backdrop-filter: blur(6px);
-    }
-
-    h1 {
-      margin: 0 0 12px;
-      font-size: clamp(30px, 5vw, 42px);
-      line-height: 1.2;
-    }
-
-    .hero p {
-      margin: 0;
-      max-width: 720px;
-      color: rgba(255, 255, 255, 0.92);
-      font-size: 16px;
-    }
-
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 20px;
-    }
-
-    .meta-chip {
-      background: rgba(255, 255, 255, 0.12);
-      padding: 10px 14px;
-      border-radius: 14px;
-      font-size: 14px;
-    }
-
-    .content-card {
       background: var(--surface);
-      border: 1px solid rgba(34, 197, 94, 0.10);
+      border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow);
-      overflow: hidden;
+      padding: 28px;
+      margin-bottom: 22px;
     }
 
-    .section {
-      padding: 28px 24px;
-      border-bottom: 1px solid var(--divider);
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 18px;
     }
 
-    .section:last-child {
-      border-bottom: none;
-    }
-
-    h2 {
-      margin: 0 0 14px;
-      font-size: 22px;
-      color: var(--primary-dark);
-    }
-
-    p {
-      margin: 0 0 14px;
-      color: var(--text-primary);
-    }
-
-    p:last-child {
-      margin-bottom: 0;
-    }
-
-    ul {
-      margin: 0;
-      padding-inline-start: 20px;
-      color: var(--text-primary);
-    }
-
-    li + li {
-      margin-top: 10px;
-    }
-
-    .highlight {
+    .brand-logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
       background: var(--primary-surface);
-      border: 1px solid rgba(34, 197, 94, 0.16);
-      border-radius: var(--radius-md);
-      padding: 18px;
-      margin-top: 18px;
+      object-fit: contain;
+      padding: 8px;
     }
 
-    .footer {
-      margin-top: 22px;
-      text-align: center;
+    .brand-name {
+      margin: 0;
+      color: var(--primary);
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .eyebrow {
+      margin: 0;
       color: var(--text-secondary);
       font-size: 14px;
-    }
-
-    .footer a {
-      color: var(--primary-dark);
-      text-decoration: none;
       font-weight: 600;
     }
 
-    @media (max-width: 640px) {
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 5vw, 42px);
+      line-height: 1.2;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 17px;
+      font-weight: 500;
+    }
+
+    .language-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 26px;
+      margin-top: 18px;
+    }
+
+    .language-section[dir="rtl"] {
+      text-align: right;
+    }
+
+    .language-section[dir="ltr"] {
+      text-align: left;
+    }
+
+    .section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: var(--primary-surface);
+      color: var(--primary-dark);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 25px;
+      line-height: 1.35;
+      font-weight: 900;
+    }
+
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 18px;
+      font-weight: 900;
+      color: var(--text-primary);
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: var(--text-secondary);
+      font-size: 15.5px;
+      font-weight: 500;
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-inline-start: 22px;
+      color: var(--text-secondary);
+    }
+
+    li {
+      margin-bottom: 9px;
+      padding-inline-start: 4px;
+    }
+
+    .notice {
+      margin: 18px 0;
+      padding: 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(34, 197, 94, 0.28);
+      background: var(--primary-surface);
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+
+    .card {
+      margin-top: 14px;
+      padding: 18px;
+      border: 1px solid var(--divider);
+      border-radius: var(--radius-md);
+      background: #FFFFFF;
+    }
+
+    .muted {
+      color: var(--text-light);
+      font-size: 14px;
+    }
+
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      color: var(--text-light);
+      font-size: 13px;
+    }
+
+    a {
+      color: var(--primary-dark);
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    @media (max-width: 560px) {
       .page {
-        padding: 20px 12px 32px;
+        padding: 18px 12px 34px;
       }
 
-      .hero {
-        padding: 28px 20px;
-        border-radius: 22px;
+      .hero,
+      .language-section {
+        border-radius: 24px;
+        padding: 20px;
       }
 
-      .section {
-        padding: 24px 18px;
+      .brand-logo {
+        width: 48px;
+        height: 48px;
       }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="container">
-      <section class="hero">
-        <div class="hero-badge">Privacy Policy</div>
-        <h1>ZAYGO Captains Driver App Privacy Policy</h1>
-        <p>
-          This Privacy Policy explains how ZAYGO Captains collects, uses, stores, and protects
-          driver information when using the driver application and related services.
-        </p>
-        <div class="meta">
-          <div class="meta-chip">Applies to all drivers using the app</div>
-          <div class="meta-chip">Covers account, orders, and app usage data</div>
+  <main class="page">
+    <header class="hero">
+      <div class="brand-row">
+        <img class="brand-logo" src="{% static 'shop/logo.svg' %}" alt="ZAYGO logo">
+        <div>
+          <p class="brand-name">ZAYGO Captains</p>
+          <p class="eyebrow">Driver App</p>
         </div>
-      </section>
-
-      <main class="content-card">
-        <section class="section">
-          <h2>1. Information We Collect</h2>
-          <p>We may collect information required to operate the driver service effectively, including:</p>
-          <ul>
-            <li>Personal information such as name, phone number, profile photo, and identification details.</li>
-            <li>Vehicle information including type, plate number, and related registration details.</li>
-            <li>Location data while the app is in use to support delivery assignment, route tracking, and order updates.</li>
-            <li>Order and communication data such as assigned orders, delivery status, and in-app chat or call records where applicable.</li>
-            <li>Technical information such as device type, app version, IP address, and usage logs.</li>
-          </ul>
-        </section>
-
-        <section class="section">
-          <h2>2. How We Use Information</h2>
-          <p>We use collected information to provide, maintain, and improve the driver service. This includes:</p>
-          <ul>
-            <li>Creating and managing driver accounts.</li>
-            <li>Assigning delivery tasks and tracking fulfillment.</li>
-            <li>Improving support, safety, fraud prevention, and system performance.</li>
-            <li>Sending service-related notifications such as order updates or account alerts.</li>
-          </ul>
-        </section>
-
-        <section class="section">
-          <h2>3. Location Data</h2>
-          <p>
-            The driver app may use background and foreground location access to support live tracking,
-            dispatch coordination, and proof of delivery operations. Location access is only used for
-            operational needs related to the delivery service.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>4. Sharing of Information</h2>
-          <p>We may share limited information when necessary to operate the service, including with:</p>
-          <ul>
-            <li>Customers receiving their deliveries.</li>
-            <li>Stores or partners managing assigned delivery orders.</li>
-            <li>Service providers supporting hosting, analytics, communications, or technical operations.</li>
-            <li>Authorities when disclosure is required by law or necessary to protect rights and safety.</li>
-          </ul>
-        </section>
-
-        <section class="section">
-          <h2>5. Data Security</h2>
-          <p>
-            We take reasonable technical and organizational measures to protect driver data against
-            unauthorized access, loss, misuse, or alteration. However, no online platform can guarantee
-            absolute security.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>6. Data Retention</h2>
-          <p>
-            Driver information may be retained for as long as necessary to provide services, comply with
-            legal obligations, resolve disputes, and enforce operational policies.
-          </p>
-        </section>
-
-        <section class="section">
-          <h2>7. Driver Rights</h2>
-          <p>
-            Depending on applicable law, drivers may request access to certain personal information,
-            correction of inaccurate data, or deletion where permitted and operationally appropriate.
-          </p>
-          <div class="highlight">
-            Questions about privacy requests or account data can be directed through the official support channel used by the platform.
-          </div>
-        </section>
-
-        <section class="section">
-          <h2>8. Policy Updates</h2>
-          <p>
-            This policy may be updated from time to time. Continued use of the driver app after updates
-            means the updated policy becomes effective from the date it is published.
-          </p>
-        </section>
-      </main>
-
-      <div class="footer">
-        ZAYGO Captains Driver App Privacy Policy
       </div>
-    </div>
-  </div>
+      <h1>Privacy Policy</h1>
+      <p class="lead">This page explains how ZAYGO collects, uses, stores, and protects information related to delivery captains and order fulfillment.</p>
+      <p class="muted">Last updated: May 25, 2026</p>
+    </header>
+
+    <section class="language-section" dir="rtl" lang="ar">
+      <span class="section-label">العربية</span>
+      <h2>سياسة الخصوصية لتطبيق مندوبي ZAYGO</h2>
+      <p>نحن في ZAYGO نحترم خصوصية مندوبي التوصيل ونلتزم بحماية بياناتهم. توضح هذه السياسة أنواع البيانات التي نجمعها من خلال تطبيق المندوبين، وسبب استخدامها، وكيفية حمايتها.</p>
+
+      <div class="notice">باستخدامك لتطبيق ZAYGO Captains، فإنك توافق على جمع ومعالجة البيانات اللازمة لتشغيل خدمات التوصيل، وتتبع الطلبات، وتحسين الأمان وجودة الخدمة.</div>
+
+      <h3>1. البيانات التي نجمعها</h3>
+      <ul>
+        <li>بيانات الحساب مثل الاسم، رقم الهاتف، صورة الملف الشخصي، وبيانات التواصل.</li>
+        <li>بيانات الهوية والتحقق مثل بطاقة الهوية، رخصة القيادة، أو أي مستندات مطلوبة لتفعيل حساب المندوب.</li>
+        <li>بيانات المركبة مثل نوع المركبة، رقم اللوحة، اللون، الموديل، وصور المركبة عند الحاجة.</li>
+        <li>بيانات الموقع الجغرافي GPS في المقدمة أثناء استخدام التطبيق، وفي الخلفية عند وجود طلب نشط أو أثناء انتظار طلبات مخصصة للمندوب.</li>
+        <li>بيانات الطلبات مثل أرقام الطلبات، نقاط الاستلام والتسليم، حالة الطلب، توقيتات القبول والاستلام والتسليم.</li>
+        <li>بيانات الكاميرا والصور عند استخدام الكاميرا لإثبات الاستلام أو التسليم أو توثيق حالة الطلب.</li>
+        <li>بيانات الجهاز مثل نوع الجهاز، نظام التشغيل، معرف الجهاز، إصدار التطبيق، ورمز إشعارات FCM.</li>
+        <li>بيانات الأداء والتقييمات مثل نسب القبول، التأخير، الإلغاءات، تقييمات العملاء والمتاجر، وسجلات الدعم.</li>
+      </ul>
+
+      <h3>2. استخدام بيانات الموقع الجغرافي</h3>
+      <p>نستخدم بيانات الموقع لتحديد أقرب مندوب للطلب، إظهار مسار التوصيل، متابعة حالة الطلب في الوقت الفعلي، تحسين دقة أوقات الوصول، ومساعدة فريق الدعم عند حدوث مشكلة.</p>
+      <p>قد يستمر جمع الموقع في الخلفية فقط عندما يكون ذلك ضرورياً لتشغيل خدمة التوصيل، مثل وجود طلب جار، متابعة رحلة التسليم، أو الحفاظ على جاهزية المندوب لاستقبال الطلبات حسب إعدادات التشغيل داخل التطبيق.</p>
+
+      <h3>3. استخدام الكاميرا والصور</h3>
+      <p>قد يطلب التطبيق صلاحية الكاميرا أو الصور لتوثيق تسليم الطلب، إثبات الدفع، رفع مستندات الهوية أو رخصة القيادة، أو إرسال صورة عند وجود شكوى أو مشكلة في الطلب. لا نستخدم الكاميرا إلا عند قيامك بفتحها أو اختيار رفع صورة من داخل التطبيق.</p>
+
+      <h3>4. لماذا نستخدم بياناتك</h3>
+      <ul>
+        <li>إنشاء حساب المندوب والتحقق من هويته وأهليته للعمل.</li>
+        <li>إدارة الطلبات، التوجيه، التتبع، وإثبات الاستلام والتسليم.</li>
+        <li>حساب المستحقات، العمولات، وتسوية المبالغ النقدية المحصلة.</li>
+        <li>إرسال الإشعارات والتنبيهات الخاصة بالطلبات أو الحساب.</li>
+        <li>تحسين الأمان، كشف الاحتيال، منع إساءة الاستخدام، وحماية العملاء والمتاجر والمندوبين.</li>
+        <li>تحليل جودة الخدمة وتحسين تجربة التطبيق.</li>
+      </ul>
+
+      <h3>5. مشاركة البيانات</h3>
+      <p>قد نشارك بعض البيانات الضرورية مع العملاء، المتاجر، فريق الدعم، مزودي الخرائط، مزودي الإشعارات، أو الجهات المختصة عند وجود التزام قانوني. لا نبيع بياناتك الشخصية لأطراف خارجية.</p>
+
+      <h3>6. الاحتفاظ بالبيانات وحمايتها</h3>
+      <p>نحتفظ بالبيانات للفترة اللازمة لتشغيل الخدمة، الامتثال للمتطلبات القانونية، حل النزاعات، وإدارة الحسابات المالية. نطبق إجراءات تقنية وتنظيمية مناسبة لحماية البيانات من الوصول غير المصرح به أو الفقدان أو إساءة الاستخدام.</p>
+
+      <h3>7. صلاحيات التطبيق</h3>
+      <ul>
+        <li>الموقع: لتتبع الطلبات وتحديد أقرب مندوب وتحسين التوجيه.</li>
+        <li>الكاميرا والملفات: لرفع المستندات وإثبات التسليم عند الحاجة.</li>
+        <li>الإشعارات: لإرسال طلبات جديدة وتنبيهات مهمة.</li>
+        <li>الهاتف أو الجهاز: لتحسين الأمان ودعم التشغيل الفني.</li>
+      </ul>
+
+      <h3>8. حقوقك</h3>
+      <p>يمكنك طلب الوصول إلى بياناتك، تصحيحها، أو الاستفسار عن استخدامها من خلال قنوات الدعم الرسمية. قد يؤدي تعطيل بعض الصلاحيات، مثل الموقع، إلى عدم القدرة على استقبال الطلبات أو إكمال عمليات التوصيل.</p>
+
+      <h3>9. تحديثات السياسة</h3>
+      <p>قد نقوم بتحديث هذه السياسة من وقت لآخر. سيتم نشر النسخة الأحدث داخل التطبيق أو على الروابط الرسمية الخاصة بـ ZAYGO.</p>
+    </section>
+
+    <section class="language-section" dir="ltr" lang="en">
+      <span class="section-label">English</span>
+      <h2>ZAYGO Driver App Privacy Policy</h2>
+      <p>At ZAYGO, we respect the privacy of delivery captains and are committed to protecting their information. This policy explains what data we collect through the Driver App, why we use it, and how we protect it.</p>
+
+      <div class="notice">By using ZAYGO Captains, you agree to the collection and processing of information required to operate delivery services, track orders, improve safety, and maintain service quality.</div>
+
+      <h3>1. Information We Collect</h3>
+      <ul>
+        <li>Account information such as name, phone number, profile photo, and contact details.</li>
+        <li>Identity and verification information such as national ID, driving license, or documents required to activate a driver account.</li>
+        <li>Vehicle information such as vehicle type, plate number, color, model, and vehicle photos where required.</li>
+        <li>GPS location data in the foreground while using the app, and in the background when there is an active order or when the driver is available for assigned deliveries.</li>
+        <li>Order data such as order numbers, pickup and drop-off locations, order status, acceptance, pickup, and delivery timestamps.</li>
+        <li>Camera and photo data when used to prove pickup or delivery, document order condition, or upload verification documents.</li>
+        <li>Device data such as device type, operating system, device identifier, app version, and FCM notification token.</li>
+        <li>Performance and rating data such as acceptance rate, delays, cancellations, customer and merchant ratings, and support records.</li>
+      </ul>
+
+      <h3>2. Use of Location Data</h3>
+      <p>We use location data to assign orders to nearby drivers, display delivery routes, track order progress in real time, improve estimated arrival times, and support issue resolution.</p>
+      <p>Background location may be collected only when necessary to operate the delivery service, such as during an active order, while tracking a delivery trip, or while the driver is available to receive assigned orders according to app settings.</p>
+
+      <h3>3. Camera and Photos</h3>
+      <p>The app may request camera or photo access to document delivery completion, prove payment, upload identity or driving license documents, or submit evidence for an order issue. We do not use the camera unless you open it or choose to upload a photo from inside the app.</p>
+
+      <h3>4. How We Use Your Data</h3>
+      <ul>
+        <li>To create and verify driver accounts.</li>
+        <li>To manage orders, routing, tracking, pickup confirmation, and delivery proof.</li>
+        <li>To calculate earnings, commissions, and cash settlement obligations.</li>
+        <li>To send notifications and important account or order alerts.</li>
+        <li>To improve safety, detect fraud, prevent misuse, and protect customers, merchants, and drivers.</li>
+        <li>To analyze service quality and improve the app experience.</li>
+      </ul>
+
+      <h3>5. Data Sharing</h3>
+      <p>We may share necessary information with customers, merchants, support teams, map providers, notification providers, or competent authorities where legally required. We do not sell your personal data to third parties.</p>
+
+      <h3>6. Retention and Security</h3>
+      <p>We retain data for as long as needed to operate the service, comply with legal requirements, resolve disputes, and manage financial records. We apply appropriate technical and organizational measures to protect data against unauthorized access, loss, or misuse.</p>
+
+      <h3>7. App Permissions</h3>
+      <ul>
+        <li>Location: to track orders, identify nearby drivers, and improve routing.</li>
+        <li>Camera and files: to upload documents and provide delivery proof where required.</li>
+        <li>Notifications: to send new orders and important alerts.</li>
+        <li>Phone or device access: to improve security and technical operation.</li>
+      </ul>
+
+      <h3>8. Your Rights</h3>
+      <p>You may request access to your data, correction of your information, or clarification about data usage through official support channels. Disabling required permissions, such as location, may prevent you from receiving orders or completing deliveries.</p>
+
+      <h3>9. Policy Updates</h3>
+      <p>We may update this policy from time to time. The latest version will be published inside the app or through ZAYGO official links.</p>
+    </section>
+
+    <p class="footer">© 2026 ZAYGO. All rights reserved.</p>
+  </main>
 </body>
 </html>
