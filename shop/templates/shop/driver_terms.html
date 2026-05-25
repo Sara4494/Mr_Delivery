@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ZAYGO Captains Driver App Terms and Conditions">
+  <title>ZAYGO Captains - Terms and Conditions</title>
+  <style>
+    :root {
+      --primary: #22C55E;
+      --primary-dark: #16A34A;
+      --primary-light: #4ADE80;
+      --primary-surface: #E8F8F3;
+      --background: #F9FAFB;
+      --surface: #FFFFFF;
+      --text-primary: #1F2937;
+      --text-secondary: #6B7280;
+      --text-light: #9CA3AF;
+      --text-on-primary: #FFFFFF;
+      --error: #E74C3C;
+      --info: #3B82F6;
+      --warning: #CA8A04;
+      --border: #E5E7EB;
+      --divider: #F3F4F6;
+      --shadow: 0 12px 28px rgba(31, 41, 55, 0.08);
+      --radius-lg: 28px;
+      --radius-md: 20px;
+      --radius-sm: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, Arial, sans-serif;
+      line-height: 1.75;
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 32px 16px 48px;
+      background:
+        radial-gradient(circle at top left, rgba(34, 197, 94, 0.14), transparent 28%),
+        radial-gradient(circle at top right, rgba(74, 222, 128, 0.16), transparent 22%),
+        linear-gradient(180deg, #F3FBF7 0%, #F9FAFB 100%);
+    }
+
+    .container {
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      color: var(--text-on-primary);
+      border-radius: var(--radius-lg);
+      padding: 36px 28px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 50%;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      font-size: 14px;
+      margin-bottom: 18px;
+      backdrop-filter: blur(6px);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(30px, 5vw, 42px);
+      line-height: 1.2;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 720px;
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 16px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .meta-chip {
+      background: rgba(255, 255, 255, 0.12);
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+    }
+
+    .content-card {
+      background: var(--surface);
+      border: 1px solid rgba(34, 197, 94, 0.10);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .section {
+      padding: 28px 24px;
+      border-bottom: 1px solid var(--divider);
+    }
+
+    .section:last-child {
+      border-bottom: none;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+      color: var(--primary-dark);
+    }
+
+    p {
+      margin: 0 0 14px;
+      color: var(--text-primary);
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+
+    ul {
+      margin: 0;
+      padding-inline-start: 20px;
+      color: var(--text-primary);
+    }
+
+    li + li {
+      margin-top: 10px;
+    }
+
+    .highlight {
+      background: var(--primary-surface);
+      border: 1px solid rgba(34, 197, 94, 0.16);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      margin-top: 18px;
+    }
+
+    .footer {
+      margin-top: 22px;
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        padding: 20px 12px 32px;
+      }
+
+      .hero {
+        padding: 28px 20px;
+        border-radius: 22px;
+      }
+
+      .section {
+        padding: 24px 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="container">
+      <section class="hero">
+        <div class="hero-badge">Terms and Conditions</div>
+        <h1>ZAYGO Captains Driver App Terms and Conditions</h1>
+        <p>
+          These Terms and Conditions govern the use of the ZAYGO Captains driver application and
+          related delivery services. By using the app, the driver agrees to comply with these terms.
+        </p>
+        <div class="meta">
+          <div class="meta-chip">Applies to all driver accounts</div>
+          <div class="meta-chip">Covers usage, conduct, and operational rules</div>
+        </div>
+      </section>
+
+      <main class="content-card">
+        <section class="section">
+          <h2>1. Acceptance of Terms</h2>
+          <p>
+            By registering for or using the driver app, you confirm that you have read, understood,
+            and accepted these Terms and Conditions. If you do not agree, you must stop using the app.
+          </p>
+        </section>
+
+        <section class="section">
+          <h2>2. Driver Responsibilities</h2>
+          <p>Drivers are expected to use the service professionally and responsibly. This includes:</p>
+          <ul>
+            <li>Providing accurate account and vehicle information.</li>
+            <li>Maintaining legal eligibility to perform delivery services.</li>
+            <li>Following assigned delivery procedures and updating order status truthfully.</li>
+            <li>Treating customers, merchants, and support staff respectfully.</li>
+          </ul>
+        </section>
+
+        <section class="section">
+          <h2>3. Account Use</h2>
+          <p>
+            Each driver is responsible for securing their account credentials. The driver must not share
+            login access with others or impersonate another person while using the platform.
+          </p>
+        </section>
+
+        <section class="section">
+          <h2>4. Location and Operational Access</h2>
+          <p>
+            The app may require access to location services, notifications, camera, microphone, or media
+            uploads where needed for delivery operations, communication, verification, or support.
+          </p>
+        </section>
+
+        <section class="section">
+          <h2>5. Prohibited Conduct</h2>
+          <p>Drivers must not engage in behavior that harms the platform or its users, including:</p>
+          <ul>
+            <li>Fraudulent activity, false status updates, or misuse of orders.</li>
+            <li>Abusive, threatening, or inappropriate communication.</li>
+            <li>Attempting to disrupt, hack, reverse engineer, or misuse the service.</li>
+            <li>Using the app in violation of applicable law or safety requirements.</li>
+          </ul>
+        </section>
+
+        <section class="section">
+          <h2>6. Suspension or Termination</h2>
+          <p>
+            The platform may suspend, restrict, or terminate driver access at its discretion when needed
+            for security, operational integrity, policy violations, or legal compliance.
+          </p>
+        </section>
+
+        <section class="section">
+          <h2>7. Payments and Earnings</h2>
+          <p>
+            Any earnings, balances, fees, or settlement processes are subject to the operating rules of
+            the platform and may depend on completed deliveries, disputes, cancellations, or internal review.
+          </p>
+        </section>
+
+        <section class="section">
+          <h2>8. Limitation of Liability</h2>
+          <p>
+            The service is provided on an operational basis, and while reasonable efforts are made to keep
+            it available and accurate, the platform does not guarantee uninterrupted or error-free access at all times.
+          </p>
+        </section>
+
+        <section class="section">
+          <h2>9. Changes to the Terms</h2>
+          <p>
+            These terms may be updated periodically. Continued use of the app after updated terms are
+            published indicates acceptance of the revised version.
+          </p>
+          <div class="highlight">
+            If the driver continues using the application after an update, the updated terms will apply from the publication date.
+          </div>
+        </section>
+      </main>
+
+      <div class="footer">
+        ZAYGO Captains Driver App Terms and Conditions
+      </div>
+    </div>
+  </div>
+</body>
+</html>

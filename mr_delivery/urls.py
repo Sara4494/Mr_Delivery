@@ -18,9 +18,20 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic import TemplateView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path(
+        'driver/privacy/',
+        TemplateView.as_view(template_name='shop/driver_privacy.html'),
+        name='driver_privacy',
+    ),
+    path(
+        'driver/terms/',
+        TemplateView.as_view(template_name='shop/driver_terms.html'),
+        name='driver_terms',
+    ),
     path('api/', include('admin_desktop_app.urls')),
     path('api/', include('shop_app.urls')),
     path('api/', include('driver_app.urls')),
