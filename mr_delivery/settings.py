@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+from urllib.parse import urlparse
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -83,6 +84,31 @@ def _env_int(name: str, default=None):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _postgres_database_config() -> dict:
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if database_url:
+        parsed = urlparse(database_url)
+        if parsed.scheme not in {"postgres", "postgresql"}:
+            raise ValueError("DATABASE_URL must use postgres:// or postgresql://")
+        return {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": parsed.path.lstrip("/") or os.environ.get("DB_NAME", "mr_delivery"),
+            "USER": parsed.username or os.environ.get("DB_USER", "postgres"),
+            "PASSWORD": parsed.password or os.environ.get("DB_PASSWORD", ""),
+            "HOST": parsed.hostname or os.environ.get("DB_HOST", "127.0.0.1"),
+            "PORT": str(parsed.port or os.environ.get("DB_PORT", "5432")),
+        }
+
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DB_NAME", "mr_delivery").strip() or "mr_delivery",
+        "USER": os.environ.get("DB_USER", "postgres").strip() or "postgres",
+        "PASSWORD": os.environ.get("DB_PASSWORD", "").strip(),
+        "HOST": os.environ.get("DB_HOST", "127.0.0.1").strip() or "127.0.0.1",
+        "PORT": str(_env_int("DB_PORT", default=5432)),
+    }
 
 
 # CORS
@@ -215,10 +241,7 @@ else:
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': _postgres_database_config()
 }
 
 
