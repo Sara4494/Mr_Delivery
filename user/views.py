@@ -4999,13 +4999,13 @@ def unified_register_view(request):
         )
 
 
-# ==================== OTP APIs (UltraMsg WhatsApp) ====================
+# ==================== OTP APIs (Twilio WhatsApp) ====================
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def send_otp_view(request):
     """
-    إرسال رمز OTP إلى رقم الهاتف عبر WhatsApp (UltraMsg)
+    إرسال رمز OTP إلى رقم الهاتف عبر WhatsApp (Twilio)
     POST /api/auth/otp/send/
     Body: {
         "phone_number": "+201012345678",

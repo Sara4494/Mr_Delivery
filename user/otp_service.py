@@ -2,8 +2,9 @@
 OTP delivery and verification helpers.
 
 - Customer OTP can be delivered to email.
-- Existing phone-based OTP delivery remains available for other roles.
+- Existing phone-based OTP delivery remains available for other roles via Twilio WhatsApp.
 """
+import json
 import random
 import re
 
@@ -51,31 +52,65 @@ def generate_otp() -> str:
     return "".join(str(random.randint(0, 9)) for _ in range(OTP_LENGTH))
 
 
-def send_otp_via_ultramsg(phone: str, otp: str) -> tuple[bool, str]:
-    instance = getattr(settings, "ULTRAMSG_INSTANCE", None)
-    token = getattr(settings, "ULTRAMSG_TOKEN", None)
+def _twilio_whatsapp_address(value: str) -> str:
+    value = str(value or "").strip()
+    if value.startswith("whatsapp:"):
+        return value
+    return f"whatsapp:{normalize_phone(value)}"
 
-    if not instance or not token:
-        return False, "إعدادات UltraMsg غير مكتملة"
 
-    url = f"https://api.ultramsg.com/{instance}/messages/chat"
-    data = {
-        "token": token,
-        "to": phone,
-        "body": f"رمز الدخول الخاص بك هو: {otp}\n\nصلاحية الرمز: 5 دقائق",
-    }
+def _get_twilio_client():
+    account_sid = getattr(settings, "TWILIO_ACCOUNT_SID", "").strip()
+    auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", "").strip()
+    if not account_sid or not auth_token:
+        return None, "Twilio WhatsApp settings are incomplete"
 
     try:
-        import requests
+        from twilio.rest import Client
+    except ImportError:
+        return None, "Twilio SDK is not installed"
 
-        response = requests.post(url, data=data, timeout=10)
-        result = response.json()
+    return Client(account_sid, auth_token), ""
 
-        if response.status_code == 200:
-            if isinstance(result, dict) and result.get("error"):
-                return False, result.get("error", "فشل الإرسال")
-            return True, "تم إرسال الرمز بنجاح"
-        return False, str(result) if result else f"خطأ في الاتصال: {response.status_code}"
+
+def _get_twilio_verify_service_sid() -> str:
+    return getattr(settings, "TWILIO_VERIFY_SERVICE_SID", "").strip()
+
+
+def send_otp_via_twilio_whatsapp(phone: str, otp: str | None = None) -> tuple[bool, str]:
+    client, error_message = _get_twilio_client()
+    if not client:
+        return False, error_message
+
+    verify_service_sid = _get_twilio_verify_service_sid()
+    from_number = getattr(settings, "TWILIO_WHATSAPP_FROM", "").strip()
+    content_sid = getattr(settings, "TWILIO_WHATSAPP_OTP_CONTENT_SID", "").strip()
+    if not verify_service_sid and not from_number:
+        return False, "Twilio WhatsApp sender is not configured"
+
+    try:
+        if verify_service_sid:
+            client.verify.v2.services(verify_service_sid).verifications.create(
+                to=_twilio_whatsapp_address(phone),
+                channel="whatsapp",
+            )
+            return True, "تم إرسال رمز التحقق بنجاح"
+
+        message_kwargs = {
+            "from_": _twilio_whatsapp_address(from_number),
+            "to": _twilio_whatsapp_address(phone),
+        }
+        if content_sid:
+            message_kwargs["content_sid"] = content_sid
+            message_kwargs["content_variables"] = json.dumps({"1": otp or ""})
+        else:
+            message_kwargs["body"] = (
+                f"رمز التحقق الخاص بك هو: {otp or ''}\n\n"
+                "صلاحية الرمز: 5 دقائق"
+            )
+
+        client.messages.create(**message_kwargs)
+        return True, "تم إرسال رمز التحقق بنجاح"
     except Exception as exc:
         return False, str(exc)
 
@@ -132,14 +167,19 @@ def send_otp(target: str, *, allow_fixed_code: bool = True) -> tuple[bool, str]:
     if cache.get(get_otp_cooldown_key(normalized)):
         return False, "يرجى الانتظار دقيقة قبل إعادة إرسال الرمز"
 
-    otp = generate_otp()
     if is_email_target(normalized):
+        otp = generate_otp()
         success, msg = send_otp_via_email(normalized, otp)
+        if success:
+            cache.set(get_otp_cache_key(normalized), otp, OTP_EXPIRY_SECONDS)
     else:
-        success, msg = send_otp_via_ultramsg(normalized, otp)
+        verify_service_sid = _get_twilio_verify_service_sid()
+        otp = None if verify_service_sid else generate_otp()
+        success, msg = send_otp_via_twilio_whatsapp(normalized, otp)
+        if success and otp:
+            cache.set(get_otp_cache_key(normalized), otp, OTP_EXPIRY_SECONDS)
 
     if success:
-        cache.set(get_otp_cache_key(normalized), otp, OTP_EXPIRY_SECONDS)
         cache.set(get_otp_cooldown_key(normalized), True, OTP_RESEND_COOLDOWN)
 
     return success, msg
@@ -155,6 +195,21 @@ def verify_otp(target: str, otp: str, *, allow_fixed_code: bool = True) -> bool:
     if fixed and code == fixed:
         cache.delete(get_otp_cache_key(normalized))
         return True
+
+    if not is_email_target(normalized):
+        verify_service_sid = _get_twilio_verify_service_sid()
+        if verify_service_sid:
+            client, error_message = _get_twilio_client()
+            if not client:
+                return False
+            try:
+                result = client.verify.v2.services(verify_service_sid).verification_checks.create(
+                    to=_twilio_whatsapp_address(normalized),
+                    code=code,
+                )
+            except Exception:
+                return False
+            return getattr(result, "status", "") == "approved"
 
     stored = cache.get(get_otp_cache_key(normalized))
     if not stored:

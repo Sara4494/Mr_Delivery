@@ -475,13 +475,16 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'user.exceptions.custom_exception_handler',
 }
 
-# OTP: رمز ثابت حتى الاشتراك في خدمة إرسال (واتساب/UltraMsg)
+# OTP: رمز ثابت حتى الاشتراك في خدمة إرسال واتساب
 # إذا كان معيّناً يُستخدم هذا الرمز لجميع الطلبات ولا يُرسل أي OTP فعلي
 FIXED_OTP_CODE = os.environ.get("FIXED_OTP_CODE", "").strip()
 
-# UltraMsg (WhatsApp OTP) - يُستخدم فقط عندما FIXED_OTP_CODE فارغ
-ULTRAMSG_INSTANCE = os.environ.get("ULTRAMSG_INSTANCE", "instance160549")
-ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN", "9l9mdphqnkcnuhf0")
+# Twilio WhatsApp OTP - يُستخدم فقط عندما FIXED_OTP_CODE فارغ
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
+TWILIO_WHATSAPP_FROM = os.environ.get("TWILIO_WHATSAPP_FROM", "").strip()
+TWILIO_WHATSAPP_OTP_CONTENT_SID = os.environ.get("TWILIO_WHATSAPP_OTP_CONTENT_SID", "").strip()
+TWILIO_VERIFY_SERVICE_SID = os.environ.get("TWILIO_VERIFY_SERVICE_SID", "").strip()
 
 # Email (Gmail SMTP) for customer OTP
 EMAIL_BACKEND = os.environ.get(

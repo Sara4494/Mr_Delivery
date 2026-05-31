@@ -124,7 +124,7 @@ Mr Delivery uses **JWT (JSON Web Tokens)** for authentication across all user ty
 
 ---
 
-## 3. OTP Login (WhatsApp via UltraMsg)
+## 3. OTP Login (WhatsApp via Twilio)
 
 تسجيل دخول العملاء برمز OTP يُرسل عبر واتساب (بدون كلمة مرور).
 
@@ -194,10 +194,13 @@ Mr Delivery uses **JWT (JSON Web Tokens)** for authentication across all user ty
 }
 ```
 
-### متغيرات البيئة (UltraMsg)
+### متغيرات البيئة (Twilio WhatsApp)
 ```
-ULTRAMSG_INSTANCE=instance160549
-ULTRAMSG_TOKEN=your_token
+TWILIO_ACCOUNT_SID=your_account_sid
+TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_WHATSAPP_OTP_CONTENT_SID=HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_VERIFY_SERVICE_SID=VAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ---
@@ -351,6 +354,6 @@ ws://server/ws/chat/order/1/?token=<access_token>&chat_type=shop_customer
 
 - `user/authentication.py` - Custom JWT Authentication
 - `user/views.py` - Auth Views (unified_login_view, unified_register_view, OTP views)
-- `user/otp_service.py` - OTP service (UltraMsg WhatsApp)
+- `user/otp_service.py` - OTP service (Twilio WhatsApp)
 - `user/token_serializers.py` - Token Serializers
 - `shop/middleware.py` - WebSocket JWT Middleware

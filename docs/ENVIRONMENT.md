@@ -66,12 +66,15 @@ REDIS_URL=redis://localhost:6379/0
 |----------|----------|---------|-------------|
 | `FIXED_OTP_CODE` | No | `123456` | رمز ثابت من 6 أرقام يُستخدم حتى الاشتراك في خدمة إرسال OTP. إذا معيّن لا يُرسل أي رمز فعلي. لتفعيل الإرسال الفعلي اتركه فارغاً. |
 
-### UltraMsg (WhatsApp OTP)
+### Twilio WhatsApp OTP
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ULTRAMSG_INSTANCE` | No | `instance160549` | UltraMsg instance ID |
-| `ULTRAMSG_TOKEN` | No | - | UltraMsg API token |
+| `TWILIO_ACCOUNT_SID` | Yes | - | Twilio Account SID |
+| `TWILIO_AUTH_TOKEN` | Yes | - | Twilio Auth Token |
+| `TWILIO_WHATSAPP_FROM` | Yes | `whatsapp:+14155238886` | Twilio WhatsApp sender number |
+| `TWILIO_WHATSAPP_OTP_CONTENT_SID` | No | - | Twilio Content Template SID for OTP messages |
+| `TWILIO_VERIFY_SERVICE_SID` | No | - | Twilio Verify Service SID. If set, Twilio generates and verifies OTP codes directly over WhatsApp |
 
 ---
 
