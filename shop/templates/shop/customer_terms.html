@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terms and Conditions - zayGo</title>
+  <style>
+    :root {
+      --brand: #18a957;
+      --brand-dark: #0f7e42;
+      --bg: #f6f8f7;
+      --surface: #ffffff;
+      --text: #1f2937;
+      --muted: #667085;
+      --border: #e5e7eb;
+      --soft: #f8faf9;
+      --shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Tahoma, Arial, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(24, 169, 87, 0.08), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.9;
+    }
+
+    .page {
+      width: min(100%, 1040px);
+      margin: 0 auto;
+      padding: 32px 18px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .policy-header {
+      padding: 34px 28px 26px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbf9 100%);
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      color: var(--brand);
+      font-size: clamp(2rem, 5vw, 3rem);
+      line-height: 1.25;
+      font-weight: 800;
+    }
+
+    .updated {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(0.95rem, 2vw, 1.1rem);
+      font-weight: 600;
+    }
+
+    .section-wrap {
+      padding: 30px 28px 34px;
+    }
+
+    .language-label {
+      display: inline-flex;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(24, 169, 87, 0.08);
+      color: var(--brand-dark);
+      font-weight: 800;
+      font-size: 0.95rem;
+    }
+
+    p {
+      margin: 0;
+      font-size: clamp(1rem, 2.2vw, 1.08rem);
+    }
+
+    .intro {
+      padding: 20px;
+      margin-bottom: 24px;
+      border-radius: 16px;
+      background: var(--soft);
+      border: 1px solid var(--border);
+    }
+
+    section {
+      padding: 22px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    section:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      color: var(--brand);
+      font-size: clamp(1.2rem, 2.8vw, 1.45rem);
+      line-height: 1.45;
+      font-weight: 800;
+    }
+
+    ul {
+      margin: 10px 0 0;
+      padding: 0 22px 0 0;
+    }
+
+    [dir="ltr"] ul {
+      padding: 0 0 0 22px;
+    }
+
+    li {
+      margin: 8px 0;
+      font-size: clamp(1rem, 2.2vw, 1.08rem);
+    }
+
+    strong {
+      color: var(--brand-dark);
+    }
+
+    a {
+      color: var(--brand-dark);
+      font-weight: 800;
+      text-decoration: none;
+      overflow-wrap: anywhere;
+    }
+
+    .email {
+      display: inline-block;
+      direction: ltr;
+      unicode-bidi: isolate;
+      margin-top: 8px;
+    }
+
+    .notice {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(24, 169, 87, 0.08);
+      color: var(--brand-dark);
+      font-weight: 700;
+    }
+
+    .footer-note {
+      margin-top: 26px;
+      padding: 18px 20px;
+      border-radius: 16px;
+      background: rgba(24, 169, 87, 0.08);
+      color: var(--brand-dark);
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 12px 28px;
+      background: #fbfdfc;
+      color: var(--muted);
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: "";
+      height: 1px;
+      flex: 1;
+      background: var(--border);
+    }
+
+    [dir="ltr"] {
+      font-family: Arial, "Segoe UI", sans-serif;
+      line-height: 1.75;
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        padding: 16px 12px;
+      }
+
+      .card {
+        border-radius: 18px;
+      }
+
+      .policy-header {
+        padding: 28px 18px 22px;
+      }
+
+      .section-wrap {
+        padding: 22px 18px 26px;
+      }
+
+      .intro {
+        padding: 16px;
+      }
+
+      section {
+        padding: 20px 0;
+      }
+
+      .divider {
+        padding: 10px 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <article class="card">
+      <header class="policy-header">
+        <h1>Terms and Conditions | الشروط والأحكام</h1>
+        <p class="updated">تاريخ التحديث: مايو 2026 | Last updated: May 2026</p>
+      </header>
+
+      <main>
+        <div class="section-wrap" dir="rtl" lang="ar">
+          <div class="language-label">العربية</div>
+          <p class="intro">تنظم هذه الشروط والأحكام استخدام تطبيق zayGo للعميل. يوفر التطبيق منصة تربط المستخدمين بالمتاجر والسوبرماركت المحلية لطلب المنتجات وترتيب التوصيل والتواصل بشأن الطلبات. باستخدام التطبيق أو إنشاء حساب أو إرسال طلب، فإنك توافق على الالتزام بهذه الشروط.</p>
+
+          <section>
+            <h2>1. قبول الشروط</h2>
+            <p>يرجى قراءة هذه الشروط بعناية قبل استخدام التطبيق. إذا كنت لا توافق على أي جزء منها، يجب عليك التوقف عن استخدام zayGo. قد نقوم بتحديث هذه الشروط من وقت لآخر، ويعد استمرار استخدامك للتطبيق بعد نشر التحديث موافقة على النسخة المحدثة.</p>
+          </section>
+
+          <section>
+            <h2>2. الغرض من المنصة</h2>
+            <p>zayGo هو تطبيق يتيح للمستخدمين استعراض متاجر وسوبرماركت محلية، إرسال طلبات شراء، ترتيب التوصيل، ومتابعة الطلب أو التواصل مع المتجر أو كابتن التوصيل أو الدعم. يعمل التطبيق كوسيط تقني لتسهيل الطلب والتواصل، ولا يجوز استخدامه لأي غرض غير قانوني أو خارج نطاق الخدمة.</p>
+          </section>
+
+          <section>
+            <h2>3. حساب المستخدم ومسؤولياته</h2>
+            <p>يجب على المستخدم تقديم معلومات صحيحة وكاملة عند إنشاء الحساب أو تحديثه، بما في ذلك الاسم ورقم الهاتف والبريد الإلكتروني إن وجد. يتحمل المستخدم مسؤولية سرية بيانات الدخول ورموز التحقق، ومسؤولية جميع الأنشطة التي تتم من خلال حسابه. يجب إبلاغنا فورا عند الاشتباه في أي استخدام غير مصرح به أو اختراق للحساب.</p>
+            <ul>
+              <li>يجب إدخال عنوان توصيل صحيح وكامل قبل تأكيد الطلب.</li>
+              <li>يجب استخدام المحادثات للتواصل المرتبط بالطلب أو الدعم فقط.</li>
+              <li>يحظر إرسال محتوى مسيء أو تهديدات أو معلومات مضللة أو مواد مخالفة للقانون.</li>
+              <li>يحظر محاولة تعطيل التطبيق أو الوصول غير المصرح به إلى أنظمته.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>4. الطلبات وتأكيدها</h2>
+            <p>قبل إرسال الطلب، يقر المستخدم بأنه راجع المنتجات والكميات وعنوان التوصيل ورقم التواصل والملاحظات والرسوم المعروضة. بعد إرسال الطلب، قد تتم مراجعته من قبل المتجر أو السوبرماركت للتأكد من توفر المنتجات والأسعار. إذا كان منتج غير متاح أو تغير السعر أو احتاج الطلب إلى تعديل، قد يتم التواصل مع المستخدم عبر التطبيق أو الهاتف لتأكيد التعديل أو الإلغاء الجزئي أو الكامل.</p>
+          </section>
+
+          <section>
+            <h2>5. الدفع والفواتير</h2>
+            <p>تتم عملية الدفع وفقا للوسائل المتاحة داخل التطبيق أو المتفق عليها عند تنفيذ الخدمة، مثل الدفع عند الاستلام أو أي وسيلة أخرى تظهر للمستخدم. قد تشمل المبالغ قيمة المنتجات، رسوم التوصيل، وأي رسوم خدمة معلنة قبل تأكيد الطلب. الأسعار والرسوم قد تختلف حسب المتجر والمنطقة ووقت الطلب وتحديثات الأسعار من جانب المتجر. يتحمل المستخدم مسؤولية دفع المبلغ النهائي المؤكد أو المتفق عليه قبل التسليم أو عنده بحسب وسيلة الدفع المستخدمة.</p>
+          </section>
+
+          <section>
+            <h2>6. التوصيل والتنفيذ</h2>
+            <p>يسعى zayGo والمتاجر وكباتن التوصيل إلى تنفيذ الطلبات في الوقت المناسب، لكن أوقات التوصيل المعروضة أو المتوقعة تقديرية وليست ضمانا نهائيا. قد تتأثر مدة التوصيل بعوامل مثل الازدحام، الطقس، جاهزية المتجر، توفر كابتن التوصيل، انقطاع الخدمة، أو ظروف تشغيلية خارجة عن السيطرة.</p>
+          </section>
+
+          <section>
+            <h2>7. الإلغاء والاستبدال والمبالغ المستردة</h2>
+            <p>قد لا يكون الإلغاء أو تعديل الطلب متاحا بعد بدء تجهيز الطلب أو خروجه للتوصيل. تخضع أي مبالغ مستردة أو تسويات لحالة الطلب، مرحلة التنفيذ، سبب الإلغاء، وسياسات المتجر أو الخدمة. إذا تعذر توفير منتج معين، قد يتم اقتراح بديل أو حذف المنتج من الطلب بعد موافقة المستخدم حيثما كان ذلك مناسبا.</p>
+          </section>
+
+          <section>
+            <h2>8. الاستخدام المقبول وحماية الخدمة</h2>
+            <p>يجب استخدام التطبيق بطريقة قانونية ومحترمة ومناسبة للغرض المخصص له. نحتفظ بالحق في تقييد أو تعليق أو إغلاق الحساب عند مخالفة هذه الشروط، إساءة استخدام الخدمة أو المحادثات، تقديم معلومات احتيالية، إساءة استخدام البلاغات، أو محاولة الإضرار بالمستخدمين أو المتاجر أو كباتن التوصيل أو أنظمة التطبيق.</p>
+          </section>
+
+          <section>
+            <h2>9. حدود المسؤولية</h2>
+            <p>نبذل جهدا معقولا لتشغيل المنصة ودعم المستخدمين وحل المشكلات. ومع ذلك، لا نتحمل المسؤولية عن الأخطاء الناتجة عن معلومات غير صحيحة يقدمها المستخدم، تأخر المتجر في التجهيز، عدم توفر المنتجات، أخطاء السعر أو الوصف الصادرة من المتجر، أو التأخير الناتج عن ظروف خارجة عن السيطرة مثل الأعطال التقنية العامة، انقطاع الإنترنت، القيود الحكومية، الحوادث، أو ظروف المرور والأمن.</p>
+          </section>
+
+          <section>
+            <h2>10. الخصوصية</h2>
+            <p>يخضع جمع واستخدام ومشاركة بيانات المستخدم لسياسة الخصوصية الخاصة بتطبيق zayGo. يرجى قراءة سياسة الخصوصية لمعرفة أنواع البيانات التي يتم جمعها، كيفية استخدامها، مشاركة البيانات مع المتاجر وكباتن التوصيل، وكيفية طلب حذف الحساب والبيانات.</p>
+          </section>
+
+          <section>
+            <h2>11. التواصل</h2>
+            <p>لأي سؤال أو طلب متعلق بهذه الشروط والأحكام، يمكن التواصل معنا عبر البريد الإلكتروني:</p>
+            <p><a class="email" href="mailto:zaygo.app@gmail.com">zaygo.app@gmail.com</a></p>
+          </section>
+
+          <p class="footer-note">باستخدامك تطبيق zayGo، فإنك تقر بأنك قرأت هذه الشروط والأحكام وتوافق على الالتزام بها.</p>
+        </div>
+
+        <div class="divider">English Version</div>
+
+        <div class="section-wrap" dir="ltr" lang="en">
+          <div class="language-label">English</div>
+          <p class="intro">These Terms and Conditions govern use of the zayGo User App. The app provides a platform that connects users with local supermarkets and stores to order products, arrange delivery, and communicate about orders. By using the app, creating an account, or placing an order, you agree to comply with these terms.</p>
+
+          <section>
+            <h2>1. Acceptance of Terms</h2>
+            <p>Please read these terms carefully before using the app. If you do not agree to any part of these terms, you must stop using zayGo. We may update these terms from time to time, and your continued use of the app after an update is posted means you accept the updated version.</p>
+          </section>
+
+          <section>
+            <h2>2. Purpose of the Platform</h2>
+            <p>zayGo allows users to browse local stores and supermarkets, place purchase orders, arrange delivery, track orders, and communicate with stores, delivery captains, or support. The app acts as a technology platform to facilitate ordering and communication, and it may not be used for unlawful purposes or outside the intended service.</p>
+          </section>
+
+          <section>
+            <h2>3. User Account and Responsibilities</h2>
+            <p>Users must provide accurate and complete information when creating or updating an account, including name, phone number, and email address if provided. Users are responsible for keeping login credentials and verification codes confidential and for all activity that occurs through their account. Users must notify us immediately if they suspect unauthorized use or account compromise.</p>
+            <ul>
+              <li>Users must enter a correct and complete delivery address before confirming an order.</li>
+              <li>Integrated chats must be used only for order-related communication or support.</li>
+              <li>Users may not send abusive content, threats, misleading information, or unlawful materials.</li>
+              <li>Users may not attempt to disrupt the app or gain unauthorized access to its systems.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>4. Orders and Confirmation</h2>
+            <p>Before placing an order, the user confirms that they have reviewed the products, quantities, delivery address, contact number, notes, and displayed fees. After an order is submitted, the store or supermarket may review it to confirm product availability and pricing. If an item is unavailable, a price changes, or the order requires adjustment, the user may be contacted through the app or by phone to confirm the change, partial cancellation, or full cancellation.</p>
+          </section>
+
+          <section>
+            <h2>5. Payment and Invoices</h2>
+            <p>Payment is handled according to the methods available in the app or agreed upon when the service is fulfilled, such as cash on delivery or any other method shown to the user. Amounts may include product prices, delivery fees, and any service fees disclosed before order confirmation. Prices and fees may vary by store, area, time of order, and store pricing updates. The user is responsible for paying the final confirmed or agreed amount before or upon delivery, depending on the payment method used.</p>
+          </section>
+
+          <section>
+            <h2>6. Delivery and Fulfillment</h2>
+            <p>zayGo, stores, and delivery captains aim to fulfill orders in a timely manner, but displayed or expected delivery times are estimates and are not guaranteed. Delivery may be affected by traffic, weather, store readiness, delivery captain availability, service interruptions, or operational circumstances outside our control.</p>
+          </section>
+
+          <section>
+            <h2>7. Cancellation, Substitution, and Refunds</h2>
+            <p>Cancellation or order changes may not be available after the order starts preparation or leaves for delivery. Any refunds or adjustments are subject to the order status, fulfillment stage, reason for cancellation, and applicable store or service policies. If a product is unavailable, a substitute may be suggested or the item may be removed from the order after user approval where appropriate.</p>
+          </section>
+
+          <section>
+            <h2>8. Acceptable Use and Service Protection</h2>
+            <p>Users must use the app lawfully, respectfully, and only for its intended purpose. We reserve the right to restrict, suspend, or close an account if these terms are violated, if the service or chats are misused, if fraudulent information is provided, if reporting tools are abused, or if a user attempts to harm users, stores, delivery captains, or app systems.</p>
+          </section>
+
+          <section>
+            <h2>9. Limitation of Liability</h2>
+            <p>We make reasonable efforts to operate the platform, support users, and resolve issues. However, we are not responsible for errors caused by incorrect information provided by the user, delays by stores in preparing orders, product unavailability, store pricing or description errors, or delays caused by circumstances outside our control, including general technical failures, internet outages, government restrictions, accidents, or traffic and security conditions.</p>
+          </section>
+
+          <section>
+            <h2>10. Privacy</h2>
+            <p>Collection, use, and sharing of user data are governed by the zayGo Privacy Policy. Please review the Privacy Policy to understand what data is collected, how it is used, how data is shared with stores and delivery captains, and how to request account and data deletion.</p>
+          </section>
+
+          <section>
+            <h2>11. Contact</h2>
+            <p>For any question or request related to these Terms and Conditions, you can contact us by email:</p>
+            <p><a class="email" href="mailto:zaygo.app@gmail.com">zaygo.app@gmail.com</a></p>
+          </section>
+
+          <p class="footer-note">By using the zayGo app, you confirm that you have read these Terms and Conditions and agree to comply with them.</p>
+        </div>
+      </main>
+    </article>
+  </div>
+</body>
+</html>

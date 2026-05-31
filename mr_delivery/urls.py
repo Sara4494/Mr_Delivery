@@ -23,6 +23,26 @@ from django.views.generic import TemplateView
 urlpatterns = [
     path('admin/', admin.site.urls),
     path(
+        'privacy/',
+        TemplateView.as_view(template_name='shop/customer_privacy.html'),
+        name='customer_privacy',
+    ),
+    path(
+        'terms/',
+        TemplateView.as_view(template_name='shop/customer_terms.html'),
+        name='customer_terms',
+    ),
+    path(
+        'customer/privacy/',
+        TemplateView.as_view(template_name='shop/customer_privacy.html'),
+        name='customer_privacy_alias',
+    ),
+    path(
+        'customer/terms/',
+        TemplateView.as_view(template_name='shop/customer_terms.html'),
+        name='customer_terms_alias',
+    ),
+    path(
         'driver/privacy/',
         TemplateView.as_view(template_name='shop/driver_privacy.html'),
         name='driver_privacy',
