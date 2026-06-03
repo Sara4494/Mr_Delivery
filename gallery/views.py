@@ -590,6 +590,11 @@ def gallery_detail_view(request, image_id):
         if not _is_shop_owner(user):
             return _forbidden(request, 'permission_only_shop_owner')
 
+        AdminApprovalRequest.objects.filter(
+            request_type='image_publish',
+            gallery_image=image,
+            status='pending',
+        ).delete()
         image.delete()
         broadcast_shop_portfolio_snapshot(shop_owner, request=request, viewer_user=user)
         return success_response(

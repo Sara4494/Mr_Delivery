@@ -342,7 +342,6 @@ class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
         if not raw_phone:
             raise serializers.ValidationError(t(request, 'phone_number_is_required'))
 
-        normalized_phone = normalize_phone(raw_phone)
         phone_variants = self._phone_variants(raw_phone)
         existing_customer = Customer.objects.filter(phone_number__in=phone_variants)
         if self.instance and self.instance.pk:
@@ -350,7 +349,7 @@ class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
         if existing_customer.exists():
             raise serializers.ValidationError(t(request, 'phone_number_is_already_registered'))
 
-        return normalized_phone
+        return raw_phone
 
     def validate(self, attrs):
         request = self.context.get('request')
@@ -633,13 +632,12 @@ class DriverProfileUpdateSerializer(serializers.ModelSerializer):
         if not raw_phone:
             raise serializers.ValidationError(t(request, 'phone_number_is_required'))
 
-        normalized_phone = normalize_phone(raw_phone)
         existing_driver = Driver.objects.filter(phone_number__in=self._phone_variants(raw_phone))
         if self.instance and self.instance.pk:
             existing_driver = existing_driver.exclude(pk=self.instance.pk)
         if existing_driver.exists():
             raise serializers.ValidationError(t(request, 'phone_number_is_already_registered'))
-        return normalized_phone
+        return raw_phone
 
     def validate_vehicle_type(self, value):
         request = self.context.get('request')
@@ -696,18 +694,18 @@ class DriverRegisterSerializer(serializers.ModelSerializer):
 
     def validate_phone_number(self, value):
         request = self.context.get('request')
-        normalized_phone = normalize_phone(value)
-        if not normalized_phone:
+        raw_phone = str(value or '').strip()
+        if not raw_phone:
             raise serializers.ValidationError(t(request, 'phone_number_is_required'))
 
         existing_driver = Driver.objects.filter(
-            phone_number__in=self._phone_variants(normalized_phone)
+            phone_number__in=self._phone_variants(raw_phone)
         ).order_by('-updated_at').first()
         if existing_driver and existing_driver.is_verified:
             raise serializers.ValidationError(t(request, 'phone_number_is_already_registered_and_verified'))
         if existing_driver and not existing_driver.is_verified:
             raise serializers.ValidationError(t(request, 'driver_account_exists_but_not_verified'))
-        return normalized_phone
+        return raw_phone
 
     def validate_vehicle_type(self, value):
         request = self.context.get('request')

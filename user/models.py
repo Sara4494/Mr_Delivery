@@ -2,7 +2,6 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 from django.utils import timezone
 
-from .otp_service import normalize_phone
 
 
 WORK_SCHEDULE_DAYS = (
@@ -453,9 +452,6 @@ class AdminDesktopUser(models.Model):
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
 
-        if self.phone_number:
-            self.phone_number = normalize_phone(self.phone_number)
-
         if self.password and not self.password.startswith("pbkdf2_"):
             self.password = make_password(self.password)
 
@@ -464,8 +460,6 @@ class AdminDesktopUser(models.Model):
 
         if update_fields is not None:
             update_fields = set(update_fields)
-            if "phone_number" in update_fields:
-                self.phone_number = normalize_phone(self.phone_number)
             if "password" in update_fields and self.password and not self.password.startswith("pbkdf2_"):
                 self.password = make_password(self.password)
             if "role" in update_fields and "permissions" not in update_fields:

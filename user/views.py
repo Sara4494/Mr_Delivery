@@ -655,14 +655,22 @@ def _validate_admin_desktop_user_payload(request, *, partial=False, instance=Non
         if not phone_number:
             errors["phone_number"] = [t(request, "phone_number_is_required")]
         else:
-            normalized_phone = normalize_phone(phone_number)
-            existing = AdminDesktopUser.objects.filter(phone_number=normalized_phone)
+            raw_phone = str(phone_number).strip()
+            phone_variants = {raw_phone}
+            normalized_phone = normalize_phone(raw_phone)
+            if normalized_phone:
+                phone_variants.add(normalized_phone)
+                if normalized_phone.startswith("+20"):
+                    phone_variants.add(normalized_phone[1:])
+                    phone_variants.add(normalized_phone[3:])
+                    phone_variants.add("0" + normalized_phone[3:])
+            existing = AdminDesktopUser.objects.filter(phone_number__in=[value for value in phone_variants if value])
             if instance:
                 existing = existing.exclude(id=instance.id)
             if existing.exists():
                 errors["phone_number"] = [t(request, "phone_number_is_already_registered")]
             else:
-                payload["phone_number"] = normalized_phone
+                payload["phone_number"] = raw_phone
 
     if email is not None:
         email_value = str(email).strip() or None
@@ -4755,7 +4763,7 @@ def google_customer_auth_view(request):
         customer = Customer.objects.create(
             name=display_name or email.split('@')[0],
             email=email,
-            phone_number=normalize_phone(phone_number),
+            phone_number=str(phone_number or '').strip(),
             google_profile_image_url=photo_url or None,
             is_verified=True,
         )
@@ -4957,11 +4965,10 @@ def unified_register_view(request):
                 status_code=status.HTTP_400_BAD_REQUEST
             )
         
-        normalized = normalize_phone(phone_number)
         customer = Customer.objects.create(
             name=name,
             email=normalized_email,
-            phone_number=normalized,
+            phone_number=str(phone_number).strip(),
             profile_image=profile_image,
             is_verified=False
         )

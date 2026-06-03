@@ -5553,6 +5553,8 @@ def _get_customer_facing_driver_label(order, driver=None):
 def _build_customer_shop_summary_payload(shop, request):
     status_obj = _safe_shop_status(shop)
     status_value = status_obj.status if status_obj else 'closed'
+    schedule_payload = _build_work_schedule_response(shop.work_schedule)
+    
     today_schedule = schedule_payload.get('today', {})
     schedule_map = schedule_payload.get('schedule', {})
     previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
@@ -7360,6 +7362,9 @@ def public_shop_schedule_view(request, shop_id):
     status_obj = _safe_shop_status(shop)
     status_value = status_obj.status if status_obj else 'closed'
 
+    today_schedule = schedule_payload.get('today', {})
+    schedule_map = schedule_payload.get('schedule', {})
+    previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
     schedule_payload['status'] = {
         'key': status_value,
         'label': status_obj.get_status_display() if status_obj else 'مغلق',
