@@ -1,5 +1,6 @@
 from django.urls import path, re_path
 
+from . import chat_ring_views
 from . import driver_chat_views
 from . import fcm_views
 from . import views
@@ -158,6 +159,11 @@ urlpatterns = [
     path('chat/blocks/', views.chat_blocks_view, name='chat_blocks'),
     path('chat/blocks/<str:target_type>/<int:target_id>/', views.chat_block_detail_view, name='chat_block_detail'),
     path('chat/messages/<int:message_id>/delete-image/', views.chat_message_image_delete_view, name='chat_message_image_delete'),
+    path('chat-rings/start', chat_ring_views.chat_ring_start_view, name='chat_ring_start'),
+    path('chat-rings/<str:ring_id>/answered', chat_ring_views.chat_ring_answered_view, name='chat_ring_answered'),
+    path('chat-rings/<str:ring_id>/dismissed', chat_ring_views.chat_ring_dismissed_view, name='chat_ring_dismissed'),
+    path('chat-rings/<str:ring_id>/timeout', chat_ring_views.chat_ring_timeout_view, name='chat_ring_timeout'),
+    path('chat-rings/<str:ring_id>/cancel', chat_ring_views.chat_ring_cancel_view, name='chat_ring_cancel'),
     re_path(r'^chat/order/(?P<conversation_id>support_[\w-]+)/send-media/$', views.support_chat_media_upload_view, name='chat_order_support_media_upload'),
     path('chat/order/<int:order_id>/send-media/', views.chat_order_media_upload_view, name='chat_order_media_upload'),
     path('chat/support/<str:conversation_id>/send-media/', views.support_chat_media_upload_view, name='support_chat_media_upload'),

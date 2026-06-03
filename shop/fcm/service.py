@@ -231,6 +231,29 @@ def _shop_customer_chat_notification_profile():
     }
 
 
+def _shop_incoming_ring_profile():
+    return {
+        'channel_id': getattr(
+            settings,
+            'FCM_SHOP_RING_CHANNEL_ID',
+            getattr(settings, 'FCM_SHOP_CHAT_CHANNEL_ID', 'chat_notifications'),
+        ),
+        'sound': getattr(
+            settings,
+            'FCM_SHOP_RING_SOUND',
+            getattr(settings, 'FCM_SHOP_CHAT_SOUND', 'chat_ring'),
+        ),
+        'ios_sound': getattr(
+            settings,
+            'FCM_SHOP_RING_IOS_SOUND',
+            getattr(settings, 'FCM_SHOP_CHAT_IOS_SOUND', 'chat_ring.aiff'),
+        ),
+        'high_priority': True,
+        'ttl': getattr(settings, 'FCM_SHOP_LIVE_TTL', '120s'),
+        'notification_priority': 'high',
+    }
+
+
 def _shop_driver_chat_notification_profile():
     return {
         'channel_id': getattr(settings, 'FCM_SHOP_DRIVER_CHANNEL_ID', 'driver_notifications'),
@@ -825,17 +848,43 @@ def _build_android_config(
     )
 
 
-def _build_apns_config(messaging, *, sound, ios_sound, high_priority, data_only=False):
+def _build_apns_config(
+    messaging,
+    *,
+    sound,
+    ios_sound,
+    high_priority,
+    data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
+):
+    push_type = str(apns_push_type or '').strip()
+    if not push_type:
+        push_type = 'alert' if (allow_sound_with_data_only or not data_only) else 'background'
+    headers = {
+        'apns-priority': _apns_priority(high_priority),
+        'apns-push-type': push_type,
+    }
+    if apns_expiration not in (None, ''):
+        headers['apns-expiration'] = str(apns_expiration)
+
+    sound_value = None
+    if not data_only or allow_sound_with_data_only:
+        sound_value = ios_sound or sound or 'default'
+
+    aps_kwargs = {
+        'sound': sound_value,
+        'content_available': True,
+    }
+    if apns_category:
+        aps_kwargs['category'] = apns_category
+
     return messaging.APNSConfig(
-        headers={
-            'apns-priority': _apns_priority(high_priority),
-            'apns-push-type': 'background' if data_only else 'alert',
-        },
+        headers=headers,
         payload=messaging.APNSPayload(
-            aps=messaging.Aps(
-                sound=None if data_only else (ios_sound or sound or 'default'),
-                content_available=True,
-            )
+            aps=messaging.Aps(**aps_kwargs)
         ),
     )
 
@@ -855,6 +904,10 @@ def _build_message_kwargs(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     message_kwargs = {
         'data': _stringify_payload(data),
@@ -875,6 +928,10 @@ def _build_message_kwargs(
             ios_sound=ios_sound,
             high_priority=high_priority,
             data_only=data_only,
+            apns_category=apns_category,
+            apns_expiration=apns_expiration,
+            apns_push_type=apns_push_type,
+            allow_sound_with_data_only=allow_sound_with_data_only,
         ),
     }
     if not data_only:
@@ -901,6 +958,10 @@ def _send_push_to_fcm_token(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     _, _, messaging = _firebase_modules()
     app = _firebase_app(user_type=user_type)
@@ -920,6 +981,10 @@ def _send_push_to_fcm_token(
             notification_priority=notification_priority,
             tag=tag,
             data_only=data_only,
+            apns_category=apns_category,
+            apns_expiration=apns_expiration,
+            apns_push_type=apns_push_type,
+            allow_sound_with_data_only=allow_sound_with_data_only,
         ),
     )
     return messaging.send(message, app=app)
@@ -998,6 +1063,10 @@ def send_push_to_token_record(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     logger.info(
         'fcm.send.attempt token_id=%s user_type=%s user_id=%s platform=%s profile=%s token=%s',
@@ -1025,6 +1094,10 @@ def send_push_to_token_record(
             notification_priority=notification_priority,
             tag=tag,
             data_only=data_only,
+            apns_category=apns_category,
+            apns_expiration=apns_expiration,
+            apns_push_type=apns_push_type,
+            allow_sound_with_data_only=allow_sound_with_data_only,
         )
     except FCMConfigurationError as exc:
         logger.warning('fcm.send.skipped reason=%s', exc)
@@ -1098,6 +1171,10 @@ def _send_push_to_token_records(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     token_records = list(token_records)
     summary = {
@@ -1141,6 +1218,10 @@ def _send_push_to_token_records(
                     notification_priority=notification_priority,
                     tag=tag,
                     data_only=data_only,
+                    apns_category=apns_category,
+                    apns_expiration=apns_expiration,
+                    apns_push_type=apns_push_type,
+                    allow_sound_with_data_only=allow_sound_with_data_only,
                 ),
             )
             try:
@@ -1161,6 +1242,10 @@ def _send_push_to_token_records(
                     notification_priority=notification_priority,
                     tag=tag,
                     data_only=data_only,
+                    apns_category=apns_category,
+                    apns_expiration=apns_expiration,
+                    apns_push_type=apns_push_type,
+                    allow_sound_with_data_only=allow_sound_with_data_only,
                 )
                     if result.get('success'):
                         summary['tokens_sent'] += 1
@@ -1304,6 +1389,10 @@ def send_push_to_token(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     token_record = FCMDeviceToken.objects.filter(fcm_token=fcm_token).order_by('-updated_at').first()
     if token_record:
@@ -1321,6 +1410,10 @@ def send_push_to_token(
             notification_priority=notification_priority,
             tag=tag,
             data_only=data_only,
+            apns_category=apns_category,
+            apns_expiration=apns_expiration,
+            apns_push_type=apns_push_type,
+            allow_sound_with_data_only=allow_sound_with_data_only,
         )
 
     try:
@@ -1339,6 +1432,10 @@ def send_push_to_token(
             notification_priority=notification_priority,
             tag=tag,
             data_only=data_only,
+            apns_category=apns_category,
+            apns_expiration=apns_expiration,
+            apns_push_type=apns_push_type,
+            allow_sound_with_data_only=allow_sound_with_data_only,
         )
     except Exception as exc:
         logger.exception('fcm.send.failed_raw token=%s', _mask_token(fcm_token))
@@ -1373,6 +1470,10 @@ def send_to_user(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     user_type, user_id = resolve_user_identity(user)
     return send_push_to_user(
@@ -1392,6 +1493,10 @@ def send_to_user(
         notification_priority=notification_priority,
         tag=tag,
         data_only=data_only,
+        apns_category=apns_category,
+        apns_expiration=apns_expiration,
+        apns_push_type=apns_push_type,
+        allow_sound_with_data_only=allow_sound_with_data_only,
     )
 
 
@@ -1413,6 +1518,10 @@ def send_push_to_user(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     token_records = list(
         FCMDeviceToken.objects.filter(
@@ -1452,6 +1561,10 @@ def send_push_to_user(
         notification_priority=notification_priority,
         tag=tag,
         data_only=data_only,
+        apns_category=apns_category,
+        apns_expiration=apns_expiration,
+        apns_push_type=apns_push_type,
+        allow_sound_with_data_only=allow_sound_with_data_only,
     )
     summary['users_targeted'] = 1 if token_records else 0
     return summary
@@ -1474,6 +1587,10 @@ def send_to_users(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     identities = [resolve_user_identity(user) for user in users]
     summary = send_push_to_identities(
@@ -1492,6 +1609,10 @@ def send_to_users(
         notification_priority=notification_priority,
         tag=tag,
         data_only=data_only,
+        apns_category=apns_category,
+        apns_expiration=apns_expiration,
+        apns_push_type=apns_push_type,
+        allow_sound_with_data_only=allow_sound_with_data_only,
     )
 
 
@@ -1512,6 +1633,10 @@ def send_push_to_identities(
     notification_priority=None,
     tag=None,
     data_only=False,
+    apns_category=None,
+    apns_expiration=None,
+    apns_push_type=None,
+    allow_sound_with_data_only=False,
 ):
     summary = {
         'users_targeted': 0,
@@ -1540,6 +1665,10 @@ def send_push_to_identities(
             notification_priority=notification_priority,
             tag=tag,
             data_only=data_only,
+            apns_category=apns_category,
+            apns_expiration=apns_expiration,
+            apns_push_type=apns_push_type,
+            allow_sound_with_data_only=allow_sound_with_data_only,
         )
         summary['tokens_total'] += user_summary['tokens_total']
         summary['tokens_sent'] += user_summary['tokens_sent']
@@ -2284,14 +2413,31 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
                     shop_name=shop_name,
                     shop_profile_image_url=shop_profile_image_url,
                 )
+                profile = _shop_incoming_ring_profile() if target == 'shop' else None
                 title = shop_name
                 body = _trim_text(_ring_notification_body(order, ring_payload, target), max_length=180)
-                channel_id = getattr(settings, 'FCM_RING_CHANNEL_ID', 'delivery_general')
-                sound = getattr(settings, 'FCM_RING_SOUND', 'default')
-                ios_sound = getattr(settings, 'FCM_RING_IOS_SOUND', 'default')
+                channel_id = (
+                    profile['channel_id']
+                    if profile is not None
+                    else getattr(settings, 'FCM_RING_CHANNEL_ID', 'delivery_general')
+                )
+                sound = (
+                    profile['sound']
+                    if profile is not None
+                    else getattr(settings, 'FCM_RING_SOUND', 'default')
+                )
+                ios_sound = (
+                    profile['ios_sound']
+                    if profile is not None
+                    else getattr(settings, 'FCM_RING_IOS_SOUND', 'default')
+                )
                 high_priority = True
-                ttl = None
-                notification_priority = None
+                ttl = profile['ttl'] if profile is not None else None
+                notification_priority = (
+                    profile['notification_priority']
+                    if profile is not None
+                    else None
+                )
                 payload['title'] = title
                 payload['body'] = body
                 payload['sound'] = sound

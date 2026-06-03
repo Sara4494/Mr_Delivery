@@ -549,6 +549,68 @@ class FCMDeviceToken(models.Model):
         return f"{self.user_type}:{self.user_id}:{self.device_id}"
 
 
+class ChatRing(models.Model):
+    STATUS_CHOICES = [
+        ('ringing', 'جارٍ الرن'),
+        ('answered', 'تم الرد'),
+        ('dismissed', 'تم الرفض'),
+        ('timeout', 'انتهت المهلة'),
+        ('cancelled', 'تم الإلغاء'),
+    ]
+    CHAT_TYPE_CHOICES = [
+        ('shop_customer', 'شات المحل والعميل'),
+    ]
+    USER_TYPE_CHOICES = [
+        ('customer', 'عميل'),
+        ('shop_owner', 'صاحب المحل'),
+        ('employee', 'موظف'),
+    ]
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='chat_rings',
+        verbose_name="الأوردر",
+    )
+    public_id = models.CharField(max_length=64, unique=True, blank=True, verbose_name="المعرف العام")
+    chat_type = models.CharField(max_length=30, choices=CHAT_TYPE_CHOICES, default='shop_customer', verbose_name="نوع الشات")
+    chat_id = models.CharField(max_length=120, verbose_name="معرف الشات")
+    sender_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, verbose_name="نوع المرسل")
+    sender_id = models.PositiveBigIntegerField(verbose_name="معرف المرسل")
+    receiver_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, verbose_name="نوع المستقبل")
+    receiver_id = models.PositiveBigIntegerField(verbose_name="معرف المستقبل")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ringing', verbose_name="الحالة")
+    expires_at = models.DateTimeField(verbose_name="تنتهي في")
+    answered_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت الرد")
+    dismissed_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت الرفض")
+    cancelled_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت الإلغاء")
+    timed_out_at = models.DateTimeField(blank=True, null=True, verbose_name="وقت انتهاء المهلة")
+    metadata = models.JSONField(blank=True, null=True, verbose_name="بيانات إضافية")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاريخ الإنشاء")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاريخ التحديث")
+
+    class Meta:
+        verbose_name = "رنة شات"
+        verbose_name_plural = "رنات الشات"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['public_id'], name='chatring_public_idx'),
+            models.Index(fields=['order', '-created_at'], name='chatring_order_created_idx'),
+            models.Index(fields=['receiver_type', 'receiver_id', 'status'], name='chatring_receiver_status_idx'),
+            models.Index(fields=['chat_type', 'chat_id', 'status'], name='chatring_chat_status_idx'),
+            models.Index(fields=['expires_at'], name='chatring_expires_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.public_id:
+            self.public_id = f"ring_{self.pk}"
+            super().save(update_fields=['public_id'])
+
+    def __str__(self):
+        return f"{self.public_id}:{self.status}"
+
+
 class DriverChatConversation(models.Model):
     STATUS_CHOICES = [
         ('waiting_reply', 'في انتظار الرد'),
