@@ -1251,14 +1251,14 @@ def _validate_admin_store_payload(request, *, partial=False, instance=None):
         if not phone_number:
             errors["phone_number"] = ["رقم الهاتف مطلوب"]
         else:
-            normalized_phone = normalize_phone(phone_number)
-            existing = ShopOwner.objects.filter(phone_number=normalized_phone)
+            raw_phone = str(phone_number).strip()
+            existing = ShopOwner.objects.filter(phone_number__in=_phone_variants(raw_phone))
             if instance:
                 existing = existing.exclude(id=instance.id)
             if existing.exists():
                 errors["phone_number"] = ["رقم الهاتف مستخدم بالفعل"]
             else:
-                payload["phone_number"] = normalized_phone
+                payload["phone_number"] = raw_phone
 
     if not partial or instance is None or password is not None:
         if instance is None and not password:
@@ -4311,8 +4311,8 @@ def unified_login_view(request):
     POST /api/auth/login/
     Body: {
         "role": "shop_owner" | "customer" | "employee" | "driver",
-        "phone_number": "رقم الهاتف",  // للعميل والموظف والسائق
-        "shop_number": "رقم المحل",     // لصاحب المحل فقط
+        "phone_number": "رقم الهاتف",
+        "shop_number": "رقم الهاتف للمحل (لدعم العملاء الحاليين)",
         "password": "كلمة المرور"
     }
     """
@@ -4351,17 +4351,27 @@ def unified_login_view(request):
     
     # ===== Shop Owner Login =====
     if role == 'shop_owner':
-        if not shop_number:
+        login_phone = str(phone_number or shop_number or '').strip()
+        if not login_phone:
             return error_response(
-                message=t(request, 'shop_number_is_required'),
+                message=t(request, 'phone_number_is_required'),
                 status_code=status.HTTP_400_BAD_REQUEST
             )
-        
+
+        phone_variants = _phone_variants(login_phone)
         try:
-            shop_owner = ShopOwner.objects.select_related('moderation_status').get(shop_number=shop_number)
+            shop_owner = (
+                ShopOwner.objects
+                .select_related('moderation_status')
+                .filter(phone_number__in=phone_variants)
+                .order_by('-updated_at')
+                .first()
+            )
+            if shop_owner is None:
+                raise ShopOwner.DoesNotExist
             if not shop_owner.check_password(password):
                 return error_response(
-                    message=t(request, 'shop_number_or_password_is_incorrect'),
+                    message=t(request, 'phone_number_or_password_is_incorrect'),
                     status_code=status.HTTP_401_UNAUTHORIZED
                 )
             moderation = getattr(shop_owner, 'moderation_status', None)
@@ -4399,7 +4409,7 @@ def unified_login_view(request):
             )
         except ShopOwner.DoesNotExist:
             return error_response(
-                message=t(request, 'shop_number_or_password_is_incorrect'),
+                message=t(request, 'phone_number_or_password_is_incorrect'),
                 status_code=status.HTTP_401_UNAUTHORIZED
             )
     

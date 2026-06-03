@@ -7,11 +7,13 @@ from .authentication import (
     rotate_user_session,
 )
 from .models import ShopOwner
+from .otp_service import normalize_phone
 
 
 class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
     """Custom Token Serializer للـ ShopOwner"""
-    shop_number = serializers.CharField(required=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+    shop_number = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(required=True, write_only=True)
     
     @classmethod
@@ -25,14 +27,31 @@ class ShopOwnerTokenObtainPairSerializer(serializers.Serializer):
         """
         التحقق من بيانات تسجيل الدخول وإرجاع token
         """
-        shop_number = attrs.get('shop_number')
+        raw_phone = str(attrs.get('phone_number') or attrs.get('shop_number') or '').strip()
         password = attrs.get('password')
+        if not raw_phone:
+            raise serializers.ValidationError({
+                'phone_number': 'رقم الهاتف مطلوب'
+            })
+
+        normalized_phone = normalize_phone(raw_phone)
+        phone_variants = [raw_phone]
+        if normalized_phone and normalized_phone not in phone_variants:
+            phone_variants.append(normalized_phone)
 
         try:
-            shop_owner = ShopOwner.objects.select_related('moderation_status').get(shop_number=shop_number)
+            shop_owner = (
+                ShopOwner.objects
+                .select_related('moderation_status')
+                .filter(phone_number__in=phone_variants)
+                .order_by('-updated_at')
+                .first()
+            )
+            if shop_owner is None:
+                raise ShopOwner.DoesNotExist
         except ShopOwner.DoesNotExist:
             raise serializers.ValidationError({
-                'shop_number': 'رقم المحل أو كلمة المرور غير صحيحة'
+                'phone_number': 'رقم الهاتف أو كلمة المرور غير صحيحة'
             })
 
         moderation = getattr(shop_owner, 'moderation_status', None)
