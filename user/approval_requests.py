@@ -30,6 +30,14 @@ def _approval_details_text(approval_request, payload):
     return str(payload.get("description") or "").strip()
 
 
+def _normalize_shop_edit_current_values(values):
+    normalized = dict(values or {})
+    if "profile_image" not in normalized and "profile_image_url" in normalized:
+        normalized["profile_image"] = normalized.get("profile_image_url")
+    normalized.pop("profile_image_url", None)
+    return normalized
+
+
 def _approval_image_url(approval_request, request=None):
     payload = approval_request.payload or {}
     if approval_request.request_type == "image_publish":
@@ -95,6 +103,7 @@ def serialize_shop_approval_request_summary(approval_request, request=None):
         return None
 
     payload = approval_request.payload or {}
+    current_values = _normalize_shop_edit_current_values(payload.get("current_values") or {})
     return {
         "id": approval_request.id,
         "request_type": approval_request.request_type,
@@ -105,7 +114,7 @@ def serialize_shop_approval_request_summary(approval_request, request=None):
         "image_url": _approval_image_url(approval_request, request=request),
         "changed_fields": payload.get("changed_fields") or [],
         "requested_changes": payload.get("requested_changes") or [],
-        "current_values": payload.get("current_values") or {},
+        "current_values": current_values,
         "rejection_reason": approval_request.rejection_reason,
         "created_at": approval_request.created_at,
         "reviewed_at": approval_request.reviewed_at,
@@ -222,6 +231,7 @@ def serialize_admin_approval_request(approval_request, request=None):
 def serialize_admin_approval_request_detail(approval_request, request=None):
     payload = approval_request.payload or {}
     image_url = _approval_image_url(approval_request, request=request)
+    current_values = _normalize_shop_edit_current_values(payload.get("current_values") or {})
 
     return {
         "id": approval_request.id,
@@ -238,7 +248,7 @@ def serialize_admin_approval_request_detail(approval_request, request=None):
         "rejection_reason": approval_request.rejection_reason,
         "changed_fields": payload.get("changed_fields") or [],
         "requested_changes": payload.get("requested_changes") or [],
-        "current_values": payload.get("current_values") or {},
+        "current_values": current_values,
         "meta": {
             "title": payload.get("title"),
             "start_date": payload.get("start_date"),
