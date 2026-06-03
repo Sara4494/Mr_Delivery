@@ -18,7 +18,7 @@ def _shop_payload(shop_owner, request=None):
     return {
         "id": shop_owner.id,
         "shop_name": shop_owner.shop_name,
-        "profile_image_url": build_absolute_file_url(getattr(shop_owner, "profile_image", None), request=request),
+        "profile_image": build_absolute_file_url(getattr(shop_owner, "profile_image", None), request=request),
     }
 
 
@@ -46,7 +46,7 @@ def _approval_image_url(approval_request, request=None):
             return build_absolute_file_url(getattr(approval_request.offer, "image", None), request=request)
         return None
 
-    return payload.get("profile_image_url")
+    return payload.get("profile_image") or payload.get("profile_image_url")
 
 
 def _get_shop_edit_field_values(shop_owner, changes):
@@ -55,7 +55,7 @@ def _get_shop_edit_field_values(shop_owner, changes):
         "shop_name": str(getattr(shop_owner, "shop_name", "") or "").strip(),
         "phone_number": str(getattr(shop_owner, "phone_number", "") or "").strip(),
         "description": str(getattr(shop_owner, "description", "") or "").strip(),
-        "profile_image_url": build_absolute_file_url(getattr(shop_owner, "profile_image", None)),
+        "profile_image": build_absolute_file_url(getattr(shop_owner, "profile_image", None)),
     }
 
 
@@ -82,7 +82,7 @@ def _build_shop_edit_requested_changes(shop_owner, changes, request=None):
             {
                 "field": "profile_image",
                 "label": SHOP_EDIT_FIELD_LABELS["profile_image"],
-                "old_value": current_values.get("profile_image_url"),
+                "old_value": current_values.get("profile_image"),
                 "new_value": build_absolute_file_url(changes.get("profile_image"), request=request),
             }
         )
@@ -139,7 +139,10 @@ def create_or_update_shop_edit_request(shop_owner, changes, request=None):
         "shop_name": str(changes.get("shop_name") or shop_owner.shop_name or "").strip(),
         "phone_number": str(changes.get("phone_number") or shop_owner.phone_number or "").strip(),
         "description": str(changes.get("description") or shop_owner.description or "").strip(),
-        "profile_image_url": build_absolute_file_url(pending_profile_image or getattr(shop_owner, "profile_image", None), request=request),
+        "profile_image": build_absolute_file_url(
+            pending_profile_image or getattr(shop_owner, "profile_image", None),
+            request=request,
+        ),
         "current_values": current_values,
         "requested_changes": requested_changes,
         "changed_fields": sorted([
