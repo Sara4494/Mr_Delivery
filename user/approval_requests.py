@@ -30,10 +30,15 @@ def _approval_details_text(approval_request, payload):
     return str(payload.get("description") or "").strip()
 
 
-def _normalize_shop_edit_current_values(values):
+def _normalize_shop_edit_current_values(values, *, approval_request=None, request=None):
     normalized = dict(values or {})
     if "profile_image" not in normalized and "profile_image_url" in normalized:
         normalized["profile_image"] = normalized.get("profile_image_url")
+    if not normalized.get("profile_image") and approval_request is not None:
+        normalized["profile_image"] = build_absolute_file_url(
+            getattr(getattr(approval_request, "shop_owner", None), "profile_image", None),
+            request=request,
+        )
     normalized.pop("profile_image_url", None)
     return normalized
 
@@ -103,7 +108,11 @@ def serialize_shop_approval_request_summary(approval_request, request=None):
         return None
 
     payload = approval_request.payload or {}
-    current_values = _normalize_shop_edit_current_values(payload.get("current_values") or {})
+    current_values = _normalize_shop_edit_current_values(
+        payload.get("current_values") or {},
+        approval_request=approval_request,
+        request=request,
+    )
     return {
         "id": approval_request.id,
         "request_type": approval_request.request_type,
@@ -231,7 +240,11 @@ def serialize_admin_approval_request(approval_request, request=None):
 def serialize_admin_approval_request_detail(approval_request, request=None):
     payload = approval_request.payload or {}
     image_url = _approval_image_url(approval_request, request=request)
-    current_values = _normalize_shop_edit_current_values(payload.get("current_values") or {})
+    current_values = _normalize_shop_edit_current_values(
+        payload.get("current_values") or {},
+        approval_request=approval_request,
+        request=request,
+    )
 
     return {
         "id": approval_request.id,
