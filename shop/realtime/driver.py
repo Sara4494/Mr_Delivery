@@ -623,9 +623,25 @@ def is_driver_eligible_for_available_order(driver, order):
 
 
 def get_available_order_for_driver(driver, order_id, *, lock=False):
-    queryset = get_available_orders_queryset(driver).filter(id=order_id)
     if lock:
-        queryset = queryset.select_for_update()
+        return (
+            Order.objects
+            .filter(
+                id=order_id,
+                shop_owner__shop_drivers__driver=driver,
+                shop_owner__shop_drivers__status='active',
+                status__in=DRIVER_AVAILABLE_ORDER_STATUSES,
+                driver_accepted_at__isnull=True,
+            )
+            .filter(Q(driver=driver) | Q(driver__isnull=True))
+            .exclude(driver_rejections__driver=driver)
+            .select_related('shop_owner', 'shop_owner__shop_category', 'customer', 'delivery_address')
+            .select_for_update()
+            .order_by('-updated_at', '-created_at')
+            .first()
+        )
+
+    queryset = get_available_orders_queryset(driver).filter(id=order_id)
     return queryset.first()
 
 
