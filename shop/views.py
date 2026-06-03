@@ -894,7 +894,11 @@ def _parse_schedule_time(value):
 def _is_valid_schedule_range(start_time, end_time):
     if not start_time or not end_time:
         return False
-    return start_time < end_time
+    return start_time != end_time
+
+
+def _is_overnight_schedule_range(start_time, end_time):
+    return bool(start_time and end_time and end_time < start_time)
 
 
 def _normalize_work_schedule(raw_schedule):
@@ -980,7 +984,7 @@ def _merge_work_schedule(current_schedule, updates):
                 errors.setdefault(day_key, []).append('start_time and end_time are required when is_working is true.')
                 continue
             if not _is_valid_schedule_range(day_data['start_time'], day_data['end_time']):
-                errors.setdefault(day_key, []).append('end_time must be later than start_time.')
+                errors.setdefault(day_key, []).append('start_time and end_time cannot be equal.')
         else:
             day_data['start_time'] = None
             day_data['end_time'] = None
@@ -5549,6 +5553,9 @@ def _get_customer_facing_driver_label(order, driver=None):
 def _build_customer_shop_summary_payload(shop, request):
     status_obj = _safe_shop_status(shop)
     status_value = status_obj.status if status_obj else 'closed'
+    today_schedule = schedule_payload.get('today', {})
+    schedule_map = schedule_payload.get('schedule', {})
+    previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
     status_display = status_obj.get_status_display() if status_obj else 'مغلق'
     category = shop.shop_category
 
@@ -6780,16 +6787,36 @@ def _to_hhmm_time(value):
         return None
 
 
-def _is_within_today_schedule(today_schedule):
+def _get_previous_work_day_key(day_key):
+    if day_key not in WORK_SCHEDULE_DAYS:
+        return WORK_SCHEDULE_DAYS[-1]
+    day_index = WORK_SCHEDULE_DAYS.index(day_key)
+    return WORK_SCHEDULE_DAYS[day_index - 1]
+
+
+def _is_within_today_schedule(today_schedule, previous_day_schedule=None):
     if not today_schedule.get('is_working'):
-        return False
+        today_schedule = {}
     start_time = _to_hhmm_time(today_schedule.get('start_time'))
     end_time = _to_hhmm_time(today_schedule.get('end_time'))
-    if not start_time or not end_time:
-        return False
 
     now_time = _shop_schedule_localtime().time().replace(second=0, microsecond=0)
-    return start_time <= now_time <= end_time
+    if start_time and end_time:
+        if start_time < end_time and start_time <= now_time <= end_time:
+            return True
+        if start_time > end_time and now_time >= start_time:
+            return True
+
+    if not previous_day_schedule or not previous_day_schedule.get('is_working'):
+        return False
+
+    previous_start = _to_hhmm_time(previous_day_schedule.get('start_time'))
+    previous_end = _to_hhmm_time(previous_day_schedule.get('end_time'))
+    if not previous_start or not previous_end:
+        return False
+    if previous_start > previous_end and now_time <= previous_end:
+        return True
+    return False
 
 
 def _is_open_now(status_value, today_schedule):
@@ -6963,8 +6990,10 @@ def _build_public_shop_payload(shop, request, published_images=None):
 
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
+    schedule_map = schedule_payload.get('schedule', {})
+    previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
     is_open_now = _is_open_now(status_value, today_schedule)
-    within_schedule_now = _is_within_today_schedule(today_schedule)
+    within_schedule_now = _is_within_today_schedule(today_schedule, previous_day_schedule)
     live_status_label = _build_live_shop_status_label(status_value, is_open_now)
 
     average_rating, ratings_count = _get_shop_rating_stats(shop)
@@ -7058,8 +7087,10 @@ def _build_public_shop_profile_summary_payload(shop, request):
     status_label = status_obj.get_status_display() if status_obj else 'مغلق'
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
+    schedule_map = schedule_payload.get('schedule', {})
+    previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
     is_open_now = _is_open_now(status_value, today_schedule)
-    within_schedule_now = _is_within_today_schedule(today_schedule)
+    within_schedule_now = _is_within_today_schedule(today_schedule, previous_day_schedule)
     live_status_label = _build_live_shop_status_label(status_value, is_open_now)
     average_rating, ratings_count = _get_shop_rating_stats(shop)
     category_name = shop.shop_category.name if shop.shop_category else None
@@ -7333,8 +7364,8 @@ def public_shop_schedule_view(request, shop_id):
         'key': status_value,
         'label': status_obj.get_status_display() if status_obj else 'مغلق',
     }
-    schedule_payload['is_open_now'] = _is_open_now(status_value, schedule_payload.get('today', {}))
-    schedule_payload['within_schedule_now'] = _is_within_today_schedule(schedule_payload.get('today', {}))
+    schedule_payload['is_open_now'] = _is_open_now(status_value, today_schedule)
+    schedule_payload['within_schedule_now'] = _is_within_today_schedule(today_schedule, previous_day_schedule)
 
     return success_response(
         data=schedule_payload,
