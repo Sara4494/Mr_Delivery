@@ -624,7 +624,7 @@ def is_driver_eligible_for_available_order(driver, order):
 
 def get_available_order_for_driver(driver, order_id, *, lock=False):
     if lock:
-        return (
+        locked_order = (
             Order.objects
             .filter(
                 id=order_id,
@@ -635,10 +635,16 @@ def get_available_order_for_driver(driver, order_id, *, lock=False):
             )
             .filter(Q(driver=driver) | Q(driver__isnull=True))
             .exclude(driver_rejections__driver=driver)
-            .select_related('shop_owner', 'shop_owner__shop_category', 'customer', 'delivery_address')
-            .select_for_update()
+            .select_for_update(of=('self',))
             .order_by('-updated_at', '-created_at')
             .first()
+        )
+        if not locked_order:
+            return None
+        return (
+            Order.objects
+            .select_related('shop_owner', 'shop_owner__shop_category', 'customer', 'delivery_address')
+            .get(pk=locked_order.pk)
         )
 
     queryset = get_available_orders_queryset(driver).filter(id=order_id)
