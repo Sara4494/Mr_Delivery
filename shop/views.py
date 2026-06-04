@@ -121,6 +121,7 @@ from .websocket_utils import (
     notify_order_update,
     notify_driver_assigned,
     notify_new_order,
+    broadcast_shop_notification_created,
     broadcast_chat_message_to_order,
     broadcast_chat_message_to_customer,
     broadcast_chat_message,
@@ -1921,6 +1922,23 @@ def _invite_driver(request, shop_owner, payload):
             )
         relation.status = 'pending'
         relation.save(update_fields=['status'])
+
+    _attach_notification_to_shop_users(
+        shop_owner,
+        notification_type='driver_join_request',
+        title='طلب انضمام جديد',
+        message=f'هناك طلب انضمام من السائق {existing_account.name} إلى المتجر.',
+        reference_id=relation.id,
+        idempotency_key=f'driver-join-request:{relation.id}',
+        data={
+            'status': 'pending',
+            'invitation_id': relation.id,
+            'driver_id': existing_account.id,
+            'driver_name': existing_account.name,
+            'shop_id': shop_owner.id,
+            'shop_name': shop_owner.shop_name,
+        },
+    )
 
     if existing_account.phone_number != normalized_phone:
         existing_account.phone_number = normalized_phone
@@ -6077,6 +6095,14 @@ def _attach_notification_to_user(
             return existing
 
     notification = Notification.objects.create(**payload)
+
+    if user_type == 'shop_owner':
+        transaction.on_commit(
+            lambda current_notification=notification: broadcast_shop_notification_created(
+                current_notification,
+                lang='ar',
+            )
+        )
 
     if user_type == 'driver':
         from .fcm.service import send_driver_notification_from_record

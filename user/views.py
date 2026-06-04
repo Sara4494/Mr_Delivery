@@ -1523,6 +1523,8 @@ def admin_desktop_approval_request_approve_view(request, approval_request_id):
                 request=request,
             )
 
+    _notify_shop_owner_about_approval_request(approval_request, approved=True)
+
     _log_admin_desktop_activity(
         request.user,
         section_key="approvals",
@@ -1568,6 +1570,12 @@ def admin_desktop_approval_request_reject_view(request, approval_request_id):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 request=request,
             )
+
+    _notify_shop_owner_about_approval_request(
+        approval_request,
+        approved=False,
+        rejection_reason=rejection_reason,
+    )
 
     _log_admin_desktop_activity(
         request.user,
@@ -2283,6 +2291,7 @@ def _serialize_support_action_account(request, account, account_type, pending_ta
 
 def _build_support_actions_accounts(request):
     from shop.models import Customer, Driver
+    from user.models import ShopOwner
 
     search = str(request.query_params.get("search", "") or "").strip()
     account_type = str(request.query_params.get("account_type", "all") or "all").strip().lower()
@@ -2409,6 +2418,125 @@ def _create_support_action_notification(account_type, account, title, message, d
         notification_type="system",
         reference_id=(data or {}).get("reference_id"),
         idempotency_key=(data or {}).get("idempotency_key"),
+        data=data,
+    )
+
+
+def _build_shop_review_notification_payload(*, approval_request, approved, rejection_reason=None):
+    payload = approval_request.payload or {}
+    changed_fields = list(payload.get("changed_fields") or [])
+    requested_changes = list(payload.get("requested_changes") or [])
+    status = "approved" if approved else "rejected"
+    reason = str(rejection_reason or approval_request.rejection_reason or "").strip() or None
+
+    if approval_request.request_type == "image_publish":
+        return {
+            "notification_type": "shop_images_review",
+            "title": "تمت مراجعة صور المحل" if approved else "تم رفض صور المحل",
+            "message": (
+                f"تمت الموافقة على نشر صور المحل الخاصة بـ {approval_request.shop_owner.shop_name}."
+                if approved
+                else f"تم رفض نشر صور المحل الخاصة بـ {approval_request.shop_owner.shop_name}."
+            ),
+            "data": {
+                "status": status,
+                "approved_images_count": 1 if approved else 0,
+                "rejected_images_count": 0 if approved else 1,
+                **({"reason": reason} if reason else {}),
+            },
+        }
+
+    if approval_request.request_type == "shop_edit":
+        is_profile_image_only = changed_fields == ["profile_image"] or (
+            changed_fields and all(field == "profile_image" for field in changed_fields)
+        )
+        notification_type = "profile_image_review" if is_profile_image_only else "shop_data_review"
+        title = "تمت مراجعة صورة الملف" if is_profile_image_only else "تمت مراجعة بيانات المحل"
+        message = (
+            f"تمت الموافقة على تحديث صورة الملف الخاصة بـ {approval_request.shop_owner.shop_name}."
+            if approved and is_profile_image_only
+            else f"تمت الموافقة على تحديث بيانات المحل الخاصة بـ {approval_request.shop_owner.shop_name}."
+            if approved
+            else f"تم رفض تحديث {'صورة الملف' if is_profile_image_only else 'بيانات المحل'} الخاصة بـ {approval_request.shop_owner.shop_name}."
+        )
+        data = {
+            "status": status,
+            "fields": changed_fields or [item.get("field") for item in requested_changes if isinstance(item, dict) and item.get("field")],
+        }
+        if reason:
+            data["reason"] = reason
+        return {
+            "notification_type": notification_type,
+            "title": title,
+            "message": message,
+            "data": data,
+        }
+
+    return {
+        "notification_type": "company_announcement",
+        "title": "تمت مراجعة طلب",
+        "message": f"تم {'قبول' if approved else 'رفض'} طلب المراجعة الخاص بـ {approval_request.shop_owner.shop_name}.",
+        "data": {
+            "status": status,
+            **({"reason": reason} if reason else {}),
+        },
+    }
+
+
+def _notify_shop_owner_about_approval_request(approval_request, *, approved, rejection_reason=None):
+    from shop.views import _attach_notification_to_user
+
+    payload = _build_shop_review_notification_payload(
+        approval_request=approval_request,
+        approved=approved,
+        rejection_reason=rejection_reason,
+    )
+    return _attach_notification_to_user(
+        "shop_owner",
+        approval_request.shop_owner,
+        title=payload["title"],
+        message=payload["message"],
+        notification_type=payload["notification_type"],
+        reference_id=approval_request.id,
+        idempotency_key=f"approval-request:{approval_request.id}:{'approved' if approved else 'rejected'}",
+        data=payload["data"],
+    )
+
+
+def _notify_shop_owner_about_report_decision(report, *, action, admin_notes=None):
+    from shop.views import _attach_notification_to_user
+
+    decision_map = {
+        "warning": "approved",
+        "approve": "approved",
+        "reject": "rejected",
+        "suspend": "resolved",
+        "resolve": "resolved",
+        "close_no_action": "no_action",
+    }
+    decision = decision_map.get(str(action or "").strip(), str(action or "").strip() or "resolved")
+    reporter = report.reporter_shop_owner or getattr(report.reporter_employee, "shop_owner", None)
+    if not reporter:
+        return None
+
+    data = {
+        "report_id": report.id,
+        "decision": decision,
+        "action_taken": action,
+    }
+    reason = str(admin_notes or report.admin_notes or "").strip()
+    if reason:
+        data["reason"] = reason
+        data["message"] = reason
+
+    return _attach_notification_to_user(
+        "shop_owner",
+        reporter,
+        title="تم اتخاذ قرار في البلاغ",
+        message=f"تم اتخاذ قرار على البلاغ #{report.public_id}.",
+        notification_type="report_decision",
+        reference_id=report.public_id,
+        idempotency_key=f"report-decision:{report.id}:{decision}",
         data=data,
     )
 
@@ -3423,6 +3551,12 @@ def admin_desktop_abuse_report_resolve_view(request, report_id):
             request=request,
         )
 
+    _notify_shop_owner_about_report_decision(
+        report,
+        action=action,
+        admin_notes=admin_notes,
+    )
+
     _log_admin_desktop_activity(
         request.user,
         section_key="abuse_reports",
@@ -3656,10 +3790,21 @@ def admin_desktop_broadcast_notification_view(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
     from shop.models import Customer, Driver
-    from shop.views import _attach_notification_to_user
+    from shop.views import _attach_notification_to_shop_users, _attach_notification_to_user
     from shop.fcm.service import send_driver_system_notification
 
     count = 0
+
+    if target_type in {"all", "shop", "shop_owner"}:
+        for shop_owner in ShopOwner.objects.filter(is_active=True):
+            _attach_notification_to_shop_users(
+                shop_owner,
+                title=title,
+                message=message,
+                notification_type="company_announcement",
+                data=extra_data,
+            )
+            count += 1
 
     if target_type in {"all", "customer"}:
         for customer in Customer.objects.filter(is_verified=True):

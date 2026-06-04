@@ -75,7 +75,7 @@ DEBUG = _env_bool("DEBUG", default=False)
 def _env_int(name: str, default=None):
     value = os.environ.get(name)
     if value is None:
-        return default
+        return default 
     value = value.strip()
     if not value:
         return default

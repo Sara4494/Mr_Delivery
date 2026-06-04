@@ -5,10 +5,12 @@ WebSocket Utility Functions
 
 import logging
 
-from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from ..models import Driver, Order
+from channels.layers import get_channel_layer
+
+from ..models import Driver, Notification, Order
 from ..serializers import DriverSerializer, OrderSerializer
+from .presence import format_utc_iso8601
 from .customer_app import (
     broadcast_customer_order_changed,
     broadcast_customer_support_changed,
@@ -19,6 +21,59 @@ from ..fcm.service import send_order_chat_push_fallback
 
 
 logger = logging.getLogger(__name__)
+
+SHOP_NOTIFICATION_EXCLUDED_TYPES = {'chat_message', 'chat'}
+SHOP_NOTIFICATION_GROUP_PREFIX = 'shop_notifications'
+SHOP_NOTIFICATION_TYPE_DISPLAY_MAP = {
+    'order_update': {
+        'ar': 'تحديث طلب',
+        'en': 'Order Update',
+    },
+    'driver_join_request': {
+        'ar': 'طلب انضمام',
+        'en': 'Driver Join Request',
+    },
+    'profile_image_review': {
+        'ar': 'مراجعة صورة الملف',
+        'en': 'Profile Image Review',
+    },
+    'shop_images_review': {
+        'ar': 'مراجعة صور المحل',
+        'en': 'Shop Images Review',
+    },
+    'shop_data_review': {
+        'ar': 'مراجعة بيانات المحل',
+        'en': 'Shop Data Review',
+    },
+    'report_decision': {
+        'ar': 'قرار بلاغ',
+        'en': 'Report Decision',
+    },
+    'company_announcement': {
+        'ar': 'إشعار من الشركة',
+        'en': 'Company Announcement',
+    },
+    'system': {
+        'ar': 'إشعار عام',
+        'en': 'System Notification',
+    },
+    'broadcast': {
+        'ar': 'إشعار عام',
+        'en': 'Broadcast Notification',
+    },
+    'order_status': {
+        'ar': 'حالة الطلب',
+        'en': 'Order Status',
+    },
+    'order_assigned': {
+        'ar': 'تعيين طلب',
+        'en': 'Order Assigned',
+    },
+    'order_cancelled': {
+        'ar': 'إلغاء طلب',
+        'en': 'Order Cancelled',
+    },
+}
 
 
 def send_to_group(group_name, message_type, data):
@@ -41,6 +96,18 @@ def send_to_group(group_name, message_type, data):
         )
 
 
+def send_event_to_group(group_name, event_type, payload):
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            group_name,
+            {
+                'type': event_type,
+                **payload,
+            },
+        )
+
+
 def _serialize_order_snapshot(order, request=None, base_url=None):
     context = {}
     if request is not None:
@@ -57,6 +124,118 @@ def _serialize_driver_snapshot(driver, request=None, base_url=None):
     if base_url:
         context['base_url'] = base_url
     return DriverSerializer(driver, context=context).data
+
+
+def _normalize_lang(lang):
+    normalized = str(lang or '').strip().lower()
+    return 'ar' if normalized.startswith('ar') else 'en'
+
+
+def get_shop_notification_type_display(notification_type, lang='ar'):
+    normalized_lang = _normalize_lang(lang)
+    mapping = SHOP_NOTIFICATION_TYPE_DISPLAY_MAP.get(str(notification_type or '').strip())
+    if mapping:
+        return mapping.get(normalized_lang) or mapping.get('en') or mapping.get('ar')
+
+    raw_type = str(notification_type or '').strip().replace('_', ' ')
+    if not raw_type:
+        return ''
+    return raw_type.title()
+
+
+def serialize_shop_notification(notification, *, lang='ar'):
+    data = notification.data if isinstance(notification.data, dict) else {}
+    return {
+        'id': int(notification.id),
+        'notification_type': str(notification.notification_type or '').strip(),
+        'notification_type_display': get_shop_notification_type_display(notification.notification_type, lang=lang),
+        'title': notification.title,
+        'message': notification.message,
+        'data': data or {},
+        'is_read': bool(notification.is_read),
+        'created_at': format_utc_iso8601(notification.created_at),
+    }
+
+
+def get_shop_notifications_queryset(shop_owner):
+    if not shop_owner:
+        return Notification.objects.none()
+    return Notification.objects.filter(
+        shop_owner=shop_owner,
+    ).exclude(notification_type__in=SHOP_NOTIFICATION_EXCLUDED_TYPES)
+
+
+def get_shop_notifications_counts(shop_owner):
+    queryset = get_shop_notifications_queryset(shop_owner)
+    return {
+        'unread_count': queryset.filter(is_read=False).count(),
+        'total_count': queryset.count(),
+    }
+
+
+def get_shop_notifications_snapshot(shop_owner, *, page=1, limit=50, lang='ar'):
+    queryset = get_shop_notifications_queryset(shop_owner).order_by('-created_at', '-id')
+    total_count = queryset.count()
+    unread_count = queryset.filter(is_read=False).count()
+    page = max(int(page or 1), 1)
+    limit = max(min(int(limit or 50), 100), 1)
+    start = (page - 1) * limit
+    end = start + limit
+    notifications = [
+        serialize_shop_notification(notification, lang=lang)
+        for notification in queryset[start:end]
+    ]
+    return {
+        'notifications': notifications,
+        'unread_count': unread_count,
+        'total_count': total_count,
+    }
+
+
+def _shop_notifications_group_name(shop_owner_id):
+    return f'{SHOP_NOTIFICATION_GROUP_PREFIX}_{int(shop_owner_id)}'
+
+
+def broadcast_shop_notification_created(notification, *, lang='ar'):
+    if not notification or notification.notification_type in SHOP_NOTIFICATION_EXCLUDED_TYPES:
+        return
+
+    shop_owner_id = getattr(notification, 'shop_owner_id', None)
+    if not shop_owner_id:
+        return
+
+    counts = get_shop_notifications_counts(notification.shop_owner)
+    send_event_to_group(
+        _shop_notifications_group_name(shop_owner_id),
+        'notification_created',
+        {
+            'notification_id': int(notification.id),
+            'unread_count': counts['unread_count'],
+            'total_count': counts['total_count'],
+        },
+    )
+    send_event_to_group(
+        _shop_notifications_group_name(shop_owner_id),
+        'notifications_counts',
+        counts,
+    )
+
+
+def broadcast_shop_notifications_counts(shop_owner, *, unread_count=None, total_count=None):
+    if not shop_owner:
+        return
+    if unread_count is None or total_count is None:
+        counts = get_shop_notifications_counts(shop_owner)
+    else:
+        counts = {
+            'unread_count': int(unread_count),
+            'total_count': int(total_count),
+        }
+    send_event_to_group(
+        _shop_notifications_group_name(getattr(shop_owner, 'id', shop_owner)),
+        'notifications_counts',
+        counts,
+    )
 
 
 def _build_message_notification_payload(order, chat_type, message_payload, request=None, base_url=None):
