@@ -8376,12 +8376,10 @@ def customer_profile_phone_verify_otp_view(request):
     customer.phone_number = normalized_phone
     customer.save(update_fields=['phone_number', 'updated_at'])
     cache.delete(_customer_phone_change_cache_key(customer.id))
- 
+
     serializer = CustomerAppProfileSerializer(customer, context={'request': request})
     return success_response(
         data={
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
             'customer': serializer.data,
         },
         message=t(request, 'phone_number_updated_successfully_after_otp_verification'),
