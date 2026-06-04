@@ -43,9 +43,6 @@ _load_dotenv(BASE_DIR / ".env")
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-ks(3+a!y^q!)8ui6apqlqk0@a7i7k_!7k2)l1bdmf%n(6ekv0j'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = _env_bool("DEBUG", default=False)
-
 ALLOWED_HOSTS = ['mrdelivery.pythonanywhere.com', '86.48.3.103', 'localhost', '127.0.0.1']
 
 
@@ -72,6 +69,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
+# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _env_bool("DEBUG", default=False)
 
 def _env_int(name: str, default=None):
