@@ -4,6 +4,7 @@ from datetime import timedelta
 from channels.db import database_sync_to_async
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.testing import WebsocketCommunicator
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient

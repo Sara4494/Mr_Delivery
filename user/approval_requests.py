@@ -1,3 +1,7 @@
+import uuid
+from pathlib import Path
+
+from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils import timezone
 
@@ -20,6 +24,67 @@ def _shop_payload(shop_owner, request=None):
         "shop_name": shop_owner.shop_name,
         "profile_image": build_absolute_file_url(getattr(shop_owner, "profile_image", None), request=request),
     }
+
+
+def _is_uploaded_file(value):
+    return hasattr(value, "read") and hasattr(value, "name")
+
+
+def _store_pending_shop_profile_image(uploaded_file):
+    if not uploaded_file:
+        return None
+
+    extension = Path(str(getattr(uploaded_file, "name", ""))).suffix.lower()
+    storage_path = f"approval_requests/shop_profiles/{uuid.uuid4().hex}{extension}"
+    return default_storage.save(storage_path, uploaded_file)
+
+
+def _storage_name_to_public_url(storage_name, request=None):
+    storage_name = str(storage_name or "").strip()
+    if not storage_name:
+        return None
+
+    try:
+        public_url = default_storage.url(storage_name)
+    except Exception:
+        public_url = storage_name
+    return build_absolute_file_url(public_url, request=request)
+
+
+def _extract_pending_shop_profile_image_path(payload):
+    storage_path = str(payload.get("profile_image_path") or "").strip()
+    if storage_path:
+        return storage_path
+
+    profile_image = payload.get("profile_image")
+    if not profile_image:
+        return None
+
+    profile_image = str(profile_image).strip()
+    if not profile_image:
+        return None
+
+    media_url = str(getattr(default_storage, "base_url", "") or "").strip()
+    if profile_image.startswith(media_url):
+        return profile_image[len(media_url):].lstrip("/")
+
+    if profile_image.startswith("/"):
+        return profile_image.lstrip("/")
+
+    return profile_image
+
+
+def _delete_pending_shop_profile_image(approval_request):
+    payload = approval_request.payload or {}
+    storage_path = _extract_pending_shop_profile_image_path(payload)
+    if not storage_path:
+        return
+
+    try:
+        if default_storage.exists(storage_path):
+            default_storage.delete(storage_path)
+    except Exception:
+        pass
 
 
 def _approval_details_text(approval_request, payload):
@@ -58,6 +123,10 @@ def _approval_image_url(approval_request, request=None):
         if approval_request.offer_id:
             return build_absolute_file_url(getattr(approval_request.offer, "image", None), request=request)
         return None
+
+    profile_image_path = _extract_pending_shop_profile_image_path(payload)
+    if profile_image_path:
+        return _storage_name_to_public_url(profile_image_path, request=request)
 
     return payload.get("profile_image") or payload.get("profile_image_url")
 
@@ -154,20 +223,31 @@ def create_image_publish_request(image, request=None):
 
 def create_or_update_shop_edit_request(shop_owner, changes, request=None):
     pending_profile_image = changes.get("profile_image")
-    if pending_profile_image is not None and not hasattr(pending_profile_image, "url"):
-        pending_profile_image = None
+    pending_profile_image_path = None
+    if _is_uploaded_file(pending_profile_image):
+        pending_profile_image_path = _store_pending_shop_profile_image(pending_profile_image)
+        pending_profile_image = pending_profile_image_path
+    elif pending_profile_image is not None and not hasattr(pending_profile_image, "url"):
+        pending_profile_image = str(pending_profile_image).strip() or None
 
     current_values, requested_changes = _build_shop_edit_requested_changes(shop_owner, changes, request=request)
+
+    pending_profile_image_url = None
+    if pending_profile_image_path:
+        pending_profile_image_url = _storage_name_to_public_url(pending_profile_image_path, request=request)
+    elif pending_profile_image:
+        pending_profile_image_url = build_absolute_file_url(pending_profile_image, request=request)
 
     payload = {
         "owner_name": str(changes.get("owner_name") or shop_owner.owner_name or "").strip(),
         "shop_name": str(changes.get("shop_name") or shop_owner.shop_name or "").strip(),
         "phone_number": str(changes.get("phone_number") or shop_owner.phone_number or "").strip(),
         "description": str(changes.get("description") or shop_owner.description or "").strip(),
-        "profile_image": build_absolute_file_url(
-            pending_profile_image or getattr(shop_owner, "profile_image", None),
+        "profile_image": pending_profile_image_url or build_absolute_file_url(
+            getattr(shop_owner, "profile_image", None),
             request=request,
         ),
+        "profile_image_path": pending_profile_image_path,
         "current_values": current_values,
         "requested_changes": requested_changes,
         "changed_fields": sorted([
@@ -295,6 +375,10 @@ def review_approval_request(approval_request, admin_user, action, rejection_reas
                 if field in payload:
                     setattr(shop_owner, field, payload.get(field) or None)
                     update_fields.append(field)
+            pending_profile_image_path = _extract_pending_shop_profile_image_path(payload)
+            if pending_profile_image_path:
+                shop_owner.profile_image = pending_profile_image_path
+                update_fields.append("profile_image")
             if update_fields:
                 shop_owner.save(update_fields=update_fields)
         elif approval_request.request_type == "offer" and approval_request.offer_id:
@@ -310,4 +394,8 @@ def review_approval_request(approval_request, admin_user, action, rejection_reas
     approval_request.reviewed_by = admin_user
     approval_request.reviewed_at = timezone.now()
     approval_request.save(update_fields=["status", "rejection_reason", "reviewed_by", "reviewed_at", "updated_at"])
+
+    if action != "approve" and approval_request.request_type == "shop_edit":
+        _delete_pending_shop_profile_image(approval_request)
+
     return True
