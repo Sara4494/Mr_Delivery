@@ -1174,7 +1174,8 @@
             const payload = await response.json().catch(() => ({}));
 
             if (!response.ok) {
-                throw new Error(payload.message || 'تعذر تنفيذ الطلب');
+                const errorText = payload?.message || payload?.detail || payload?.errors?.non_field_errors?.[0] || payload?.errors?.detail?.[0] || payload?.errors?.phone_number?.[0] || payload?.errors?.email?.[0] || payload?.errors?.shop_number?.[0] || payload?.errors?.password?.[0] || 'تعذر تنفيذ الطلب';
+                throw new Error(errorText);
             }
             return payload;
         }

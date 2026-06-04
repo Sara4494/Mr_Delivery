@@ -3375,6 +3375,41 @@ def _extract_auth_error_metadata(errors):
 
 
 def _login_validation_error_response(request, *, errors, default_status):
+    def _extract_first_error_message(value):
+        if isinstance(value, dict):
+            for key in ("detail", "non_field_errors", "phone_number", "email", "shop_number", "password"):
+                if key not in value:
+                    continue
+                message = _extract_first_error_message(value.get(key))
+                if message:
+                    return message
+            for key, item in value.items():
+                if key == "code":
+                    continue
+                message = _extract_first_error_message(item)
+                if message:
+                    return message
+            return None
+        if isinstance(value, list):
+            for item in value:
+                message = _extract_first_error_message(item)
+                if message:
+                    return message
+            return None
+        if value is None:
+            return None
+        message = str(value).strip()
+        return message or None
+
+    def _extract_auth_error_metadata(errors):
+        if not isinstance(errors, dict):
+            return None, _extract_first_error_message(errors)
+
+        code_value = errors.get('code')
+        if isinstance(code_value, list):
+            code_value = code_value[0] if code_value else None
+        return code_value, _extract_first_error_message(errors)
+
     code, detail_message = _extract_auth_error_metadata(errors)
     return error_response(
         message=detail_message or t(request, 'login_failed'),

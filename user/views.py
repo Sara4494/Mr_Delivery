@@ -105,17 +105,42 @@ def _build_suspended_account_message(reason=None):
     return f"{base_message} برجاء التواصل مع الدعم الفني."
 
 
+def _extract_first_error_message(errors):
+    if isinstance(errors, dict):
+        for key in ("detail", "non_field_errors", "phone_number", "email", "shop_number", "password"):
+            if key not in errors:
+                continue
+            message = _extract_first_error_message(errors.get(key))
+            if message:
+                return message
+        for key, value in errors.items():
+            if key == "code":
+                continue
+            message = _extract_first_error_message(value)
+            if message:
+                return message
+        return None
+    if isinstance(errors, list):
+        for item in errors:
+            message = _extract_first_error_message(item)
+            if message:
+                return message
+        return None
+    if errors is None:
+        return None
+    message = str(errors).strip()
+    return message or None
+
+
 def _extract_auth_error_metadata(errors):
     if not isinstance(errors, dict):
-        return None, None
+        return None, _extract_first_error_message(errors)
 
     code_value = errors.get("code")
-    detail_value = errors.get("detail")
+    detail_value = _extract_first_error_message(errors)
 
     if isinstance(code_value, list):
         code_value = code_value[0] if code_value else None
-    if isinstance(detail_value, list):
-        detail_value = detail_value[0] if detail_value else None
 
     return code_value, detail_value
 

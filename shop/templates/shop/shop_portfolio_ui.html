@@ -249,7 +249,10 @@
         }
         const res = await fetch(url, opts);
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.message || 'تعذّر تنفيذ الطلب');
+        if (!res.ok) {
+            const errorText = data?.message || data?.detail || data?.errors?.non_field_errors?.[0] || data?.errors?.detail?.[0] || data?.errors?.phone_number?.[0] || data?.errors?.email?.[0] || data?.errors?.shop_number?.[0] || data?.errors?.password?.[0] || 'تعذّر تنفيذ الطلب';
+            throw new Error(errorText);
+        }
         return data;
     }
 
@@ -350,7 +353,10 @@
                 body: JSON.stringify({shop_number, password})
             }).then(async r => {
                 const j = await r.json().catch(() => ({}));
-                if (!r.ok) throw new Error(j.message || 'تعذّر تسجيل الدخول');
+                if (!r.ok) {
+                    const errorText = j?.message || j?.detail || j?.errors?.non_field_errors?.[0] || j?.errors?.detail?.[0] || j?.errors?.phone_number?.[0] || j?.errors?.email?.[0] || j?.errors?.shop_number?.[0] || j?.errors?.password?.[0] || 'تعذّر تسجيل الدخول';
+                    throw new Error(errorText);
+                }
                 return j;
             });
             state.access = data.data?.access || data.access || '';

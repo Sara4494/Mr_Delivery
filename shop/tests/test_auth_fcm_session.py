@@ -111,6 +111,22 @@ class AuthFCMSessionTests(TestCase):
         self.assertTrue(FCMDeviceToken.objects.filter(pk=other_token.pk).exists())
         self.assertEqual(response.data['data']['deactivated_tokens'], 1)
 
+    def test_customer_login_invalid_password_returns_clear_message(self):
+        request = self.factory.post(
+            '/api/customer/login/',
+            {
+                'phone_number': self.customer.phone_number,
+                'password': 'wrong-password',
+            },
+            format='json',
+        )
+
+        response = customer_login_view(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('كلمة المرور', response.data['message'])
+
+
     @patch('shop.fcm.service.send_push_to_token_record', return_value={'success': True, 'invalid_token': False})
     def test_driver_login_replaces_old_fcm_tokens_and_registers_new_device(self, mock_send_push):
         old_token = FCMDeviceToken.objects.create(
@@ -181,3 +197,18 @@ class AuthFCMSessionTests(TestCase):
         self.assertFalse(FCMDeviceToken.objects.filter(pk=current_token.pk).exists())
         self.assertTrue(FCMDeviceToken.objects.filter(pk=other_token.pk).exists())
         self.assertEqual(response.data['data']['deactivated_tokens'], 1)
+
+    def test_driver_login_invalid_password_returns_clear_message(self):
+        request = self.factory.post(
+            '/api/driver/login/',
+            {
+                'phone_number': self.driver.phone_number,
+                'password': 'wrong-password',
+            },
+            format='json',
+        )
+
+        response = driver_login_view(request)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn('كلمة المرور', response.data['message'])

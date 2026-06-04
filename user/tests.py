@@ -844,6 +844,34 @@ class LoginOptionalTrailingSlashTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("access", response.data["data"])
 
+    def test_admin_desktop_invalid_password_returns_clear_message(self):
+        response = self.client.post(
+            "/api/admin-desktop/auth/login",
+            {
+                "phone_number": self.admin_user.phone_number,
+                "password": "wrong-password",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("كلمة المرور", response.data["message"])
+        self.assertIn("non_field_errors", response.data["errors"])
+
+    def test_shop_owner_invalid_password_returns_clear_message(self):
+        response = self.client.post(
+            "/api/auth/login",
+            {
+                "role": "shop_owner",
+                "shop_number": self.shop_owner.shop_number,
+                "password": "wrong-password",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("كلمة المرور", response.data["message"])
+
     def test_admin_desktop_old_access_token_is_rejected_after_second_login(self):
         first_login = self.client.post(
             "/api/admin-desktop/auth/login",
