@@ -1,4 +1,6 @@
 from rest_framework import status
+from datetime import date, datetime, timezone as dt_timezone
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
@@ -7,6 +9,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.db.models import Q, Count, Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from .models import GalleryImage, WorkSchedule, ImageLike
 from .serializers import (
     GalleryImageSerializer,
@@ -170,6 +173,25 @@ def _build_viewer_profile_payload(request, shop_owner):
     return None
 
 
+def _normalize_realtime_payload(value):
+    if isinstance(value, datetime):
+        normalized = value
+        if timezone.is_naive(normalized):
+            normalized = timezone.make_aware(normalized, dt_timezone.utc)
+        return normalized.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z')
+
+    if isinstance(value, date):
+        return value.isoformat()
+
+    if isinstance(value, dict):
+        return {key: _normalize_realtime_payload(item) for key, item in value.items()}
+
+    if isinstance(value, (list, tuple)):
+        return [_normalize_realtime_payload(item) for item in value]
+
+    return value
+
+
 def build_shop_portfolio_snapshot(shop_owner, request=None, viewer_user=None):
     schedule, _ = WorkSchedule.objects.get_or_create(shop_owner=shop_owner)
     profile_serializer = ShopProfileSerializer(shop_owner, context={'request': request})
@@ -239,10 +261,12 @@ def broadcast_shop_portfolio_snapshot(shop_owner, request=None, viewer_user=None
     if not channel_layer:
         return
 
-    payload = build_shop_portfolio_snapshot(
-        shop_owner,
-        request=request,
-        viewer_user=viewer_user,
+    payload = _normalize_realtime_payload(
+        build_shop_portfolio_snapshot(
+            shop_owner,
+            request=request,
+            viewer_user=viewer_user,
+        )
     )
     async_to_sync(channel_layer.group_send)(
         f'shop_orders_{shop_owner.id}',
