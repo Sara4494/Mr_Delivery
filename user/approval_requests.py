@@ -62,6 +62,13 @@ def _approval_image_url(approval_request, request=None):
     return payload.get("profile_image") or payload.get("profile_image_url")
 
 
+def _shop_image_url_for_request(approval_request, request=None):
+    if approval_request.request_type == "shop_edit":
+        return _approval_image_url(approval_request, request=request)
+
+    return build_absolute_file_url(getattr(approval_request.shop_owner, "profile_image", None), request=request)
+
+
 def _get_shop_edit_field_values(shop_owner, changes):
     return {
         "owner_name": str(getattr(shop_owner, "owner_name", "") or "").strip(),
@@ -224,7 +231,7 @@ def serialize_admin_approval_request(approval_request, request=None):
     return {
         "id": approval_request.id,
         "shop_name": approval_request.shop_owner.shop_name,
-        "shop_image_url": build_absolute_file_url(getattr(approval_request.shop_owner, "profile_image", None), request=request),
+        "shop_image_url": _shop_image_url_for_request(approval_request, request=request),
         "request_type": approval_request.request_type,
         "request_type_display": approval_request.get_request_type_display(),
         "details": _approval_details_text(approval_request, payload),
@@ -249,7 +256,7 @@ def serialize_admin_approval_request_detail(approval_request, request=None):
     return {
         "id": approval_request.id,
         "shop_name": approval_request.shop_owner.shop_name,
-        "shop_image_url": build_absolute_file_url(getattr(approval_request.shop_owner, "profile_image", None), request=request),
+        "shop_image_url": _shop_image_url_for_request(approval_request, request=request),
         "request_type": approval_request.request_type,
         "request_type_display": approval_request.get_request_type_display(),
         "request_date": approval_request.created_at.date().isoformat() if approval_request.created_at else None,
