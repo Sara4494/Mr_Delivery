@@ -71,7 +71,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
-
+DEBUG = _env_bool("DEBUG", default=False)
 
 def _env_int(name: str, default=None):
     value = os.environ.get(name)
