@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Broadcast Tester</title>
+  <style>
+    :root {
+      --bg-1: #0b1020;
+      --bg-2: #121a33;
+      --panel: rgba(10, 16, 32, 0.84);
+      --panel-2: rgba(16, 24, 44, 0.76);
+      --border: rgba(148, 163, 184, 0.18);
+      --text: #ecf3ff;
+      --muted: #9fb0cb;
+      --accent: #38bdf8;
+      --accent-2: #34d399;
+      --danger: #fb7185;
+      --warning: #f59e0b;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      color-scheme: dark;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(56, 189, 248, 0.17), transparent 28%),
+        radial-gradient(circle at bottom left, rgba(52, 211, 153, 0.15), transparent 26%),
+        linear-gradient(160deg, var(--bg-1), var(--bg-2));
+      padding: 24px;
+    }
+
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.02fr 0.98fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .hero,
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+    }
+
+    .hero {
+      padding: 28px;
+      position: sticky;
+      top: 24px;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: auto -90px -90px auto;
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.16), transparent 70%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      color: #d8f4ff;
+      font-size: 13px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(32px, 4vw, 54px);
+      line-height: 1.06;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.9;
+      font-size: 15px;
+      max-width: 65ch;
+    }
+
+    .hint-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .hint {
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: var(--panel-2);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .hint strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+      color: #e9f2ff;
+    }
+
+    .hint span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+      word-break: break-word;
+    }
+
+    .card {
+      padding: 24px;
+    }
+
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .title-block h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+      margin-top: 6px;
+    }
+
+    .badge {
+      font-size: 12px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(245, 158, 11, 0.14);
+      color: #fde68a;
+      border: 1px solid rgba(245, 158, 11, 0.24);
+      white-space: nowrap;
+    }
+
+    .row {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 8px;
+      color: #d9e7fb;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      background: rgba(7, 12, 26, 0.76);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 13px 14px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s, transform .2s;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: rgba(56, 189, 248, 0.9);
+      box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12);
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+      line-height: 1.75;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 13px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .18s, opacity .18s, box-shadow .18s;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: .65;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-primary {
+      color: #06131a;
+      background: linear-gradient(135deg, #67e8f9, #34d399);
+      box-shadow: 0 12px 28px rgba(52, 211, 153, 0.2);
+    }
+
+    .btn-secondary {
+      color: var(--text);
+      background: rgba(148, 163, 184, 0.14);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+    }
+
+    .status {
+      padding: 12px 14px;
+      border-radius: 14px;
+      margin-top: 18px;
+      font-size: 14px;
+      line-height: 1.7;
+      border: 1px solid transparent;
+      white-space: pre-wrap;
+    }
+
+    .status.info {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: rgba(56, 189, 248, 0.28);
+      color: #d8f4ff;
+    }
+
+    .status.success {
+      background: rgba(52, 211, 153, 0.12);
+      border-color: rgba(52, 211, 153, 0.28);
+      color: #dcfce7;
+    }
+
+    .status.error {
+      background: rgba(251, 113, 133, 0.12);
+      border-color: rgba(251, 113, 133, 0.28);
+      color: #ffe4e6;
+    }
+
+    .preview {
+      margin-top: 16px;
+    }
+
+    .preview-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .preview-head strong {
+      font-size: 14px;
+    }
+
+    pre {
+      margin: 0;
+      overflow: auto;
+      background: rgba(2, 6, 23, 0.72);
+      border-radius: 18px;
+      padding: 18px;
+      min-height: 240px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      color: #dbeafe;
+      font-size: 13px;
+      line-height: 1.7;
+      direction: ltr;
+      text-align: left;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .url-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .url-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(7, 12, 26, 0.5);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .url-row .label {
+      color: #d9e7fb;
+      font-size: 13px;
+      font-weight: 700;
+      min-width: 92px;
+    }
+
+    .url-row .value {
+      color: #a9c6eb;
+      font-size: 13px;
+      direction: ltr;
+      text-align: left;
+      word-break: break-word;
+      flex: 1;
+    }
+
+    .copy-btn {
+      padding: 9px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      color: #d8f4ff;
+      flex: 0 0 auto;
+    }
+
+    .inline-link {
+      color: #8be1ff;
+      text-decoration: none;
+    }
+
+    .inline-link:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 980px) {
+      .wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        position: static;
+      }
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 14px;
+      }
+
+      .card,
+      .hero {
+        border-radius: 20px;
+      }
+
+      .grid-2,
+      .hint-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .actions {
+        flex-direction: column;
+      }
+
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">Admin Broadcast Tester</div>
+      <h1>صفحة إرسال Broadcast للإدارة</h1>
+      <p class="lead">
+        الصفحة دي بتبعت طلب <code>POST</code> مباشر إلى
+        <code>/api/admin/notifications/broadcast/</code>.
+        تقدر تغيّر الـ endpoint أو الـ base URL لو فاتح الملف من <code>file://</code> أو على جهاز مختلف،
+        وتراقب الـ response فورًا بصيغة JSON أو نص خام.
+      </p>
+
+      <div class="hint-grid">
+        <div class="hint">
+          <strong>Endpoint</strong>
+          <span>/api/admin/notifications/broadcast/</span>
+        </div>
+        <div class="hint">
+          <strong>Method</strong>
+          <span>POST مع <code>Content-Type: application/json</code></span>
+        </div>
+        <div class="hint">
+          <strong>Body fields</strong>
+          <span><code>target_type</code>, <code>title</code>, <code>message</code>, <code>data</code></span>
+        </div>
+        <div class="hint">
+          <strong>Target types</strong>
+          <span>all, shop, customer, driver</span>
+        </div>
+      </div>
+
+      <div class="url-grid">
+        <div class="url-row">
+          <div class="label">Page URL</div>
+          <div class="value" id="pageUrlValue"></div>
+          <button type="button" class="copy-btn" id="copyPageUrlBtn">نسخ</button>
+        </div>
+        <div class="url-row">
+          <div class="label">API URL</div>
+          <div class="value" id="apiUrlValue"></div>
+          <button type="button" class="copy-btn" id="copyApiUrlBtn">نسخ</button>
+        </div>
+      </div>
+
+      <p class="note">
+        لو فتحت الصفحة من ملف محلي، حط Base URL كامل زي
+        <code>http://127.0.0.1:8000</code> أو دومين السيرفر، ثم اضغط إرسال.
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="topline">
+        <div class="title-block">
+          <h2>إرسال Notification</h2>
+          <div class="small">النتيجة هتظهر تحت في صندوق الـ response.</div>
+        </div>
+        <div class="badge" id="connectionBadge">جاهز</div>
+      </div>
+
+      <form id="broadcastForm" class="row">
+        <div class="grid-2">
+          <div class="field">
+            <label for="baseUrl">Base URL</label>
+            <input id="baseUrl" type="text" placeholder="مثال: http://127.0.0.1:8000" />
+          </div>
+
+          <div class="field">
+            <label for="endpoint">Endpoint</label>
+            <input id="endpoint" type="text" value="/api/admin/notifications/broadcast/" />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="target_type">Target Type</label>
+            <select id="target_type">
+              <option value="all" selected>all - الكل</option>
+              <option value="shop">shop - المتاجر</option>
+              <option value="shop_owner">shop_owner - أصحاب المتاجر</option>
+              <option value="customer">customer - العملاء</option>
+              <option value="driver">driver - السائقين</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="title">Title</label>
+            <input id="title" type="text" placeholder="مثال: تحديث مهم" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="message">Message</label>
+          <textarea id="message" placeholder="اكتب نص الإشعار هنا"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="data">Extra Data (JSON)</label>
+          <textarea id="data" placeholder='{"screen":"notifications","priority":"high"}'>{}</textarea>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="btn-primary" id="sendBtn">إرسال</button>
+          <button type="button" class="btn-secondary" id="fillSampleBtn">تعبئة مثال</button>
+          <button type="button" class="btn-secondary" id="clearBtn">مسح</button>
+        </div>
+
+        <div id="statusBox" class="status info">جاهز للإرسال.</div>
+
+        <div class="preview">
+          <div class="preview-head">
+            <strong>Response</strong>
+            <span class="small" id="requestUrlLabel"></span>
+          </div>
+          <pre id="responseBox">{}</pre>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    const STORAGE_KEYS = {
+      baseUrl: 'adminBroadcastBaseUrl',
+      endpoint: 'adminBroadcastEndpoint',
+      targetType: 'adminBroadcastTargetType',
+      title: 'adminBroadcastTitle',
+      message: 'adminBroadcastMessage',
+      data: 'adminBroadcastData',
+    };
+
+    const form = document.getElementById('broadcastForm');
+    const baseUrlInput = document.getElementById('baseUrl');
+    const endpointInput = document.getElementById('endpoint');
+    const targetTypeInput = document.getElementById('target_type');
+    const titleInput = document.getElementById('title');
+    const messageInput = document.getElementById('message');
+    const dataInput = document.getElementById('data');
+    const sendBtn = document.getElementById('sendBtn');
+    const fillSampleBtn = document.getElementById('fillSampleBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const statusBox = document.getElementById('statusBox');
+    const responseBox = document.getElementById('responseBox');
+    const connectionBadge = document.getElementById('connectionBadge');
+    const requestUrlLabel = document.getElementById('requestUrlLabel');
+    const pageUrlValue = document.getElementById('pageUrlValue');
+    const apiUrlValue = document.getElementById('apiUrlValue');
+    const copyPageUrlBtn = document.getElementById('copyPageUrlBtn');
+    const copyApiUrlBtn = document.getElementById('copyApiUrlBtn');
+
+    function setStatus(type, text) {
+      statusBox.className = `status ${type}`;
+      statusBox.textContent = text;
+    }
+
+    function prettyPrint(value) {
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch (error) {
+        return String(value);
+      }
+    }
+
+    function parseJsonInput(value) {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) return {};
+      return JSON.parse(trimmed);
+    }
+
+    function readStorage(key, fallback = '') {
+      try {
+        return localStorage.getItem(key) ?? fallback;
+      } catch (error) {
+        return fallback;
+      }
+    }
+
+    function writeStorage(key, value) {
+      try {
+        localStorage.setItem(key, value);
+      } catch (error) {
+        // Storage can be blocked in some browsers or file:// contexts.
+      }
+    }
+
+    function normalizedBaseUrl(rawValue) {
+      const value = String(rawValue || '').trim().replace(/\/+$/, '');
+      if (value) return value;
+      if (window.location.origin && window.location.origin !== 'null') {
+        return window.location.origin.replace(/\/+$/, '');
+      }
+      return '';
+    }
+
+    function buildRequestUrl() {
+      const endpoint = String(endpointInput.value || '').trim();
+      const baseUrl = normalizedBaseUrl(baseUrlInput.value);
+
+      if (!endpoint) {
+        throw new Error('الـ endpoint فارغ.');
+      }
+
+      if (/^https?:\/\//i.test(endpoint)) {
+        return endpoint;
+      }
+
+      if (!baseUrl) {
+        throw new Error('حط Base URL كامل لأن الصفحة متفتحة من ملف محلي.');
+      }
+
+      if (!endpoint.startsWith('/')) {
+        return `${baseUrl}/${endpoint}`;
+      }
+
+      return `${baseUrl}${endpoint}`;
+    }
+
+    function fillSample() {
+      targetTypeInput.value = 'all';
+      titleInput.value = 'تحديث مهم';
+      messageInput.value = 'هذا إشعار تجريبي لإختبار الـ broadcast من صفحة HTML.';
+      dataInput.value = JSON.stringify({
+        screen: 'home',
+        route: '/notifications',
+        priority: 'high',
+      }, null, 2);
+      setStatus('info', 'تمت تعبئة مثال جاهز.');
+      persistForm();
+      renderRequestPreview();
+    }
+
+    function clearForm() {
+      targetTypeInput.value = 'all';
+      titleInput.value = '';
+      messageInput.value = '';
+      dataInput.value = '{}';
+      responseBox.textContent = '{}';
+      setStatus('info', 'تم مسح الحقول.');
+      persistForm();
+      renderRequestPreview();
+    }
+
+    function persistForm() {
+      writeStorage(STORAGE_KEYS.baseUrl, baseUrlInput.value.trim());
+      writeStorage(STORAGE_KEYS.endpoint, endpointInput.value.trim());
+      writeStorage(STORAGE_KEYS.targetType, targetTypeInput.value);
+      writeStorage(STORAGE_KEYS.title, titleInput.value);
+      writeStorage(STORAGE_KEYS.message, messageInput.value);
+      writeStorage(STORAGE_KEYS.data, dataInput.value);
+    }
+
+    function restoreForm() {
+      const savedBaseUrl = readStorage(STORAGE_KEYS.baseUrl);
+      const savedEndpoint = readStorage(STORAGE_KEYS.endpoint, '/api/admin/notifications/broadcast/');
+      const savedTargetType = readStorage(STORAGE_KEYS.targetType, 'all');
+      const savedTitle = readStorage(STORAGE_KEYS.title, '');
+      const savedMessage = readStorage(STORAGE_KEYS.message, '');
+      const savedData = readStorage(STORAGE_KEYS.data, '{}');
+
+      baseUrlInput.value = savedBaseUrl;
+      endpointInput.value = savedEndpoint || '/api/admin/notifications/broadcast/';
+      targetTypeInput.value = savedTargetType || 'all';
+      titleInput.value = savedTitle;
+      messageInput.value = savedMessage;
+      dataInput.value = savedData || '{}';
+    }
+
+    function renderRequestPreview() {
+      try {
+        const requestUrl = buildRequestUrl();
+        requestUrlLabel.textContent = requestUrl;
+        apiUrlValue.textContent = requestUrl;
+      } catch (error) {
+        requestUrlLabel.textContent = error.message;
+        apiUrlValue.textContent = error.message;
+      }
+      pageUrlValue.textContent = window.location.href;
+    }
+
+    async function copyText(value) {
+      const text = String(value || '').trim();
+      if (!text) return false;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+
+      const temp = document.createElement('textarea');
+      temp.value = text;
+      temp.setAttribute('readonly', 'true');
+      temp.style.position = 'fixed';
+      temp.style.opacity = '0';
+      document.body.appendChild(temp);
+      temp.select();
+      const copied = document.execCommand('copy');
+      document.body.removeChild(temp);
+      return copied;
+    }
+
+    async function handleSubmit(event) {
+      event.preventDefault();
+
+      const endpoint = endpointInput.value.trim();
+      const target_type = targetTypeInput.value.trim();
+      const title = titleInput.value.trim();
+      const message = messageInput.value.trim();
+
+      let extraData;
+      try {
+        extraData = parseJsonInput(dataInput.value);
+      } catch (error) {
+        connectionBadge.textContent = 'خطأ JSON';
+        setStatus('error', 'JSON في خانة البيانات الإضافية غير صالح.');
+        responseBox.textContent = prettyPrint({ error: 'Invalid JSON in data field' });
+        return;
+      }
+
+      if (!endpoint) {
+        setStatus('error', 'الـ endpoint فارغ.');
+        return;
+      }
+
+      if (!title || !message) {
+        setStatus('error', 'العنوان والرسالة مطلوبان.');
+        return;
+      }
+
+      let requestUrl;
+      try {
+        requestUrl = buildRequestUrl();
+      } catch (error) {
+        setStatus('error', error.message);
+        responseBox.textContent = prettyPrint({ error: error.message });
+        return;
+      }
+
+      sendBtn.disabled = true;
+      connectionBadge.textContent = 'جارٍ الإرسال...';
+      setStatus('info', 'جارٍ إرسال الطلب...');
+      requestUrlLabel.textContent = requestUrl;
+
+      const payload = {
+        target_type,
+        title,
+        message,
+        data: extraData,
+      };
+
+      persistForm();
+
+      try {
+        const response = await fetch(requestUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        let data;
+
+        if (contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          data = await response.text();
+        }
+
+        responseBox.textContent = typeof data === 'string' ? data : prettyPrint(data);
+
+        if (response.ok) {
+          connectionBadge.textContent = 'تم الإرسال';
+          setStatus('success', `تم الإرسال بنجاح. Status: ${response.status}`);
+        } else {
+          connectionBadge.textContent = 'فشل';
+          setStatus('error', `فشل الطلب. Status: ${response.status}`);
+        }
+      } catch (error) {
+        connectionBadge.textContent = 'خطأ';
+        setStatus('error', `حدث خطأ أثناء الإرسال: ${error.message}`);
+        responseBox.textContent = prettyPrint({ error: error.message });
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    baseUrlInput.addEventListener('input', () => {
+      persistForm();
+      renderRequestPreview();
+    });
+
+    endpointInput.addEventListener('input', () => {
+      persistForm();
+      renderRequestPreview();
+    });
+
+    targetTypeInput.addEventListener('change', persistForm);
+    titleInput.addEventListener('input', persistForm);
+    messageInput.addEventListener('input', persistForm);
+    dataInput.addEventListener('input', persistForm);
+
+    fillSampleBtn.addEventListener('click', fillSample);
+    clearBtn.addEventListener('click', clearForm);
+    form.addEventListener('submit', handleSubmit);
+    copyPageUrlBtn.addEventListener('click', async () => {
+      try {
+        await copyText(window.location.href);
+        setStatus('success', 'تم نسخ رابط الصفحة.');
+      } catch (error) {
+        setStatus('error', `تعذر نسخ رابط الصفحة: ${error.message}`);
+      }
+    });
+    copyApiUrlBtn.addEventListener('click', async () => {
+      try {
+        const requestUrl = buildRequestUrl();
+        await copyText(requestUrl);
+        setStatus('success', 'تم نسخ رابط الـ API.');
+      } catch (error) {
+        setStatus('error', error.message);
+      }
+    });
+
+    restoreForm();
+    renderRequestPreview();
+    if (!titleInput.value && !messageInput.value && dataInput.value === '{}') {
+      setStatus('info', 'جاهز للإرسال. استخدم "تعبئة مثال" لو تحب بيانات جاهزة.');
+    }
+  </script>
+</body>
+</html>
