@@ -53,7 +53,7 @@ urlpatterns = [
         TemplateView.as_view(template_name='shop/driver_terms.html'),
         name='driver_terms',
     ),
-    path('admin-broadcast-test/', user_views.admin_broadcast_test_page_view, name='admin_broadcast_test_page'),
+    path('admin-broadcast/', user_views.admin_broadcast_test_page_view, name='admin_broadcast_test_page'),
     path('api/', include('admin_desktop_app.urls')),
     path('api/', include('shop_app.urls')),
     path('api/', include('driver_app.urls')),
