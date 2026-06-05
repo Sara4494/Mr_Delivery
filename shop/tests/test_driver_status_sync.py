@@ -17,6 +17,7 @@ from shop.views import (
     driver_available_orders_view,
     driver_dashboard_view,
     driver_orders_view,
+    driver_status_view,
 )
 from shop.driver_realtime import (
     build_driver_order_payload,
@@ -450,8 +451,29 @@ class DriverDashboardStatusCountsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data['data']['driver']['is_online'])
+        self.assertFalse(response.data['data']['availability']['presence_online'])
         self.assertFalse(response.data['data']['availability']['is_online'])
         self.assertFalse(response.data['data']['availability']['can_receive_orders'])
+
+    def test_driver_status_endpoint_reports_presence_as_receiving_state(self):
+        self.driver.is_online = True
+        self.driver.availability_enabled = False
+        self.driver.status = 'unavailable'
+        self.driver.save(update_fields=['is_online', 'availability_enabled', 'status', 'updated_at'])
+
+        request = self.factory.patch(
+            '/api/driver/status/',
+            {'can_receive_orders': False},
+            format='json',
+        )
+        force_authenticate(request, user=self.driver)
+
+        response = driver_status_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['data']['presence_online'])
+        self.assertFalse(response.data['data']['is_online'])
+        self.assertFalse(response.data['data']['can_receive_orders'])
 
     def test_available_orders_endpoint_returns_unassigned_orders(self):
         Order.objects.create(
