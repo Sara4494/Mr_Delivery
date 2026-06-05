@@ -2093,8 +2093,13 @@ def staff_view(request):
             )
             if status_filter:
                 driver_queryset = driver_queryset.filter(status=status_filter)
+            driver_queryset = list(driver_queryset)
             if online_only:
-                driver_queryset = driver_queryset.filter(is_online=True)
+                driver_queryset = [
+                    driver
+                    for driver in driver_queryset
+                    if bool(getattr(driver, 'get_presence_online', lambda: bool(getattr(driver, 'is_online', False)))())
+                ]
             for driver in driver_queryset:
                 staff_items.append((driver.updated_at, _serialize_staff_member(driver, STAFF_TYPE_DRIVER, request)))
 

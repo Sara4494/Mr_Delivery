@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -295,6 +296,63 @@ class Driver(models.Model):
     def __str__(self):
         return f"{self.name} - {self.get_status_display()}"
 
+    def get_presence_timeout_seconds(self):
+        raw_value = getattr(settings, 'DRIVER_PRESENCE_TIMEOUT_SECONDS', 75)
+        try:
+            timeout_seconds = int(raw_value)
+        except (TypeError, ValueError):
+            timeout_seconds = 75
+        return max(timeout_seconds, 15)
+
+    def get_presence_connection_count(self, *, timeout_seconds=None, cleanup_stale=True):
+        if not self.pk:
+            return 0
+
+        connections = getattr(self, 'presence_connections', None)
+        if connections is None or not hasattr(connections, 'filter'):
+            return int(bool(self.is_online))
+
+        if timeout_seconds is None:
+            timeout_seconds = self.get_presence_timeout_seconds()
+        else:
+            try:
+                timeout_seconds = int(timeout_seconds)
+            except (TypeError, ValueError):
+                timeout_seconds = self.get_presence_timeout_seconds()
+        timeout_seconds = max(timeout_seconds, 15)
+
+        if cleanup_stale:
+            stale_cutoff = timezone.now() - timedelta(seconds=timeout_seconds)
+            connections.filter(last_heartbeat_at__lt=stale_cutoff).delete()
+
+        return connections.count()
+
+    def get_presence_online(self, *, timeout_seconds=None, cleanup_stale=True):
+        return self.get_presence_connection_count(
+            timeout_seconds=timeout_seconds,
+            cleanup_stale=cleanup_stale,
+        ) > 0
+
+    def sync_presence_state(self, *, timeout_seconds=None):
+        presence_online = self.get_presence_online(timeout_seconds=timeout_seconds, cleanup_stale=True)
+        if bool(self.is_online) != presence_online:
+            now = timezone.now()
+            update_fields = ['is_online']
+            self.is_online = presence_online
+
+            if presence_online:
+                if self.last_seen_at is None:
+                    self.last_seen_at = now
+                    update_fields.append('last_seen_at')
+            else:
+                self.last_seen_at = now
+                update_fields.append('last_seen_at')
+
+            update_fields.append('updated_at')
+            self.save(update_fields=update_fields)
+
+        return presence_online
+
     @property
     def shop_owner(self):
         """للتوافق مع لوحة التحكم (Admin): إرجاع أول متجر مرتبط"""
@@ -335,7 +393,7 @@ class Driver(models.Model):
             moderation = None
 
         is_suspended = bool(getattr(moderation, 'is_suspended', False))
-        presence_online = bool(self.is_online)
+        presence_online = self.sync_presence_state()
         availability_enabled = bool(getattr(self, 'availability_enabled', False))
 
         reason = None

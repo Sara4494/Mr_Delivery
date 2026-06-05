@@ -26,6 +26,16 @@ from rest_framework_simplejwt.tokens import RefreshToken
 OFFLINE_DRIVER_ASSIGNMENT_MESSAGE = 'لا يمكن إسناد الطلب، هذا السائق غير متصل حالياً.'
 
 
+def _driver_live_presence_online(driver):
+    getter = getattr(driver, 'get_presence_online', None)
+    if callable(getter):
+        try:
+            return bool(getter())
+        except Exception:
+            pass
+    return bool(getattr(driver, 'is_online', False))
+
+
 class ShopCategorySerializer(serializers.ModelSerializer):
     """Serializer for shop categories."""
 
@@ -460,7 +470,7 @@ class DriverSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return bool(obj.is_online)
+        return _driver_live_presence_online(obj)
 
 
 class DriverCreateSerializer(serializers.ModelSerializer):
@@ -531,7 +541,7 @@ class DriverAppSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return bool(obj.is_online)
+        return _driver_live_presence_online(obj)
 
 
 class DriverProfileResponseSerializer(serializers.ModelSerializer):
@@ -563,7 +573,7 @@ class DriverProfileResponseSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return bool(obj.is_online)
+        return _driver_live_presence_online(obj)
 
 
 class DriverProfileSerializer(DriverProfileResponseSerializer):

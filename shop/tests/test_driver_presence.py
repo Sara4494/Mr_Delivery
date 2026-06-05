@@ -103,6 +103,19 @@ class DriverPresenceServiceTests(TestCase):
         connection.refresh_from_db()
         self.assertGreater(connection.last_heartbeat_at, old_heartbeat)
 
+    def test_stale_online_flag_without_active_connections_is_reconciled(self):
+        self.driver.is_online = True
+        self.driver.last_seen_at = None
+        self.driver.save(update_fields=['is_online', 'last_seen_at', 'updated_at'])
+
+        snapshot = self.driver.get_availability_snapshot()
+
+        self.driver.refresh_from_db()
+        self.assertFalse(snapshot['presence_online'])
+        self.assertFalse(snapshot['is_online'])
+        self.assertFalse(self.driver.is_online)
+        self.assertIsNotNone(self.driver.last_seen_at)
+
 
 class DriverPresenceApiTests(TestCase):
     def setUp(self):

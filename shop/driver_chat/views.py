@@ -211,19 +211,22 @@ from shop.models import Driver
 def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
     exclude_numeric_id = _extract_numeric_id(exclude_driver_id) or 0
 
-    qs = (
+    qs = list(
         Driver.objects
         .filter(
             driver_shops__shop_owner=shop_owner,
             driver_shops__status='active',
-            is_online=True,
         )
         .exclude(id=exclude_numeric_id)
         .distinct()
         .order_by('name')
     )
 
-    return [serialize_driver_chat_driver(driver) for driver in qs]
+    return [
+        serialize_driver_chat_driver(driver)
+        for driver in qs
+        if bool(getattr(driver, 'get_presence_online', lambda: bool(getattr(driver, 'is_online', False)))())
+    ]
 
 @api_view(['POST'])
 @permission_classes([IsShopOwnerOrEmployee])

@@ -171,8 +171,9 @@ def localize_driver_chat_payload(payload, *, request=None, lang=None):
 
 
 def _driver_presence_status(driver: Driver):
+    presence_online = _driver_presence_online(driver)
     has_trip = driver.orders.filter(status__in=['preparing', 'on_way']).exists()
-    if not bool(getattr(driver, 'is_online', False)):
+    if not presence_online:
         return 'offline'
     if has_trip:
         return 'on_trip'
@@ -182,6 +183,16 @@ def _driver_presence_status(driver: Driver):
 
 
 def _driver_is_online(driver: Driver):
+    return _driver_presence_online(driver)
+
+
+def _driver_presence_online(driver: Driver):
+    getter = getattr(driver, 'get_presence_online', None)
+    if callable(getter):
+        try:
+            return bool(getter())
+        except Exception:
+            pass
     return bool(getattr(driver, 'is_online', False))
 
 
@@ -1312,9 +1323,9 @@ def request_transfer_for_order(*, order: Order, driver: Driver, reason, request=
 
 def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
     exclude_numeric_id = _extract_numeric_id(exclude_driver_id) or 0
-    qs = (
+    qs = list(
         Driver.objects
-        .filter(driver_shops__shop_owner=shop_owner, driver_shops__status='active', is_online=True)
+        .filter(driver_shops__shop_owner=shop_owner, driver_shops__status='active')
         .exclude(id=exclude_numeric_id)
         .distinct()
         .order_by('name')
@@ -1322,7 +1333,7 @@ def get_available_transfer_drivers(shop_owner, *, exclude_driver_id=None):
     return [
         serialize_driver_chat_driver(driver)
         for driver in qs
-        if _driver_presence_status(driver) == 'online'
+        if _driver_presence_online(driver)
     ]
 
 
