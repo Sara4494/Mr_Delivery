@@ -148,7 +148,7 @@ def _get_shop_edit_field_values(shop_owner, changes):
     }
 
 
-def _build_shop_edit_requested_changes(shop_owner, changes, request=None):
+def _build_shop_edit_requested_changes(shop_owner, changes, request=None, profile_image_url=None):
     current_values = _get_shop_edit_field_values(shop_owner, changes)
     requested_changes = []
 
@@ -172,7 +172,7 @@ def _build_shop_edit_requested_changes(shop_owner, changes, request=None):
                 "field": "profile_image",
                 "label": SHOP_EDIT_FIELD_LABELS["profile_image"],
                 "old_value": current_values.get("profile_image"),
-                "new_value": build_absolute_file_url(changes.get("profile_image"), request=request),
+                "new_value": profile_image_url or build_absolute_file_url(changes.get("profile_image"), request=request),
             }
         )
 
@@ -230,13 +230,18 @@ def create_or_update_shop_edit_request(shop_owner, changes, request=None):
     elif pending_profile_image is not None and not hasattr(pending_profile_image, "url"):
         pending_profile_image = str(pending_profile_image).strip() or None
 
-    current_values, requested_changes = _build_shop_edit_requested_changes(shop_owner, changes, request=request)
-
     pending_profile_image_url = None
     if pending_profile_image_path:
         pending_profile_image_url = _storage_name_to_public_url(pending_profile_image_path, request=request)
     elif pending_profile_image:
         pending_profile_image_url = build_absolute_file_url(pending_profile_image, request=request)
+
+    current_values, requested_changes = _build_shop_edit_requested_changes(
+        shop_owner,
+        changes,
+        request=request,
+        profile_image_url=pending_profile_image_url,
+    )
 
     payload = {
         "owner_name": str(changes.get("owner_name") or shop_owner.owner_name or "").strip(),

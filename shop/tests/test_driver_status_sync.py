@@ -11,7 +11,13 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from shop.driver_chat_service import _map_order_status_to_driver_chat_status
 from shop.models import Customer, Driver, Order, ShopDriver
 from shop.serializers import OFFLINE_DRIVER_ASSIGNMENT_MESSAGE, OrderCreateSerializer
-from shop.views import _build_driver_availability_panel, _build_driver_status_panel, driver_dashboard_view
+from shop.views import (
+    _build_driver_availability_panel,
+    _build_driver_status_panel,
+    driver_available_orders_view,
+    driver_dashboard_view,
+    driver_orders_view,
+)
 from shop.driver_realtime import (
     build_driver_order_payload,
     driver_can_accept_reassigned_order,
@@ -430,6 +436,57 @@ class DriverDashboardStatusCountsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['data']['stats']['current_deliveries_count'], 0)
         self.assertEqual(response.data['data']['stats']['active_orders_count'], 1)
+
+    def test_available_orders_endpoint_returns_unassigned_orders(self):
+        Order.objects.create(
+            shop_owner=self.shop,
+            customer=self.customer,
+            order_number='OD-AVAILABLE-1',
+            status='confirmed',
+            items='["meal"]',
+            total_amount='60.00',
+            delivery_fee='10.00',
+            address='Tahrir Street',
+            notes='',
+            driver_assigned_at=None,
+            driver_accepted_at=None,
+        )
+
+        request = self.factory.get('/api/driver/orders/available/')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_available_orders_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data']['count'], 1)
+        self.assertEqual(len(response.data['data']['results']), 1)
+        self.assertEqual(response.data['data']['results'][0]['orders'][0]['order_number'], 'OD-AVAILABLE-1')
+
+    def test_assigned_orders_endpoint_returns_accepted_orders(self):
+        Order.objects.create(
+            shop_owner=self.shop,
+            customer=self.customer,
+            driver=self.driver,
+            order_number='OD-ASSIGNED-1',
+            status='preparing',
+            items='["meal"]',
+            total_amount='60.00',
+            delivery_fee='10.00',
+            address='Tahrir Street',
+            notes='',
+            driver_assigned_at=timezone.now(),
+            driver_accepted_at=timezone.now(),
+        )
+
+        request = self.factory.get('/api/driver/orders/')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_orders_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data']['count'], 1)
+        self.assertEqual(len(response.data['data']['results']), 1)
+        self.assertEqual(response.data['data']['results'][0]['orders'][0]['order_number'], 'OD-ASSIGNED-1')
 
 
 class DriverAvailabilityEnforcementTests(TestCase):

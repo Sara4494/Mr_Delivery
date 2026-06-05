@@ -196,6 +196,30 @@ class AdminDesktopApprovalsEndpointTests(TestCase):
         self.assertEqual(self.shop_owner.shop_name, "مطعم الشام الجديد")
 
 
+    def test_store_supervisor_approval_applies_pending_profile_image(self):
+        approval_request = AdminApprovalRequest.objects.create(
+            shop_owner=self.shop_owner,
+            request_type="shop_edit",
+            payload={
+                "owner_name": self.shop_owner.owner_name,
+                "shop_name": self.shop_owner.shop_name,
+                "phone_number": self.shop_owner.phone_number,
+                "description": self.shop_owner.shop_name,
+                "profile_image": "/media/shop_profiles/new-shop-image.jpg",
+                "profile_image_path": "shop_profiles/new-shop-image.jpg",
+            },
+        )
+
+        response = self.client.post(
+            f"/api/admin-desktop/approvals/requests/{approval_request.id}/approve/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.shop_owner.refresh_from_db()
+        self.assertTrue(str(self.shop_owner.profile_image or "").endswith("shop_profiles/new-shop-image.jpg"))
+
     def test_store_supervisor_sees_pending_shop_profile_image_in_request_detail(self):
         self.shop_owner.profile_image = "shop_profiles/old-shop-image.jpg"
         self.shop_owner.save(update_fields=["profile_image"])
@@ -220,6 +244,32 @@ class AdminDesktopApprovalsEndpointTests(TestCase):
         )
         self.assertTrue(
             response.data["data"]["image_url"].endswith("/media/shop_profiles/new-shop-image.jpg")
+        )
+
+    @patch("user.approval_requests.default_storage.save", return_value="approval_requests/shop_profiles/test-image.jpg")
+    def test_shop_profile_edit_request_persists_uploaded_profile_image(self, mock_storage_save):
+        uploaded_image = SimpleUploadedFile(
+            "new-shop-image.jpg",
+            b"fake-image-content",
+            content_type="image/jpeg",
+        )
+
+        from user.approval_requests import create_or_update_shop_edit_request
+
+        approval_request = create_or_update_shop_edit_request(
+            self.shop_owner,
+            {"profile_image": uploaded_image},
+            request=None,
+        )
+
+        self.assertEqual(
+            approval_request.payload["profile_image_path"],
+            "approval_requests/shop_profiles/test-image.jpg",
+        )
+        self.assertTrue(
+            str(approval_request.payload["profile_image"] or "").endswith(
+                "/media/approval_requests/shop_profiles/test-image.jpg"
+            )
         )
 
 

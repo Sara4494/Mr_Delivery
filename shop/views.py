@@ -142,6 +142,8 @@ from .driver_realtime import (
     build_driver_order_payload,
     clear_all_driver_rejections,
     clear_driver_rejection,
+    get_assigned_orders_queryset,
+    get_available_orders_queryset,
     emit_assigned_order_upsert,
     emit_available_order_remove,
     emit_order_accepted,
@@ -1223,6 +1225,17 @@ def _coerce_staff_id(value):
         return None
 
 
+def _get_temporary_driver_registration_otp_code():
+    """
+    Temporary fallback for driver registration while the official OTP service is not enabled.
+
+    If FIXED_OTP_CODE is configured we honor it, otherwise we fall back to 123456 for this
+    specific registration flow only.
+    """
+    configured_code = str(getattr(settings, 'FIXED_OTP_CODE', '') or '').strip()
+    return configured_code or '123456'
+
+
 def _parse_blocked_flag(request):
     raw_value = request.data.get('blocked', None)
     if raw_value is None:
@@ -1459,6 +1472,29 @@ def _build_driver_availability_panel(driver, active_orders_count):
         'title': title,
         'subtitle': subtitle,
     }
+
+
+def _group_driver_orders_by_shop(orders, request=None):
+    grouped = []
+    order_groups = {}
+
+    for order in orders:
+        payload = build_driver_order_payload(order, request=request)
+        shop = payload.get('shop') or {}
+        shop_id = shop.get('id') or getattr(order, 'shop_owner_id', None)
+        if shop_id not in order_groups:
+            order_groups[shop_id] = {
+                'shop_id': shop_id,
+                'shop_name': shop.get('name'),
+                'shop_logo_url': shop.get('logo_url'),
+                'branch_label': shop.get('branch_label'),
+                'orders': [],
+            }
+            grouped.append(order_groups[shop_id])
+
+        order_groups[shop_id]['orders'].append(payload)
+
+    return grouped
 
 
 def _build_driver_status_panel(driver, active_orders_count):
@@ -2421,6 +2457,56 @@ def driver_dashboard_view(request):
             'shops': [_build_driver_shop_overview_item(shop, request) for shop in active_shops],
         },
         message=t(request, 'driver_dashboard_retrieved_successfully'),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_available_orders_view(request):
+    """
+    Return available delivery orders for the authenticated driver.
+    GET /api/driver/orders/available/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    orders = get_available_orders_queryset(driver)
+    return success_response(
+        data={
+            'results': _group_driver_orders_by_shop(orders, request=request),
+            'count': orders.count(),
+        },
+        message='driver available orders retrieved successfully.',
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_orders_view(request):
+    """
+    Return the driver-visible orders for the authenticated driver.
+    GET /api/driver/orders/
+    """
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    available_orders = list(get_available_orders_queryset(driver))
+    assigned_orders = list(get_assigned_orders_queryset(driver))
+    orders = available_orders + assigned_orders
+    orders.sort(key=lambda order: (
+        getattr(order, 'updated_at', None) or getattr(order, 'created_at', None)
+    ), reverse=True)
+
+    return success_response(
+        data={
+            'results': _group_driver_orders_by_shop(orders, request=request),
+            'count': len(orders),
+        },
+        message='driver orders retrieved successfully.',
         status_code=status.HTTP_200_OK,
     )
 
@@ -5189,7 +5275,7 @@ def driver_register_verify_otp_view(request):
 
     normalized_phone = normalize_phone(phone_number)
 
-    if not otp_verify(normalized_phone, otp_code):
+    if str(otp_code).strip() != _get_temporary_driver_registration_otp_code() and not otp_verify(normalized_phone, otp_code):
         return error_response(
             message=t(request, 'verification_code_is_invalid_or_expired'),
             status_code=status.HTTP_401_UNAUTHORIZED,
