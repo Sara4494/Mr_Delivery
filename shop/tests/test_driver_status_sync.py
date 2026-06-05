@@ -437,6 +437,22 @@ class DriverDashboardStatusCountsTests(TestCase):
         self.assertEqual(response.data['data']['stats']['current_deliveries_count'], 0)
         self.assertEqual(response.data['data']['stats']['active_orders_count'], 1)
 
+    def test_home_online_flag_tracks_driver_availability_not_raw_presence(self):
+        self.driver.is_online = True
+        self.driver.availability_enabled = False
+        self.driver.status = 'unavailable'
+        self.driver.save(update_fields=['is_online', 'availability_enabled', 'status', 'updated_at'])
+
+        request = self.factory.get('/api/driver/home/')
+        force_authenticate(request, user=self.driver)
+
+        response = driver_dashboard_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['data']['driver']['is_online'])
+        self.assertFalse(response.data['data']['availability']['is_online'])
+        self.assertFalse(response.data['data']['availability']['can_receive_orders'])
+
     def test_available_orders_endpoint_returns_unassigned_orders(self):
         Order.objects.create(
             shop_owner=self.shop,

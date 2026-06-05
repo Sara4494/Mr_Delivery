@@ -36,6 +36,17 @@ def _driver_live_presence_online(driver):
     return bool(getattr(driver, 'is_online', False))
 
 
+def _driver_app_online(driver):
+    snapshot_getter = getattr(driver, 'get_availability_snapshot', None)
+    if callable(snapshot_getter):
+        try:
+            snapshot = snapshot_getter()
+            return bool(snapshot.get('can_receive_orders'))
+        except Exception:
+            pass
+    return _driver_live_presence_online(driver)
+
+
 class ShopCategorySerializer(serializers.ModelSerializer):
     """Serializer for shop categories."""
 
@@ -470,7 +481,7 @@ class DriverSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return _driver_live_presence_online(obj)
+        return _driver_app_online(obj)
 
 
 class DriverCreateSerializer(serializers.ModelSerializer):
@@ -541,7 +552,7 @@ class DriverAppSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return _driver_live_presence_online(obj)
+        return _driver_app_online(obj)
 
 
 class DriverProfileResponseSerializer(serializers.ModelSerializer):
@@ -573,7 +584,7 @@ class DriverProfileResponseSerializer(serializers.ModelSerializer):
         return format_utc_iso8601(obj.last_seen_at)
 
     def get_is_online(self, obj):
-        return _driver_live_presence_online(obj)
+        return _driver_app_online(obj)
 
 
 class DriverProfileSerializer(DriverProfileResponseSerializer):
