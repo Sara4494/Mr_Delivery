@@ -5,6 +5,7 @@ from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 from io import StringIO
 from math import ceil
+from pathlib import Path
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -3834,6 +3835,23 @@ def admin_desktop_broadcast_notification_view(request):
         "sent_count": count,
         "message": f"تم إرسال التنبيه بنجاح لـ {count} مستخدم"
     })
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def admin_broadcast_test_page_view(request):
+    page_path = Path(settings.BASE_DIR) / "admin_broadcast_test.html"
+    if not page_path.exists():
+        return HttpResponse(
+            "admin_broadcast_test.html not found",
+            status=404,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    html = page_path.read_text(encoding="utf-8")
+    response = HttpResponse(html, content_type="text/html; charset=utf-8")
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
 def _serialize_admin_activity_log(request, log_item):

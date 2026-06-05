@@ -19,6 +19,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import TemplateView
+from user import views as user_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -52,6 +53,7 @@ urlpatterns = [
         TemplateView.as_view(template_name='shop/driver_terms.html'),
         name='driver_terms',
     ),
+    path('admin-broadcast-test/', user_views.admin_broadcast_test_page_view, name='admin_broadcast_test_page'),
     path('api/', include('admin_desktop_app.urls')),
     path('api/', include('shop_app.urls')),
     path('api/', include('driver_app.urls')),
