@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from shop.realtime.serializers import build_shop_order_realtime_payload
-from shop.models import Customer, Driver, Order, ShopDriver
+from shop.models import ChatMessage, Customer, Driver, Order, ShopDriver
 from user.models import ShopCategory, ShopOwner
 
 
@@ -76,3 +76,37 @@ class ShopOrderRealtimePayloadTests(TestCase):
         self.assertEqual(payload['status'], 'delivered')
         self.assertEqual(payload['status_display'], 'تم التسليم')
         self.assertIsNotNone(payload['delivered_at'])
+
+    def test_payload_localizes_legacy_english_system_last_message(self):
+        order = self._create_order(status='pending_customer_confirm')
+        ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='shop_owner',
+            sender_shop_owner=self.shop,
+            message_type='text',
+            content='Order has been priced',
+        )
+
+        arabic_payload = build_shop_order_realtime_payload(order, lang='ar')
+        english_payload = build_shop_order_realtime_payload(order, lang='en')
+
+        self.assertEqual(arabic_payload['last_message']['content'], 'تم تسعير الطلب، يرجى المراجعة والضغط على تأكيد أو إلغاء.')
+        self.assertEqual(english_payload['last_message']['content'], 'Order has been priced. Please review it and choose Confirm or Cancel.')
+
+    def test_payload_localizes_legacy_received_message_for_customer(self):
+        order = self._create_order(status='new')
+        ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='shop_owner',
+            sender_shop_owner=self.shop,
+            message_type='text',
+            content='Your order has been received',
+        )
+
+        arabic_payload = build_shop_order_realtime_payload(order, lang='ar')
+        english_payload = build_shop_order_realtime_payload(order, lang='en')
+
+        self.assertEqual(arabic_payload['last_message']['content'], 'تم استلام طلبك ويرجى الانتظار حتى يتم إرسال الفاتورة.')
+        self.assertEqual(english_payload['last_message']['content'], 'Your order has been received. Please wait until the invoice is sent.')

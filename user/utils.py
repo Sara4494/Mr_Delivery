@@ -21,6 +21,10 @@ EN_TEXT_TO_KEY = {value: key for key, value in EN_MESSAGES.items()}
 LEGACY_MESSAGE_KEY_ALIASES = {
     'تم إلغاء الفاتورة.': 'order_cancelled_successfully',
     'تم رفض الفاتورة والطلب': 'order_cancelled_successfully',
+    'Order has been priced': 'order_priced_please_confirm',
+    'Order has been priced.': 'order_priced_please_confirm',
+    'Your order has been received': 'order_received_wait_for_invoice',
+    'Your order has been received.': 'order_received_wait_for_invoice',
 }
 
 

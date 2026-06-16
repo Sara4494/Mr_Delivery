@@ -419,6 +419,23 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
         async_to_sync(run)()
 
+    def test_previous_messages_localize_legacy_english_system_text(self):
+        order = self._create_order(status='pending_customer_confirm')
+        message = ChatMessage.objects.create(
+            order=order,
+            chat_type='shop_customer',
+            sender_type='shop_owner',
+            sender_shop_owner=self.shop,
+            message_type='text',
+            content='Your order has been received',
+        )
+
+        arabic_payload = ChatMessageSerializer(message, context={'lang': 'ar'}).data
+        english_payload = ChatMessageSerializer(message, context={'lang': 'en'}).data
+
+        self.assertEqual(arabic_payload['content'], 'تم استلام طلبك ويرجى الانتظار حتى يتم إرسال الفاتورة.')
+        self.assertEqual(english_payload['content'], 'Your order has been received. Please wait until the invoice is sent.')
+
     def test_create_order_pushes_order_upsert_and_history_update(self):
         async def run():
             communicator, _ = await self._connect_customer_socket()
