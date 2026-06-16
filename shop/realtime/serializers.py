@@ -5,6 +5,7 @@ from user.utils import build_absolute_file_url, localize_message
 from ..models import ChatMessage, CustomerSupportConversation, Order
 from .presence import format_utc_iso8601
 from ..serializers import (
+    ChatMessageSerializer,
     _order_items_to_representation,
     get_order_presentation_status_display,
     get_order_presentation_status_key,
@@ -188,6 +189,39 @@ def get_order_history_status(order):
     if order.status == 'cancelled':
         return 'cancelled'
     return 'in_progress'
+
+
+SHOP_ORDER_STATUS_DISPLAY_MAP = {
+    'ar': {
+        'new': 'جديد',
+        'pending_customer_confirm': 'في انتظار تأكيد العميل',
+        'confirmed': 'مؤكد',
+        'preparing': 'اتبعت للمندوب',
+        'on_way': 'المندوب بيوصله',
+        'delivered': 'تم التسليم',
+        'cancelled': 'ملغي',
+    },
+    'en': {
+        'new': 'New',
+        'pending_customer_confirm': 'Waiting for customer confirmation',
+        'confirmed': 'Confirmed',
+        'preparing': 'Sent to driver',
+        'on_way': 'Driver is on the way',
+        'delivered': 'Delivered',
+        'cancelled': 'Cancelled',
+    },
+}
+
+
+def _normalize_shop_order_lang(lang):
+    normalized = str(lang or '').strip().lower()
+    return 'ar' if not normalized else ('en' if normalized.startswith('en') else 'ar')
+
+
+def get_shop_order_status_display(status, *, lang=None):
+    status_key = str(status or '').strip()
+    normalized_lang = _normalize_shop_order_lang(lang)
+    return SHOP_ORDER_STATUS_DISPLAY_MAP.get(normalized_lang, {}).get(status_key, status_key)
 
 
 def _context_file_url(serializer, file_field):
@@ -433,6 +467,124 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
 
     def get_updated_at(self, obj):
         return format_utc_iso8601(obj.updated_at)
+
+
+class ShopOrderRealtimeSerializer(serializers.ModelSerializer):
+    shop_id = serializers.IntegerField(source='shop_owner_id', read_only=True)
+    shop_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
+    customer = serializers.SerializerMethodField()
+    driver = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    items = serializers.SerializerMethodField()
+    unread_messages_count = serializers.SerializerMethodField()
+    last_message = serializers.SerializerMethodField()
+    chat = serializers.SerializerMethodField()
+    created_at = serializers.SerializerMethodField()
+    updated_at = serializers.SerializerMethodField()
+    delivered_at = serializers.SerializerMethodField()
+    driver_assigned_at = serializers.SerializerMethodField()
+    driver_accepted_at = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = [
+            'id',
+            'order_number',
+            'shop_id',
+            'shop_name',
+            'customer',
+            'driver',
+            'status',
+            'status_display',
+            'items',
+            'address',
+            'notes',
+            'delivery_fee',
+            'total_amount',
+            'unread_messages_count',
+            'last_message',
+            'chat',
+            'created_at',
+            'updated_at',
+            'driver_assigned_at',
+            'driver_accepted_at',
+            'delivered_at',
+        ]
+        read_only_fields = fields
+
+    def _customer_payload(self, customer):
+        return {
+            'id': getattr(customer, 'id', None),
+            'name': getattr(customer, 'name', None),
+            'profile_image_url': _context_file_url(self, getattr(customer, 'profile_image', None)) if customer else None,
+        }
+
+    def _driver_payload(self, driver):
+        return {
+            'id': getattr(driver, 'id', None),
+            'name': getattr(driver, 'name', None),
+        }
+
+    def get_customer(self, obj):
+        return self._customer_payload(getattr(obj, 'customer', None))
+
+    def get_driver(self, obj):
+        driver = getattr(obj, 'driver', None)
+        return self._driver_payload(driver) if driver else None
+
+    def get_status(self, obj):
+        return str(getattr(obj, 'status', '') or '').strip()
+
+    def get_status_display(self, obj):
+        return get_shop_order_status_display(getattr(obj, 'status', None), lang=self.context.get('lang'))
+
+    def get_items(self, obj):
+        return _order_items_to_representation(obj.items)
+
+    def get_unread_messages_count(self, obj):
+        return int(getattr(obj, 'unread_messages_count', 0) or 0)
+
+    def get_last_message(self, obj):
+        latest_message = obj.messages.order_by('-created_at').first()
+        if not latest_message:
+            return None
+        return ChatMessageSerializer(latest_message, context=self.context).data
+
+    def get_chat(self, obj):
+        return {
+            'thread_id': str(obj.id),
+            'order_id': obj.id,
+            'chat_type': CUSTOMER_ORDER_CHAT_TYPE,
+        }
+
+    def get_created_at(self, obj):
+        return format_utc_iso8601(obj.created_at)
+
+    def get_updated_at(self, obj):
+        return format_utc_iso8601(obj.updated_at)
+
+    def get_delivered_at(self, obj):
+        return format_utc_iso8601(getattr(obj, 'delivered_at', None))
+
+    def get_driver_assigned_at(self, obj):
+        return format_utc_iso8601(getattr(obj, 'driver_assigned_at', None))
+
+    def get_driver_accepted_at(self, obj):
+        return format_utc_iso8601(getattr(obj, 'driver_accepted_at', None))
+
+
+def build_shop_order_realtime_payload(order, *, request=None, scope=None, base_url=None, lang=None):
+    context = {}
+    if request is not None:
+        context['request'] = request
+    if scope is not None:
+        context['scope'] = scope
+    if base_url:
+        context['base_url'] = base_url
+    if lang is not None:
+        context['lang'] = lang
+    return ShopOrderRealtimeSerializer(order, context=context).data
 
 
 class CustomerAppRealtimeOrderShopEntrySerializer(serializers.ModelSerializer):

@@ -26,6 +26,7 @@ from ..models import (
     Order,
     ShopDriver,
 )
+from ..realtime.serializers import build_shop_order_realtime_payload
 from ..realtime.presence import format_utc_iso8601
 logger = logging.getLogger(__name__)
 
@@ -1037,26 +1038,44 @@ def driver_accept_order(*, conversation: DriverChatConversation, conversation_or
     previous_driver_id = order.driver_id
     previous_driver_accepted_at = order.driver_accepted_at
 
-    conversation_order.status = 'driver_on_way'
-    conversation_order.transfer_reason = None
-    conversation_order.save(update_fields=['status', 'transfer_reason', 'updated_at'])
-
-    order.driver = conversation.driver
-    if order.driver_assigned_at is None or previous_driver_id != conversation.driver_id:
-        order.driver_assigned_at = accepted_at
-    order.driver_accepted_at = accepted_at
-    order.status = 'on_way'
-    order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'status', 'updated_at'])
-
     from ..realtime.driver import clear_driver_rejection, sync_driver_order_state
-    from ..serializers import OrderSerializer
     from ..websocket_utils import notify_driver_status_updated, notify_order_update
 
-    clear_driver_rejection(order, conversation.driver)
-    conversation.driver.current_orders_count = conversation.driver.orders.filter(
-        status__in=['new', 'confirmed', 'preparing', 'on_way']
-    ).count()
-    conversation.driver.save(update_fields=['current_orders_count', 'updated_at'])
+    with transaction.atomic():
+        conversation_order.status = 'driver_on_way'
+        conversation_order.transfer_reason = None
+        conversation_order.save(update_fields=['status', 'transfer_reason', 'updated_at'])
+
+        order.driver = conversation.driver
+        if order.driver_assigned_at is None or previous_driver_id != conversation.driver_id:
+            order.driver_assigned_at = accepted_at
+        order.driver_accepted_at = accepted_at
+        order.status = 'on_way'
+        order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'status', 'updated_at'])
+
+        clear_driver_rejection(order, conversation.driver)
+        conversation.driver.current_orders_count = conversation.driver.orders.filter(
+            status__in=['new', 'confirmed', 'preparing', 'on_way']
+        ).count()
+        conversation.driver.save(update_fields=['current_orders_count', 'updated_at'])
+
+        order_data = build_shop_order_realtime_payload(order, request=request)
+
+    system_message = create_message(
+        conversation=conversation,
+        sender_type='system',
+        message_type='system',
+        text='تم قبول الأوردر من السائق',
+        conversation_order=conversation_order,
+        metadata={
+            'message_key': 'driver_chat_order_accepted_by_driver',
+            'message_params': {
+                'order_number': order.order_number,
+                'driver_name': conversation.driver.name,
+            },
+        },
+    )
+
     try:
         from ..views import _notify_shop_about_driver_order_action
 
@@ -1070,7 +1089,6 @@ def driver_accept_order(*, conversation: DriverChatConversation, conversation_or
         logger.exception("driver_chat.accept_order.shop_notification_failed order_id=%s", order.id)
 
     try:
-        order_data = OrderSerializer(order, context={'request': request}).data
         notify_order_update(
             shop_owner_id=order.shop_owner_id,
             customer_id=order.customer_id,
@@ -1091,20 +1109,6 @@ def driver_accept_order(*, conversation: DriverChatConversation, conversation_or
         base_url=base_url,
     )
 
-    system_message = create_message(
-        conversation=conversation,
-        sender_type='system',
-        message_type='system',
-        text='تم قبول الأوردر من السائق',
-        conversation_order=conversation_order,
-        metadata={
-            'message_key': 'driver_chat_order_accepted_by_driver',
-            'message_params': {
-                'order_number': order.order_number,
-                'driver_name': conversation.driver.name,
-            },
-        },
-    )
     broadcast_order_updated(conversation_order)
     broadcast_message_created(
         system_message,

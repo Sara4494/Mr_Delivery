@@ -118,6 +118,7 @@ from user.models import (
 from user.utils import success_response, error_response, build_message_fields, t, localize_message, build_absolute_file_url, resolve_customer_profile_image_url
 from user.otp_service import send_otp as otp_send, verify_otp as otp_verify, normalize_email, normalize_phone
 from .websocket_utils import (
+    build_shop_order_realtime_payload,
     notify_order_update,
     notify_driver_assigned,
     notify_new_order,
@@ -3034,28 +3035,30 @@ def driver_order_accept_view(request, order_id):
 
         accepted_at = timezone.now()
         order.driver = driver
+        order.status = 'on_way'
         if order.driver_assigned_at is None:
             order.driver_assigned_at = accepted_at
         order.driver_accepted_at = accepted_at
-        order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'updated_at'])
+        order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'status', 'updated_at'])
         clear_driver_rejection(order, driver)
 
-    driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
-    driver.save(update_fields=['current_orders_count'])
+        driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
+        driver.save(update_fields=['current_orders_count'])
+
+        order_payload = build_driver_order_payload(order, request=request)
+        shop_payload = build_shop_order_realtime_payload(order, request=request)
+        active_driver_ids = list(order.shop_owner.shop_drivers.filter(status='active').values_list('driver_id', flat=True).distinct())
 
     try:
-        order_data = OrderSerializer(order, context={'request': request}).data
         notify_order_update(
             shop_owner_id=order.shop_owner_id,
             customer_id=order.customer_id,
             driver_id=order.driver_id,
-            order_data=order_data,
+            order_data=shop_payload,
         )
     except Exception as e:
         print(f"driver_order_accept websocket sync error: {e}")
 
-    order_payload = build_driver_order_payload(order, request=request)
-    active_driver_ids = list(order.shop_owner.shop_drivers.filter(status='active').values_list('driver_id', flat=True).distinct())
     for target_driver_id in active_driver_ids:
         emit_available_order_remove(
             target_driver_id,
@@ -3177,21 +3180,23 @@ def driver_order_deliver_view(request, order_id):
     previous_driver_id = order.driver_id
     previous_driver_accepted_at = order.driver_accepted_at
 
-    order.status = 'delivered'
-    order.delivered_at = delivered_at
-    order.save(update_fields=['status', 'delivered_at', 'updated_at'])
+    with transaction.atomic():
+        order.status = 'delivered'
+        order.delivered_at = delivered_at
+        order.save(update_fields=['status', 'delivered_at', 'updated_at'])
 
-    driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
-    driver.save(update_fields=['current_orders_count'])
+        driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
+        driver.save(update_fields=['current_orders_count'])
+
+        shop_payload = build_shop_order_realtime_payload(order, request=request)
+        order_payload = build_driver_order_payload(order, request=request)
 
     try:
-        order_data = OrderSerializer(order, context={'request': request}).data
         notify_order_update(
             shop_owner_id=order.shop_owner_id,
             customer_id=order.customer_id,
             driver_id=order.driver_id,
-            order_data=order_data,
-            notify_customer=False,
+            order_data=shop_payload,
         )
         _sync_driver_availability_status(driver)
         notify_driver_status_updated(driver)
@@ -3211,7 +3216,6 @@ def driver_order_deliver_view(request, order_id):
         request=request,
     )
 
-    order_payload = build_driver_order_payload(order, request=request)
     return success_response(
         data={
             'success': True,
@@ -4496,6 +4500,12 @@ def order_detail_view(request, order_id):
         old_status = order.status
         new_status = request.data.get('status', old_status)
 
+        if old_status in {'cancelled', 'delivered'} and new_status != old_status:
+            return error_response(
+                message='لا يمكن تغيير حالة الطلب بعد الوصول إلى الحالة النهائية.',
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
         cancellation_locked_statuses = {'preparing', 'on_way', 'delivered'}
         invoice_closed_statuses = {'cancelled', 'delivered'}
         invoice_fields = {'items', 'total_amount', 'delivery_fee'}
@@ -4578,6 +4588,7 @@ def order_detail_view(request, order_id):
             # Auto-link the order with the logged-in employee when no explicit employee_id is sent.
             order.employee = request.user
 
+        driver_assignment_requested = False
         if 'driver_id' in request.data:
             driver_id = request.data['driver_id']
             if driver_id:
@@ -4598,6 +4609,7 @@ def order_detail_view(request, order_id):
                         order.driver_accepted_at = None
                         order.driver_chat_opened_at = None
                     order.driver = new_driver
+                    driver_assignment_requested = True
                 except ShopDriver.DoesNotExist:
                     return error_response(
                         message=t(request, 'driver_not_found'),
@@ -4616,6 +4628,9 @@ def order_detail_view(request, order_id):
                 if field == 'items' and isinstance(field_value, list):
                     field_value = json.dumps(field_value, ensure_ascii=False)
                 setattr(order, field, field_value)
+
+        if driver_assignment_requested and order.status not in {'delivered', 'cancelled'}:
+            order.status = 'preparing'
 
         order.save()
         sender_type = 'employee' if getattr(request.user, 'user_type', None) == 'employee' else 'shop_owner'
@@ -4692,7 +4707,7 @@ def order_detail_view(request, order_id):
 
         # إرسال إشعار WebSocket بتحديث الطلب
         try:
-            order_data = response_serializer.data
+            order_data = build_shop_order_realtime_payload(order, request=request)
             notify_order_update(
                 shop_owner_id=shop_owner.id,
                 customer_id=order.customer_id,
@@ -8043,7 +8058,10 @@ def customer_orders_list_create_view(request):
 
         response_serializer = OrderSerializer(order, context={'request': request})
         try:
-            notify_new_order(order.shop_owner_id, response_serializer.data)
+            notify_new_order(
+                order.shop_owner_id,
+                build_shop_order_realtime_payload(order, request=request),
+            )
         except Exception as e:
             print(f"new_order WebSocket error: {e}")
 
@@ -8140,7 +8158,7 @@ def customer_order_confirm_view(request, order_id):
             shop_owner_id=order.shop_owner_id,
             customer_id=order.customer_id,
             driver_id=order.driver_id,
-            order_data=response_serializer.data
+            order_data=build_shop_order_realtime_payload(order, request=request),
         )
     except Exception as e:
         print(f"WebSocket notification error: {e}")
@@ -8230,7 +8248,7 @@ def customer_order_reject_view(request, order_id):
             shop_owner_id=order.shop_owner_id,
             customer_id=order.customer_id,
             driver_id=order.driver_id,
-            order_data=response_serializer.data
+            order_data=build_shop_order_realtime_payload(order, request=request),
         )
     except Exception as e:
         print(f"WebSocket notification error: {e}")

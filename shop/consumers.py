@@ -35,6 +35,7 @@ from .serializers import (
     CustomerSupportConversationSerializer,
     CustomerSupportMessageSerializer,
 )
+from .realtime.serializers import build_shop_order_realtime_payload
 from .driver_chat_service import (
     DRIVER_PRESENCE_TIMEOUT_SECONDS,
     broadcast_driver_presence_update,
@@ -2320,9 +2321,11 @@ class OrderConsumer(AsyncWebsocketConsumer):
             )
 
     async def order_update(self, event):
+        order_id = self._extract_order_id(event.get('data'))
+        payload = await self.get_shop_order_snapshot(order_id) if order_id else None
         await self.send(text_data=_json_dumps({
             'type': 'order_update',
-            'data': event['data'],
+            'data': payload or event['data'],
         }))
 
     async def auth_session_revoked(self, event):
@@ -2430,18 +2433,41 @@ class OrderConsumer(AsyncWebsocketConsumer):
         )))
 
     @database_sync_to_async
+    def get_shop_order_snapshot(self, order_id):
+        if not order_id:
+            return None
+        order = (
+            Order.objects
+            .filter(id=order_id, shop_owner_id=self.shop_owner_id)
+            .select_related('customer', 'driver', 'shop_owner')
+            .first()
+        )
+        if not order:
+            return None
+        return build_shop_order_realtime_payload(
+            order,
+            lang=getattr(self, 'lang', None),
+            scope=getattr(self, 'scope', None),
+            base_url=getattr(self, 'base_url', None),
+        )
+
+    @database_sync_to_async
     def get_orders_snapshot(self):
         orders = (
             Order.objects
             .filter(shop_owner_id=self.shop_owner_id)
-            .select_related('customer', 'employee', 'driver')
+            .select_related('customer', 'employee', 'driver', 'shop_owner')
             .order_by('-updated_at')[:50]
         )
-        return OrderSerializer(
-            orders,
-            many=True,
-            context=_serializer_context(scope=getattr(self, 'scope', None), base_url=getattr(self, 'base_url', None))
-        ).data
+        return [
+            build_shop_order_realtime_payload(
+                order,
+                lang=getattr(self, 'lang', None),
+                scope=getattr(self, 'scope', None),
+                base_url=getattr(self, 'base_url', None),
+            )
+            for order in orders
+        ]
 
     @database_sync_to_async
     def get_support_conversations_snapshot(self):

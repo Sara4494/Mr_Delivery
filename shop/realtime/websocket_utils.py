@@ -9,7 +9,8 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from ..models import Driver, Notification, Order
-from ..serializers import DriverSerializer, OrderSerializer
+from ..serializers import DriverSerializer
+from .serializers import build_shop_order_realtime_payload
 from .presence import format_utc_iso8601
 from .customer_app import (
     broadcast_customer_order_changed,
@@ -109,12 +110,7 @@ def send_event_to_group(group_name, event_type, payload):
 
 
 def _serialize_order_snapshot(order, request=None, base_url=None):
-    context = {}
-    if request is not None:
-        context['request'] = request
-    if base_url:
-        context['base_url'] = base_url
-    return OrderSerializer(order, context=context).data
+    return build_shop_order_realtime_payload(order, request=request, base_url=base_url)
 
 
 def _serialize_driver_snapshot(driver, request=None, base_url=None):
