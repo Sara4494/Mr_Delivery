@@ -793,6 +793,7 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         self.assertEqual(response.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.status, 'confirmed')
+        self.assertEqual(order.unread_messages_count, 1)
 
         messages = list(ChatMessage.objects.filter(order=order, chat_type='shop_customer').order_by('created_at', 'id'))
         self.assertEqual(messages[-2].sender_type, 'customer')

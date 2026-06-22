@@ -8127,33 +8127,42 @@ def customer_order_confirm_view(request, order_id):
 
     old_status = order.status
     old_driver_accepted_at = order.driver_accepted_at
-    order.status = 'confirmed'
-    order.save()
-
     try:
-        accepted_msg = ChatMessage.objects.create(
-            order=order,
-            chat_type='shop_customer',
-            sender_type='customer',
-            sender_customer=customer,
-            message_type='text',
-            content='تمت الموافقة على الفاتورة من العميل',
-        )
+        with transaction.atomic():
+            order.status = 'confirmed'
+            order.save(update_fields=['status', 'updated_at'])
+
+            accepted_msg = ChatMessage.objects.create(
+                order=order,
+                chat_type='shop_customer',
+                sender_type='customer',
+                sender_customer=customer,
+                message_type='text',
+                content='تمت الموافقة على الفاتورة من العميل',
+            )
+            preparing_msg = ChatMessage.objects.create(
+                order=order,
+                chat_type='shop_customer',
+                sender_type='shop_owner',
+                sender_shop_owner=order.shop_owner,
+                message_type='text',
+                content='تم تأكيد الطلب و جاري التجهيز',
+            )
+            order.unread_messages_count = order.messages.filter(
+                chat_type='shop_customer',
+                is_read=False,
+                sender_type='customer',
+            ).count()
+            order.save(update_fields=['unread_messages_count', 'updated_at'])
+
         broadcast_chat_message_to_order(order.id, _chat_message_payload(accepted_msg, request=request), request=request)
-        preparing_msg = ChatMessage.objects.create(
-            order=order,
-            chat_type='shop_customer',
-            sender_type='shop_owner',
-            sender_shop_owner=order.shop_owner,
-            message_type='text',
-            content='تم تأكيد الطلب و جاري التجهيز',
-        )
         broadcast_chat_message_to_order(order.id, _chat_message_payload(preparing_msg, request=request), request=request)
     except Exception as e:
         print(f"confirm order chat message error: {e}")
 
     response_serializer = OrderSerializer(order, context={'request': request})
     try:
+        order.refresh_from_db(fields=['status', 'unread_messages_count', 'updated_at'])
         notify_order_update(
             shop_owner_id=order.shop_owner_id,
             customer_id=order.customer_id,
@@ -8217,33 +8226,42 @@ def customer_order_reject_view(request, order_id):
     old_status = order.status
     current_driver_id = order.driver_id
     old_driver_accepted_at = order.driver_accepted_at
-    order.status = 'cancelled'
-    order.save()
-
     try:
-        rejected_msg = ChatMessage.objects.create(
-            order=order,
-            chat_type='shop_customer',
-            sender_type='customer',
-            sender_customer=customer,
-            message_type='text',
-            content='تم رفض الفاتورة من العميل',
-        )
+        with transaction.atomic():
+            order.status = 'cancelled'
+            order.save(update_fields=['status', 'updated_at'])
+
+            rejected_msg = ChatMessage.objects.create(
+                order=order,
+                chat_type='shop_customer',
+                sender_type='customer',
+                sender_customer=customer,
+                message_type='text',
+                content='تم رفض الفاتورة من العميل',
+            )
+            cancelled_msg = ChatMessage.objects.create(
+                order=order,
+                chat_type='shop_customer',
+                sender_type='shop_owner',
+                sender_shop_owner=order.shop_owner,
+                message_type='text',
+                content='order_cancelled_successfully',
+            )
+            order.unread_messages_count = order.messages.filter(
+                chat_type='shop_customer',
+                is_read=False,
+                sender_type='customer',
+            ).count()
+            order.save(update_fields=['unread_messages_count', 'updated_at'])
+
         broadcast_chat_message_to_order(order.id, _chat_message_payload(rejected_msg, request=request), request=request)
-        cancelled_msg = ChatMessage.objects.create(
-            order=order,
-            chat_type='shop_customer',
-            sender_type='shop_owner',
-            sender_shop_owner=order.shop_owner,
-            message_type='text',
-            content='order_cancelled_successfully',
-        )
         broadcast_chat_message_to_order(order.id, _chat_message_payload(cancelled_msg, request=request), request=request)
     except Exception as e:
         print(f"reject order chat message error: {e}")
 
     response_serializer = OrderSerializer(order, context={'request': request})
     try:
+        order.refresh_from_db(fields=['status', 'unread_messages_count', 'updated_at'])
         notify_order_update(
             shop_owner_id=order.shop_owner_id,
             customer_id=order.customer_id,
