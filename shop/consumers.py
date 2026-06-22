@@ -52,7 +52,7 @@ from .customer_app_realtime import (
     build_support_delta_events,
 )
 from .driver_realtime import build_driver_snapshot_events, has_driver_accepted
-from .chat_ring_service import apply_chat_ring_status_update, ChatRingError
+from .chat_ring_service import apply_chat_ring_status_update, ChatRingError, start_chat_ring
 from .fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
 from user.authentication import get_socket_session_group_name
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
@@ -312,6 +312,17 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
             }
         }
 
+    if chat_type == 'shop_customer':
+        chat_ring_context = _build_chat_ring_dispatch_context(
+            user,
+            user_type,
+            order,
+            scope=scope,
+            base_url=base_url,
+        )
+        if chat_ring_context is not None:
+            return chat_ring_context
+
     targets = _normalize_ring_targets(raw_targets)
     if not targets:
         return {
@@ -480,15 +491,16 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
             }
         )
 
-    try:
-        await sync_to_async(send_ring_push_fallback, thread_sensitive=False)(
-            int(order_id),
-            ring_context['payload'],
-            scope=getattr(consumer, 'scope', None),
-            base_url=getattr(consumer, 'base_url', None),
-        )
-    except Exception:
-        logger.exception('fcm ring fallback failed for order_id=%s', order_id)
+    if not ring_context.get('push_sent_via_service'):
+        try:
+            await sync_to_async(send_ring_push_fallback, thread_sensitive=False)(
+                int(order_id),
+                ring_context['payload'],
+                scope=getattr(consumer, 'scope', None),
+                base_url=getattr(consumer, 'base_url', None),
+            )
+        except Exception:
+            logger.exception('fcm ring fallback failed for order_id=%s', order_id)
 
     await _send_ack(
         consumer,
@@ -562,6 +574,66 @@ async def _handle_ring_status_request(consumer, data, request_id=None):
             'status_display': result['ack']['status_display'],
         },
     }))
+
+
+def _build_chat_ring_dispatch_context(user, user_type, order, scope=None, base_url=None):
+    if user_type not in {'shop_owner', 'employee'}:
+        return None
+    if not getattr(order, 'customer_id', None):
+        return None
+
+    try:
+        ring, _ = start_chat_ring(
+            order_id=order.id,
+            chat_id=f'order_{order.id}_shop_customer',
+            sender_id=user.id,
+            receiver_id=order.customer_id,
+            user=user,
+            request=None,
+        )
+    except ChatRingError as exc:
+        return {
+            'error': {
+                'code': getattr(exc, 'errors', {}).get('code', 'RING_FAILED'),
+                'message': exc.message,
+                'details': exc.errors or None,
+            }
+        }
+    except Exception:
+        logger.exception('Unexpected error while creating chat ring for order_id=%s', order.id)
+        return {
+            'error': {
+                'code': 'RING_FAILED',
+                'message': 'تعذر إرسال الرنة',
+            }
+        }
+
+    shop_payload = _build_ring_shop_payload(order, scope=scope, base_url=base_url)
+    payload = {
+        'ring_id': ring.public_id,
+        'order_id': order.id,
+        'order_number': order.order_number,
+        'shop': shop_payload,
+        'sender_type': user_type,
+        'sender_name': _get_user_display_name(user, user_type),
+        'sender_id': getattr(user, 'id', None),
+        'targets': ['customer'],
+        'status': ring.status,
+        'created_at': ring.created_at.isoformat() if ring.created_at else timezone.now().isoformat(),
+        'chat_type': 'shop_customer',
+        'notification_kind': 'ring',
+        'play_sound_on_frontend': True,
+        **_build_flat_ring_shop_fields(shop_payload),
+        **_build_ring_driver_fields(user, user_type, scope=scope, base_url=base_url),
+    }
+    payload['target'] = 'customer'
+
+    return {
+        'payload': payload,
+        'group_names': [f'customer_orders_{order.customer_id}'],
+        'unavailable_targets': [],
+        'push_sent_via_service': True,
+    }
 
 
 

@@ -40,6 +40,7 @@ from shop.fcm_views import (
 from user.authentication import build_session_refresh_token, rotate_user_session
 from shop.models import (
     AccountModerationStatus,
+    ChatRing,
     Customer,
     Driver,
     DriverChatConversation,
@@ -1030,6 +1031,26 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(context['payload']['chat_type'], 'driver_customer')
         self.assertIn('driver_image_url', context['payload'])
         self.assertTrue(str(context['payload']['driver_image_url'] or '').endswith('/media/drivers/driver_2.jpg'))
+
+    @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
+    def test_shop_customer_ring_dispatch_context_uses_persisted_chat_ring_id(self, mock_send_ring):
+        context = async_to_sync(_build_ring_dispatch_context)(
+            self.shop,
+            'shop_owner',
+            self.order.id,
+            ['customer'],
+            chat_type='shop_customer',
+        )
+
+        self.assertNotIn('error', context)
+        self.assertTrue(context.get('push_sent_via_service'))
+        self.assertEqual(ChatRing.objects.count(), 1)
+        ring = ChatRing.objects.get()
+        self.assertEqual(context['payload']['ring_id'], ring.public_id)
+        self.assertEqual(context['payload']['target'], 'customer')
+        self.assertEqual(context['payload']['chat_type'], 'shop_customer')
+        self.assertEqual(context['group_names'], [f'customer_orders_{self.customer.id}'])
+        mock_send_ring.assert_called_once()
 
 
 class FCMServiceTests(TestCase):
