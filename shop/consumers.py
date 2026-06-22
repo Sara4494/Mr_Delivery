@@ -2320,6 +2320,18 @@ class OrderConsumer(AsyncWebsocketConsumer):
                 details={'error_detail': str(e)},
             )
 
+    def _extract_order_id(self, payload):
+        if not isinstance(payload, dict):
+            return None
+        order_id = payload.get('order_id') or payload.get('id')
+        order_payload = payload.get('order')
+        if not order_id and isinstance(order_payload, dict):
+            order_id = order_payload.get('id') or order_payload.get('order_id')
+        try:
+            return int(order_id) if order_id is not None else None
+        except (TypeError, ValueError):
+            return None
+
     async def order_update(self, event):
         order_id = self._extract_order_id(event.get('data'))
         payload = await self.get_shop_order_snapshot(order_id) if order_id else None
