@@ -1052,6 +1052,26 @@ class FCMFallbackDispatchTests(TestCase):
         self.assertEqual(context['group_names'], [f'customer_orders_{self.customer.id}'])
         mock_send_ring.assert_called_once()
 
+    @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
+    def test_customer_to_shop_ring_dispatch_context_uses_persisted_chat_ring_id(self, mock_send_ring):
+        context = async_to_sync(_build_ring_dispatch_context)(
+            self.customer,
+            'customer',
+            self.order.id,
+            ['shop'],
+            chat_type='shop_customer',
+        )
+
+        self.assertNotIn('error', context)
+        self.assertTrue(context.get('push_sent_via_service'))
+        self.assertEqual(ChatRing.objects.count(), 1)
+        ring = ChatRing.objects.get()
+        self.assertEqual(context['payload']['ring_id'], ring.public_id)
+        self.assertEqual(context['payload']['target'], 'shop')
+        self.assertEqual(context['payload']['chat_type'], 'shop_customer')
+        self.assertEqual(context['group_names'], [f'shop_orders_{self.shop.id}'])
+        mock_send_ring.assert_called_once()
+
 
 class FCMServiceTests(TestCase):
     def setUp(self):

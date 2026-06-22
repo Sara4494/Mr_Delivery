@@ -312,18 +312,35 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
             }
         }
 
-    if chat_type == 'shop_customer':
-        chat_ring_context = _build_chat_ring_dispatch_context(
-            user,
-            user_type,
-            order,
-            scope=scope,
-            base_url=base_url,
-        )
-        if chat_ring_context is not None:
-            return chat_ring_context
-
     targets = _normalize_ring_targets(raw_targets)
+    if chat_type == 'shop_customer':
+        if user_type in {'shop_owner', 'employee'} and 'customer' in targets:
+            chat_ring_context = _build_chat_ring_dispatch_context(
+                user,
+                user_type,
+                order,
+                receiver_type='customer',
+                receiver_id=order.customer_id,
+                target_label='customer',
+                scope=scope,
+                base_url=base_url,
+            )
+            if chat_ring_context is not None:
+                return chat_ring_context
+        if user_type == 'customer' and 'shop' in targets:
+            chat_ring_context = _build_chat_ring_dispatch_context(
+                user,
+                user_type,
+                order,
+                receiver_type='shop_owner',
+                receiver_id=order.shop_owner_id,
+                target_label='shop',
+                scope=scope,
+                base_url=base_url,
+            )
+            if chat_ring_context is not None:
+                return chat_ring_context
+
     if not targets:
         return {
             'error': {
@@ -576,10 +593,10 @@ async def _handle_ring_status_request(consumer, data, request_id=None):
     }))
 
 
-def _build_chat_ring_dispatch_context(user, user_type, order, scope=None, base_url=None):
-    if user_type not in {'shop_owner', 'employee'}:
+def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, receiver_id, target_label, scope=None, base_url=None):
+    if receiver_type not in {'customer', 'shop_owner', 'employee'}:
         return None
-    if not getattr(order, 'customer_id', None):
+    if not receiver_id:
         return None
 
     try:
@@ -587,7 +604,7 @@ def _build_chat_ring_dispatch_context(user, user_type, order, scope=None, base_u
             order_id=order.id,
             chat_id=f'order_{order.id}_shop_customer',
             sender_id=user.id,
-            receiver_id=order.customer_id,
+            receiver_id=receiver_id,
             user=user,
             request=None,
         )
@@ -617,7 +634,7 @@ def _build_chat_ring_dispatch_context(user, user_type, order, scope=None, base_u
         'sender_type': user_type,
         'sender_name': _get_user_display_name(user, user_type),
         'sender_id': getattr(user, 'id', None),
-        'targets': ['customer'],
+        'targets': [target_label],
         'status': ring.status,
         'created_at': ring.created_at.isoformat() if ring.created_at else timezone.now().isoformat(),
         'chat_type': 'shop_customer',
@@ -626,11 +643,11 @@ def _build_chat_ring_dispatch_context(user, user_type, order, scope=None, base_u
         **_build_flat_ring_shop_fields(shop_payload),
         **_build_ring_driver_fields(user, user_type, scope=scope, base_url=base_url),
     }
-    payload['target'] = 'customer'
+    payload['target'] = target_label
 
     return {
         'payload': payload,
-        'group_names': [f'customer_orders_{order.customer_id}'],
+        'group_names': [f'customer_orders_{order.customer_id}'] if target_label == 'customer' else [f'shop_orders_{order.shop_owner_id}'],
         'unavailable_targets': [],
         'push_sent_via_service': True,
     }
