@@ -1,4 +1,5 @@
 from datetime import timedelta
+import threading
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -15,6 +16,8 @@ CHAT_RING_DURATION_SECONDS = 30
 CHAT_RING_APNS_CATEGORY = 'CHAT_RING'
 CHAT_RING_CHAT_TYPE = 'shop_customer'
 CHAT_RING_TERMINAL_STATUSES = {'answered', 'dismissed', 'timeout', 'cancelled'}
+_CHAT_RING_TIMEOUT_LOCK = threading.Lock()
+_CHAT_RING_TIMEOUT_TIMERS = {}
 CHAT_RING_STATUS_DISPLAY_MAP = {
     'ar': {
         'ringing': 'جارٍ الرن',
@@ -173,7 +176,59 @@ def _ring_socket_group_names(ring):
         group_name = _ring_socket_group_name(user_type, user_id, order)
         if group_name and group_name not in groups:
             groups.append(group_name)
+    driver_group = getattr(order, 'driver_id', None)
+    if driver_group:
+        group_name = f'driver_{driver_group}'
+        if group_name not in groups:
+            groups.append(group_name)
     return groups
+
+
+def _cancel_chat_ring_timeout_timer(ring_id):
+    ring_key = str(ring_id or '').strip()
+    if not ring_key:
+        return
+    with _CHAT_RING_TIMEOUT_LOCK:
+        timer = _CHAT_RING_TIMEOUT_TIMERS.pop(ring_key, None)
+    if timer is not None:
+        timer.cancel()
+
+
+def _schedule_chat_ring_timeout_timer(ring_id, expires_at):
+    ring_key = str(ring_id or '').strip()
+    if not ring_key or expires_at is None:
+        return
+
+    delay = max((expires_at - timezone.now()).total_seconds(), 0)
+
+    def _timeout_ring():
+        try:
+            ring = (
+                ChatRing.objects.select_related('order', 'order__shop_owner', 'order__customer', 'order__driver')
+                .filter(public_id=ring_key)
+                .first()
+            )
+            if not ring or ring.status != 'ringing':
+                return
+            if ring.expires_at and ring.expires_at > timezone.now():
+                return
+            try:
+                update_chat_ring_status(ring, status_value='timeout', actor=None)
+            except ChatRingError:
+                return
+        finally:
+            _cancel_chat_ring_timeout_timer(ring_key)
+
+    timer = threading.Timer(delay, _timeout_ring)
+    timer.daemon = True
+
+    with _CHAT_RING_TIMEOUT_LOCK:
+        old_timer = _CHAT_RING_TIMEOUT_TIMERS.pop(ring_key, None)
+        if old_timer is not None:
+            old_timer.cancel()
+        _CHAT_RING_TIMEOUT_TIMERS[ring_key] = timer
+
+    timer.start()
 
 
 def _broadcast_ring_status_update(ring):
@@ -333,6 +388,7 @@ def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=
         expires_at=expires_at,
         with_sound=True,
     )
+    transaction.on_commit(lambda: _schedule_chat_ring_timeout_timer(ring.public_id, expires_at))
     response = serialize_chat_ring(ring)
     response['push'] = push_summary
     return ring, response
@@ -357,13 +413,12 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
         raise ChatRingError('Unsupported chat ring status transition.')
 
     if ring.status == status_value:
+        if ring.status in CHAT_RING_TERMINAL_STATUSES:
+            _cancel_chat_ring_timeout_timer(ring.public_id)
         return ring, serialize_chat_ring(ring)
     if ring.status in CHAT_RING_TERMINAL_STATUSES:
-        raise ChatRingError(
-            f'Chat ring is already {ring.status}.',
-            status_code=409,
-            errors={'status': f'Cannot transition from {ring.status}.'},
-        )
+        _cancel_chat_ring_timeout_timer(ring.public_id)
+        return ring, serialize_chat_ring(ring)
 
     now = timezone.now()
     update_fields = ['status', 'updated_at']
@@ -385,6 +440,8 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
 
     with transaction.atomic():
         ring.save(update_fields=update_fields)
+        if status_value in CHAT_RING_TERMINAL_STATUSES:
+            _cancel_chat_ring_timeout_timer(ring.public_id)
 
         def _dispatch_updates():
             _broadcast_ring_status_update(ring)
@@ -401,3 +458,79 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
     if actor_type:
         response['acted_by'] = actor_type
     return ring, response
+
+
+def _chat_ring_actor_can_transition(ring, actor, status_value):
+    if actor is None:
+        return True
+    user_type = _resolve_user_type(actor)
+    if not user_type:
+        return False
+    if status_value in {'answered', 'dismissed'}:
+        return _actor_matches_ring_side(ring, actor, user_type, 'receiver')
+    if status_value == 'cancelled':
+        return _actor_matches_ring_side(ring, actor, user_type, 'sender')
+    return (
+        _actor_matches_ring_side(ring, actor, user_type, 'sender')
+        or _actor_matches_ring_side(ring, actor, user_type, 'receiver')
+    )
+
+
+def apply_chat_ring_status_update(*, ring_id, actor, status_value, lang=None):
+    ring = (
+        ChatRing.objects.select_related('order', 'order__shop_owner', 'order__customer', 'order__driver')
+        .filter(public_id=str(ring_id or '').strip())
+        .first()
+    )
+    if ring is None:
+        raise ChatRingError('Chat ring not found.', status_code=404)
+
+    now = timezone.now()
+    if ring.status == 'ringing' and ring.expires_at and ring.expires_at <= now:
+        ring, _ = update_chat_ring_status(ring, status_value='timeout', actor=None)
+
+    if ring.status in CHAT_RING_TERMINAL_STATUSES:
+        if ring.status == status_value:
+            return ring, {
+                'ack': {
+                    'ring_id': ring.public_id,
+                    'status': ring.status,
+                    'status_display': _ring_status_display(ring.status, lang=lang),
+                },
+                'ring': {
+                    **_ring_payload(ring, event_type='ring'),
+                    'updated_at': ring.updated_at.isoformat() if ring.updated_at else None,
+                },
+                'status_changed': False,
+            }
+        if ring.status != status_value:
+            return ring, {
+                'ack': {
+                    'ring_id': ring.public_id,
+                    'status': ring.status,
+                    'status_display': _ring_status_display(ring.status, lang=lang),
+                },
+                'ring': {
+                    **_ring_payload(ring, event_type='ring'),
+                    'updated_at': ring.updated_at.isoformat() if ring.updated_at else None,
+                },
+                'status_changed': False,
+            }
+
+    if not _chat_ring_actor_can_transition(ring, actor, status_value):
+        raise ChatRingError('You do not have permission to update this ring.', status_code=403)
+
+    ring, payload = update_chat_ring_status(ring, status_value=status_value, actor=actor)
+    return ring, {
+        'ack': {
+            'ring_id': ring.public_id,
+            'status': ring.status,
+            'status_display': _ring_status_display(ring.status, lang=lang),
+        },
+        'ring': {
+            **_ring_payload(ring, event_type='ring'),
+            'updated_at': ring.updated_at.isoformat() if ring.updated_at else None,
+        },
+        'status_changed': True,
+        'payload': payload,
+    }

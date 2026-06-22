@@ -3,16 +3,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.test import TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
 
-from shop.models import ChatRing, Customer, Employee, Order
+from shop.models import ChatRing, Customer, Driver, Employee, Order
+from shop.chat_ring_service import (
+    ChatRingError,
+    apply_chat_ring_status_update,
+    start_chat_ring,
+)
 from user.models import ShopCategory, ShopOwner
 
 
 class ChatRingsApiTests(TestCase):
     def setUp(self):
         super().setUp()
-        self.client = APIClient()
         self.category = ShopCategory.objects.create(name='Groceries')
         self.shop = ShopOwner.objects.create(
             owner_name='Shop Owner',
@@ -37,6 +40,9 @@ class ChatRingsApiTests(TestCase):
             password='secret123',
             is_verified=True,
         )
+        self.shop.user_type = 'shop_owner'
+        self.employee.user_type = 'employee'
+        self.customer.user_type = 'customer'
         self.order = Order.objects.create(
             shop_owner=self.shop,
             customer=self.customer,
@@ -49,26 +55,21 @@ class ChatRingsApiTests(TestCase):
 
     @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
     def test_shop_owner_can_start_chat_ring_for_customer(self, mock_send_ring):
-        self.client.force_authenticate(user=self.shop)
-
-        response = self.client.post(
-            '/api/chat-rings/start',
-            {
-                'chat_id': f'order_{self.order.id}_shop_customer',
-                'sender_id': self.shop.id,
-                'receiver_id': self.customer.id,
-                'order_id': self.order.id,
-            },
-            format='json',
+        ring, payload = start_chat_ring(
+            chat_id=f'order_{self.order.id}_shop_customer',
+            sender_id=self.shop.id,
+            receiver_id=self.customer.id,
+            order_id=self.order.id,
+            user=self.shop,
+            request=None,
         )
 
-        self.assertEqual(response.status_code, 201)
         ring = ChatRing.objects.get()
         self.assertEqual(ring.status, 'ringing')
         self.assertEqual(ring.sender_type, 'shop_owner')
         self.assertEqual(ring.receiver_type, 'customer')
-        self.assertEqual(response.data['data']['duration_seconds'], 30)
-        self.assertEqual(response.data['data']['push']['tokens_sent'], 1)
+        self.assertEqual(payload['duration_seconds'], 30)
+        self.assertEqual(payload['push']['tokens_sent'], 1)
         mock_send_ring.assert_called_once()
         args, kwargs = mock_send_ring.call_args
         self.assertEqual(args[0], 'customer')
@@ -91,20 +92,17 @@ class ChatRingsApiTests(TestCase):
             receiver_id=self.customer.id,
             expires_at=timezone.now() + timedelta(seconds=30),
         )
-        self.client.force_authenticate(user=self.shop)
+        with self.assertRaises(ChatRingError) as ctx:
+            start_chat_ring(
+                chat_id=f'order_{self.order.id}_shop_customer',
+                sender_id=self.shop.id,
+                receiver_id=self.customer.id,
+                order_id=self.order.id,
+                user=self.shop,
+                request=None,
+            )
 
-        response = self.client.post(
-            '/api/chat-rings/start',
-            {
-                'chat_id': f'order_{self.order.id}_shop_customer',
-                'sender_id': self.shop.id,
-                'receiver_id': self.customer.id,
-                'order_id': self.order.id,
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(ctx.exception.status_code, 409)
         self.assertEqual(ChatRing.objects.count(), 1)
         mock_send_ring.assert_not_called()
 
@@ -124,15 +122,19 @@ class ChatRingsApiTests(TestCase):
         mock_channel_layer = MagicMock()
         mock_channel_layer.group_send = AsyncMock()
         mock_get_channel_layer.return_value = mock_channel_layer
-        self.client.force_authenticate(user=self.customer)
 
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(f'/api/chat-rings/{ring.public_id}/answered', {}, format='json')
+            _, result = apply_chat_ring_status_update(
+                ring_id=ring.public_id,
+                actor=self.customer,
+                status_value='answered',
+                lang='ar',
+            )
 
-        self.assertEqual(response.status_code, 200)
         ring.refresh_from_db()
         self.assertEqual(ring.status, 'answered')
         self.assertIsNotNone(ring.answered_at)
+        self.assertTrue(result['status_changed'])
         self.assertEqual(mock_send_ring.call_count, 2)
         recipients = {(call.args[0], call.args[1]) for call in mock_send_ring.call_args_list}
         self.assertEqual(recipients, {('shop_owner', self.shop.id), ('customer', self.customer.id)})
@@ -159,14 +161,18 @@ class ChatRingsApiTests(TestCase):
         mock_channel_layer = MagicMock()
         mock_channel_layer.group_send = AsyncMock()
         mock_get_channel_layer.return_value = mock_channel_layer
-        self.client.force_authenticate(user=self.shop)
 
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(f'/api/chat-rings/{ring.public_id}/cancel', {}, format='json')
+            _, result = apply_chat_ring_status_update(
+                ring_id=ring.public_id,
+                actor=self.shop,
+                status_value='cancelled',
+                lang='ar',
+            )
 
-        self.assertEqual(response.status_code, 200)
         ring.refresh_from_db()
         self.assertEqual(ring.status, 'cancelled')
+        self.assertTrue(result['status_changed'])
         self.assertEqual(mock_send_ring.call_count, 2)
         recipients = {(call.args[0], call.args[1]) for call in mock_send_ring.call_args_list}
         self.assertEqual(recipients, {('shop_owner', self.shop.id), ('customer', self.customer.id)})
@@ -192,15 +198,19 @@ class ChatRingsApiTests(TestCase):
         mock_channel_layer = MagicMock()
         mock_channel_layer.group_send = AsyncMock()
         mock_get_channel_layer.return_value = mock_channel_layer
-        self.client.force_authenticate(user=self.customer)
 
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(f'/api/chat-rings/{ring.public_id}/timeout', {}, format='json')
+            _, result = apply_chat_ring_status_update(
+                ring_id=ring.public_id,
+                actor=self.customer,
+                status_value='timeout',
+                lang='ar',
+            )
 
-        self.assertEqual(response.status_code, 200)
         ring.refresh_from_db()
         self.assertEqual(ring.status, 'timeout')
         self.assertIsNotNone(ring.timed_out_at)
+        self.assertTrue(result['status_changed'])
         self.assertEqual(mock_send_ring.call_count, 2)
         recipients = {(call.args[0], call.args[1]) for call in mock_send_ring.call_args_list}
         self.assertEqual(recipients, {('shop_owner', self.shop.id), ('customer', self.customer.id)})
@@ -210,3 +220,92 @@ class ChatRingsApiTests(TestCase):
         self.assertEqual(mock_channel_layer.group_send.await_count, 2)
         sent_groups = {call.args[0] for call in mock_channel_layer.group_send.await_args_list}
         self.assertEqual(sent_groups, {f'shop_orders_{self.shop.id}', f'customer_orders_{self.customer.id}'})
+
+    @patch('shop.chat_ring_service.get_channel_layer')
+    @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
+    def test_repeating_the_same_terminal_status_is_idempotent(self, mock_send_ring, mock_get_channel_layer):
+        ring = ChatRing.objects.create(
+            order=self.order,
+            chat_id=f'order_{self.order.id}_shop_customer',
+            sender_type='shop_owner',
+            sender_id=self.shop.id,
+            receiver_type='customer',
+            receiver_id=self.customer.id,
+            expires_at=timezone.now() + timedelta(seconds=30),
+        )
+        mock_channel_layer = MagicMock()
+        mock_channel_layer.group_send = AsyncMock()
+        mock_get_channel_layer.return_value = mock_channel_layer
+
+        with self.captureOnCommitCallbacks(execute=True):
+            _, result = apply_chat_ring_status_update(
+                ring_id=ring.public_id,
+                actor=self.customer,
+                status_value='answered',
+                lang='ar',
+            )
+
+        ring.refresh_from_db()
+        self.assertEqual(ring.status, 'answered')
+        self.assertTrue(result['status_changed'])
+        self.assertEqual(mock_send_ring.call_count, 2)
+        self.assertEqual(mock_channel_layer.group_send.await_count, 2)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            _, repeat_result = apply_chat_ring_status_update(
+                ring_id=ring.public_id,
+                actor=self.customer,
+                status_value='answered',
+                lang='ar',
+            )
+
+        ring.refresh_from_db()
+        self.assertEqual(ring.status, 'answered')
+        self.assertFalse(repeat_result['status_changed'])
+        self.assertEqual(mock_send_ring.call_count, 2)
+        self.assertEqual(mock_channel_layer.group_send.await_count, 2)
+
+    @patch('shop.chat_ring_service.get_channel_layer')
+    @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
+    def test_ring_status_broadcast_reaches_assigned_driver_group(self, mock_send_ring, mock_get_channel_layer):
+        driver = Driver.objects.create(
+            name='Assigned Driver',
+            phone_number='01010000994',
+            password='secret123',
+            is_verified=True,
+            is_online=True,
+            availability_enabled=True,
+            status='available',
+        )
+        driver.user_type = 'driver'
+        self.order.driver = driver
+        self.order.save(update_fields=['driver'])
+
+        ring = ChatRing.objects.create(
+            order=self.order,
+            chat_id=f'order_{self.order.id}_shop_customer',
+            sender_type='shop_owner',
+            sender_id=self.shop.id,
+            receiver_type='customer',
+            receiver_id=self.customer.id,
+            expires_at=timezone.now() + timedelta(seconds=30),
+        )
+        mock_channel_layer = MagicMock()
+        mock_channel_layer.group_send = AsyncMock()
+        mock_get_channel_layer.return_value = mock_channel_layer
+
+        with self.captureOnCommitCallbacks(execute=True):
+            _, result = apply_chat_ring_status_update(
+                ring_id=ring.public_id,
+                actor=self.customer,
+                status_value='answered',
+                lang='ar',
+            )
+
+        ring.refresh_from_db()
+        self.assertEqual(ring.status, 'answered')
+        self.assertTrue(result['status_changed'])
+        self.assertEqual(mock_send_ring.call_count, 2)
+        self.assertEqual(mock_channel_layer.group_send.await_count, 3)
+        sent_groups = {call.args[0] for call in mock_channel_layer.group_send.await_args_list}
+        self.assertEqual(sent_groups, {f'shop_orders_{self.shop.id}', f'customer_orders_{self.customer.id}', f'driver_{driver.id}'})

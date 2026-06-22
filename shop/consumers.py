@@ -52,6 +52,7 @@ from .customer_app_realtime import (
     build_support_delta_events,
 )
 from .driver_realtime import build_driver_snapshot_events, has_driver_accepted
+from .chat_ring_service import apply_chat_ring_status_update, ChatRingError
 from .fcm_service import send_order_chat_push_fallback, send_ring_push_fallback
 from user.authentication import get_socket_session_group_name
 from user.utils import build_absolute_file_url, build_message_fields, resolve_base_url
@@ -502,9 +503,65 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
             'targets': ring_context['payload']['targets'],
             'unavailable_targets': ring_context.get('unavailable_targets', []),
             'ring_id': ring_context['payload']['ring_id'],
+            'status': ring_context['payload']['status'],
+            'status_display': ring_context['payload'].get('status_display'),
         },
         message='تم إرسال الرنة بنجاح',
     )
+
+
+async def _handle_ring_status_request(consumer, data, request_id=None):
+    ring_id = str(data.get('ring_id') or '').strip()
+    status_value = str(data.get('status') or '').strip()
+    lang = str(data.get('lang') or getattr(consumer, 'lang', None) or 'ar').strip() or 'ar'
+
+    if not ring_id:
+        await _send_error_event(
+            consumer,
+            code='RING_ID_REQUIRED',
+            message='ring_id مطلوب لتحديث حالة الرنة',
+            request_id=request_id,
+        )
+        return
+
+    if status_value not in {'answered', 'dismissed', 'cancelled', 'timeout'}:
+        await _send_error_event(
+            consumer,
+            code='INVALID_RING_STATUS',
+            message='حالة الرنة غير مدعومة',
+            request_id=request_id,
+            details={'status': status_value},
+        )
+        return
+
+    try:
+        _, result = await sync_to_async(apply_chat_ring_status_update, thread_sensitive=False)(
+            ring_id=ring_id,
+            actor=consumer.user,
+            status_value=status_value,
+            lang=lang,
+        )
+    except ChatRingError as exc:
+        await _send_error_event(
+            consumer,
+            code=getattr(exc, 'errors', {}).get('code', 'RING_STATUS_FAILED'),
+            message=exc.message,
+            request_id=request_id,
+            details=exc.errors or None,
+        )
+        return
+
+    await consumer.send(text_data=_json_dumps({
+        'type': 'ack',
+        'action': 'ring_status',
+        'success': True,
+        'request_id': request_id,
+        'data': {
+            'ring_id': result['ack']['ring_id'],
+            'status': result['ack']['status'],
+            'status_display': result['ack']['status_display'],
+        },
+    }))
 
 
 
@@ -663,6 +720,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     await self.handle_chat_message(data, request_id=request_id, action=event_type)
             elif event_type == 'ring':
                 await self.handle_ring(data, request_id=request_id)
+            elif event_type == 'ring_status':
+                await _handle_ring_status_request(self, data, request_id=request_id)
             elif event_type == 'mark_read':
                 await self.handle_mark_read(request_id=request_id)
             elif event_type == 'typing':
@@ -2318,6 +2377,8 @@ class OrderConsumer(AsyncWebsocketConsumer):
 
             if event_type == 'ring':
                 await _handle_ring_request(self, data, request_id=request_id)
+            elif event_type == 'ring_status':
+                await _handle_ring_status_request(self, data, request_id=request_id)
             elif event_type in {'sync_dashboard', 'refresh_dashboard'}:
                 await self.send_shop_dashboard_snapshots()
                 await _send_ack(
@@ -3081,6 +3142,8 @@ class DriverConsumer(AsyncWebsocketConsumer):
                 await self.handle_location_update(data)
             elif msg_type == 'ring':
                 await _handle_ring_request(self, data, request_id=request_id)
+            elif msg_type == 'ring_status':
+                await _handle_ring_status_request(self, data, request_id=request_id)
             elif msg_type in {'ping', 'presence_ping'}:
                 await self.send(text_data=_json_dumps({
                     'type': 'pong',

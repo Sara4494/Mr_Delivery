@@ -4969,6 +4969,7 @@ def shop_dashboard_statistics_view(request):
 
     today = timezone.localdate()
     current_start = None
+    current_end = None
     previous_start = None
     previous_end = None
 
