@@ -40,3 +40,5 @@ staticfiles/
 # OS
 .DS_Store
 Thumbs.db
+.venv311
+.venv313

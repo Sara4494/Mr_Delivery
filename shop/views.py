@@ -1,5 +1,6 @@
-import logging
+﻿import logging
 from urllib.parse import unquote, urlsplit
+from decimal import Decimal
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -760,6 +761,55 @@ def _apply_created_date_range(queryset, start_date=None, end_date=None):
     if end_date:
         queryset = queryset.filter(created_at__date__lte=end_date)
     return queryset
+
+
+def _apply_datetime_date_range(queryset, field_name, start_date=None, end_date=None):
+    if start_date:
+        queryset = queryset.filter(**{f'{field_name}__date__gte': start_date})
+    if end_date:
+        queryset = queryset.filter(**{f'{field_name}__date__lte': end_date})
+    return queryset
+
+
+def _get_shop_report_orders_queryset(shop_owner, start_date=None, end_date=None):
+    queryset = Order.objects.filter(shop_owner=shop_owner)
+    delivered_qs = _apply_datetime_date_range(
+        queryset.filter(status='delivered'),
+        'delivered_at',
+        start_date,
+        end_date,
+    )
+    cancelled_qs = _apply_datetime_date_range(
+        queryset.filter(status='cancelled'),
+        'updated_at',
+        start_date,
+        end_date,
+    )
+    return delivered_qs, cancelled_qs
+
+
+def _get_shop_report_invoices_queryset(shop_owner, start_date=None, end_date=None):
+    queryset = Invoice.objects.filter(shop_owner=shop_owner, is_sent=True)
+    if not start_date and not end_date:
+        return queryset
+
+    dated_qs = queryset.filter(sent_at__isnull=False)
+    dated_qs = _apply_datetime_date_range(dated_qs, 'sent_at', start_date, end_date)
+    fallback_qs = queryset.filter(sent_at__isnull=True)
+    fallback_qs = _apply_created_date_range(fallback_qs, start_date, end_date)
+    return (dated_qs | fallback_qs).distinct()
+
+
+def _aggregate_money(queryset, field_name='total_amount'):
+    total = queryset.aggregate(total=Sum(field_name))['total'] or Decimal('0')
+    return Decimal(str(total))
+
+
+def _decimal_to_number(value):
+    decimal_value = value if isinstance(value, Decimal) else Decimal(str(value or 0))
+    if decimal_value == decimal_value.to_integral():
+        return int(decimal_value)
+    return round(float(decimal_value), 2)
 
 
 def _cleanup_expired_offers():
@@ -3175,21 +3225,35 @@ def driver_order_deliver_view(request, order_id):
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    delivered_at = timezone.now()
-    previous_status = order.status
-    previous_driver_id = order.driver_id
-    previous_driver_accepted_at = order.driver_accepted_at
-
     with transaction.atomic():
-        order.status = 'delivered'
-        order.delivered_at = delivered_at
-        order.save(update_fields=['status', 'delivered_at', 'updated_at'])
+        locked_order = (
+            Order.objects.select_for_update()
+            .select_related('shop_owner', 'customer', 'delivery_address', 'driver')
+            .filter(id=order.id, driver=driver)
+            .first()
+        )
+        if not locked_order or locked_order.status not in DRIVER_APP_ORDER_STATUSES or not has_driver_accepted(locked_order):
+            return error_response(
+                message=t(request, 'driver_order_cannot_be_delivered_in_current_status'),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        delivered_at = timezone.now()
+        previous_status = locked_order.status
+        previous_driver_id = locked_order.driver_id
+        previous_driver_accepted_at = locked_order.driver_accepted_at
+
+        locked_order.status = 'delivered'
+        locked_order.delivered_at = delivered_at
+        locked_order.save(update_fields=['status', 'delivered_at', 'updated_at'])
 
         driver.current_orders_count = driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
         driver.save(update_fields=['current_orders_count'])
 
-        shop_payload = build_shop_order_realtime_payload(order, request=request)
-        order_payload = build_driver_order_payload(order, request=request)
+        shop_payload = build_shop_order_realtime_payload(locked_order, request=request)
+        order_payload = build_driver_order_payload(locked_order, request=request)
+
+    order = locked_order
 
     try:
         notify_order_update(
@@ -4867,7 +4931,11 @@ def invoice_detail_view(request, invoice_id):
         )
 
     elif request.method == 'PUT':
-        is_sent = request.data.get('is_sent', False)
+        raw_is_sent = request.data.get('is_sent', False)
+        if isinstance(raw_is_sent, str):
+            is_sent = raw_is_sent.strip().lower() in {'1', 'true', 'yes', 'on'}
+        else:
+            is_sent = bool(raw_is_sent)
         invoice.is_sent = is_sent
         if is_sent and not invoice.sent_at:
             invoice.sent_at = timezone.now()
@@ -4917,64 +4985,82 @@ def shop_dashboard_statistics_view(request):
         previous_end = current_start - timedelta(days=1)
         previous_start = previous_end.replace(day=1)
 
-    orders_qs = Order.objects.filter(shop_owner=shop_owner)
-    invoices_qs = Invoice.objects.filter(shop_owner=shop_owner)
-
+    period_orders_qs = Order.objects.filter(shop_owner=shop_owner)
     if current_start:
-        orders_qs = orders_qs.filter(created_at__date__gte=current_start)
-        invoices_qs = invoices_qs.filter(created_at__date__gte=current_start)
+        period_orders_qs = _apply_created_date_range(period_orders_qs, current_start, current_end)
 
     previous_orders_qs = Order.objects.none()
     previous_invoices_qs = Invoice.objects.none()
     if previous_start and previous_end:
-        previous_orders_qs = Order.objects.filter(
-            shop_owner=shop_owner,
-            created_at__date__gte=previous_start,
-            created_at__date__lte=previous_end,
+        previous_delivered_qs, previous_cancelled_qs = _get_shop_report_orders_queryset(
+            shop_owner,
+            previous_start,
+            previous_end,
         )
-        previous_invoices_qs = Invoice.objects.filter(
-            shop_owner=shop_owner,
-            created_at__date__gte=previous_start,
-            created_at__date__lte=previous_end,
-        )
+        previous_orders_qs = previous_delivered_qs | previous_cancelled_qs
+        previous_invoices_qs = _get_shop_report_invoices_queryset(shop_owner, previous_start, previous_end)
 
-    total_orders = orders_qs.count()
-    invoices_count = invoices_qs.count()
-    delivered_orders_count = orders_qs.filter(status='delivered').count()
-    cancelled_orders_count = orders_qs.filter(status='cancelled').count()
-    new_orders_count = orders_qs.filter(status='new').count()
+    delivered_orders_qs, cancelled_orders_qs = _get_shop_report_orders_queryset(
+        shop_owner,
+        current_start,
+        current_end,
+    )
+    approved_invoices_qs = _get_shop_report_invoices_queryset(
+        shop_owner,
+        current_start,
+        current_end,
+    ).filter(order__status__in=['confirmed', 'preparing', 'on_way', 'delivered'])
 
-    total_revenue = orders_qs.filter(status='delivered').aggregate(total=Sum('total_amount'))['total'] or 0
+    delivered_orders_count = delivered_orders_qs.count()
+    cancelled_orders_count = cancelled_orders_qs.count()
+    total_orders = delivered_orders_count + cancelled_orders_count
+    invoices_count = approved_invoices_qs.count()
+    new_orders_count = period_orders_qs.filter(status='new').count()
 
-    # النقدية: ما تم تحصيله كاش من الطلبات المسلمة
-    total_cash_collected = orders_qs.filter(
+    total_revenue = _aggregate_money(delivered_orders_qs)
+
+    cash_with_drivers_qs = Order.objects.filter(
+        shop_owner=shop_owner,
+        status__in=['preparing', 'on_way'],
+        payment_method='cash',
+        driver__isnull=False,
+    )
+    cash_in_treasury_qs = Order.objects.filter(
+        shop_owner=shop_owner,
         status='delivered',
-        payment_method='cash'
-    ).aggregate(total=Sum('total_amount'))['total'] or 0
-    # Field 'custody_amount' does not exist in Driver model.
-    cash_with_drivers = 0
-    cash_in_treasury = total_cash_collected - cash_with_drivers
-    if cash_in_treasury < 0:
-        cash_in_treasury = 0
+        payment_method='cash',
+    )
+    cash_with_drivers = _aggregate_money(cash_with_drivers_qs)
+    cash_in_treasury = _aggregate_money(cash_in_treasury_qs)
     total_available_cash = cash_in_treasury + cash_with_drivers
 
-    orders_by_status = orders_qs.values('status').annotate(count=Count('id'))
+    orders_by_status = period_orders_qs.values('status').annotate(count=Count('id'))
     total_customers = Customer.objects.filter(shop_owner=shop_owner).count()
     active_shop_drivers = _active_shop_drivers_queryset(shop_owner)
     total_drivers = active_shop_drivers.count()
     available_drivers = active_shop_drivers.filter(status='available').count()
-
-    previous_total_orders = previous_orders_qs.count()
-    previous_invoices_count = previous_invoices_qs.count()
 
     def _growth_percentage(current_value, previous_value):
         if previous_value <= 0:
             return 100.0 if current_value > 0 else 0.0
         return round(((current_value - previous_value) / previous_value) * 100, 1)
 
-    success_rate = round((delivered_orders_count / total_orders) * 100, 1) if total_orders else 0.0
-    delivered_percentage = round((delivered_orders_count / total_orders) * 100, 1) if total_orders else 0.0
-    cancelled_percentage = round((cancelled_orders_count / total_orders) * 100, 1) if total_orders else 0.0
+    success_rate = round((delivered_orders_count / total_orders) * 100, 2) if total_orders else 0.0
+    delivered_percentage = round((delivered_orders_count / total_orders) * 100, 2) if total_orders else 0.0
+    cancelled_percentage = round((cancelled_orders_count / total_orders) * 100, 2) if total_orders else 0.0
+    currency_code = getattr(settings, 'DEFAULT_CURRENCY_CODE', 'SAR')
+    cash_payload = {
+        'totalAvailable': _decimal_to_number(total_available_cash),
+        'inTreasury': _decimal_to_number(cash_in_treasury),
+        'withDrivers': _decimal_to_number(cash_with_drivers),
+        'currency': currency_code,
+    }
+    delivery_status_payload = {
+        'total': total_orders,
+        'delivered': delivered_orders_count,
+        'cancelled': cancelled_orders_count,
+        'successRate': success_rate,
+    }
 
     statistics = {
         # legacy keys (kept for backward compatibility)
@@ -4988,17 +5074,24 @@ def shop_dashboard_statistics_view(request):
 
         # reports/dashboard keys
         'period': period,
+        'totalOrders': total_orders,
+        'deliveredOrdersCount': delivered_orders_count,
+        'cancelledOrdersCount': cancelled_orders_count,
+        'approvedInvoicesCount': invoices_count,
+        'successRate': success_rate,
+        'cash': cash_payload,
+        'deliveryStatus': delivery_status_payload,
         'invoices_count': invoices_count,
         'delivered_orders_count': delivered_orders_count,
         'cancelled_orders_count': cancelled_orders_count,
-        'success_rate': success_rate,
         'cash_summary': {
             'total_available_cash': float(total_available_cash),
             'cash_in_treasury': float(cash_in_treasury),
             'cash_with_drivers': float(cash_with_drivers),
-            'total_cash_collected': float(total_cash_collected),
+            'currency': currency_code,
         },
         'delivery_status': {
+            'total': delivery_status_payload['total'],
             'delivered': {
                 'count': delivered_orders_count,
                 'percentage': delivered_percentage,
@@ -5009,8 +5102,8 @@ def shop_dashboard_statistics_view(request):
             },
         },
         'trends': {
-            'orders_growth_percent': _growth_percentage(total_orders, previous_total_orders),
-            'invoices_growth_percent': _growth_percentage(invoices_count, previous_invoices_count),
+            'orders_growth_percent': _growth_percentage(total_orders, previous_orders_qs.count()),
+            'invoices_growth_percent': _growth_percentage(invoices_count, previous_invoices_qs.count()),
         },
         'generated_at': timezone.now().isoformat(),
     }

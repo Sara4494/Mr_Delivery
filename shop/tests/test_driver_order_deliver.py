@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from shop.models import Customer, Driver, Order, ShopDriver
-from shop.views import driver_order_deliver_view
+from shop.views import driver_order_deliver_view, shop_dashboard_statistics_view
 from user.models import ShopCategory, ShopOwner
 
 
@@ -149,3 +149,31 @@ class DriverOrderDeliverViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(order.status, 'on_way')
         self.assertIsNone(order.delivered_at)
+
+    @patch('shop.views.notify_driver_status_updated')
+    @patch('shop.views.notify_order_update')
+    def test_driver_delivery_is_idempotent_for_cash_reporting(self, notify_order_update_mock, notify_driver_status_updated_mock):
+        order = self._create_order(status='on_way', accepted=True)
+
+        first_request = self.factory.post(f'/api/driver/orders/{order.id}/deliver/', {'order_id': order.id}, format='json')
+        force_authenticate(first_request, user=self.driver)
+        first_response = driver_order_deliver_view(first_request, order.id)
+
+        second_request = self.factory.post(f'/api/driver/orders/{order.id}/deliver/', {'order_id': order.id}, format='json')
+        force_authenticate(second_request, user=self.driver)
+        second_response = driver_order_deliver_view(second_request, order.id)
+
+        stats_request = self.factory.get('/api/shop/dashboard/statistics/')
+        force_authenticate(stats_request, user=self.shop)
+        stats_response = shop_dashboard_statistics_view(stats_request)
+
+        order.refresh_from_db()
+        self.assertEqual(first_response.status_code, 200)
+        self.assertIn(second_response.status_code, (400, 404))
+        self.assertEqual(order.status, 'delivered')
+        self.assertIsNotNone(order.delivered_at)
+        self.assertEqual(stats_response.data['data']['cash']['inTreasury'], 120)
+        self.assertEqual(stats_response.data['data']['cash']['withDrivers'], 0)
+        self.assertEqual(stats_response.data['data']['cash']['totalAvailable'], 120)
+        notify_order_update_mock.assert_called_once()
+        notify_driver_status_updated_mock.assert_called_once()
