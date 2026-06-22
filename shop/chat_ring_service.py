@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db import transaction
 from django.utils import timezone
 
@@ -13,6 +15,22 @@ CHAT_RING_DURATION_SECONDS = 30
 CHAT_RING_APNS_CATEGORY = 'CHAT_RING'
 CHAT_RING_CHAT_TYPE = 'shop_customer'
 CHAT_RING_TERMINAL_STATUSES = {'answered', 'dismissed', 'timeout', 'cancelled'}
+CHAT_RING_STATUS_DISPLAY_MAP = {
+    'ar': {
+        'ringing': 'جارٍ الرن',
+        'answered': 'تم الرد',
+        'dismissed': 'تم الرفض',
+        'timeout': 'انتهت المهلة',
+        'cancelled': 'تم الإلغاء',
+    },
+    'en': {
+        'ringing': 'Ringing',
+        'answered': 'Answered',
+        'dismissed': 'Dismissed',
+        'timeout': 'Timed out',
+        'cancelled': 'Cancelled',
+    },
+}
 
 
 class ChatRingError(Exception):
@@ -108,17 +126,81 @@ def _ring_payload(ring, *, event_type='chat_ring'):
         'type': event_type,
         'ring_id': str(ring.public_id or ''),
         'chat_id': str(ring.chat_id or ''),
+        'order_id': str(ring.order_id or ''),
+        'sender_id': str(ring.sender_id or ''),
+        'sender_name': str(metadata.get('sender_name') or ''),
+        'sender_avatar': str(metadata.get('sender_avatar') or ''),
+        'duration_seconds': str(CHAT_RING_DURATION_SECONDS),
+        'action': 'open_chat' if event_type == 'chat_ring' else 'update_chat',
+        'status': str(ring.status or ''),
+        'status_display': _ring_status_display(ring.status, lang='ar'),
     }
-    if event_type == 'chat_ring':
-        payload.update({
-            'order_id': str(ring.order_id or ''),
-            'sender_id': str(ring.sender_id or ''),
-            'sender_name': str(metadata.get('sender_name') or ''),
-            'sender_avatar': str(metadata.get('sender_avatar') or ''),
-            'duration_seconds': str(CHAT_RING_DURATION_SECONDS),
-            'action': 'open_chat',
-        })
     return payload
+
+
+def _normalize_ring_lang(lang):
+    normalized = str(lang or '').strip().lower()
+    if not normalized:
+        return 'ar'
+    if normalized.startswith('en'):
+        return 'en'
+    return 'ar'
+
+
+def _ring_status_display(status, *, lang=None):
+    status_key = str(status or '').strip()
+    normalized_lang = _normalize_ring_lang(lang)
+    return CHAT_RING_STATUS_DISPLAY_MAP.get(normalized_lang, {}).get(status_key, status_key)
+
+
+def _ring_socket_group_name(user_type, user_id, order):
+    if user_type in {'shop_owner', 'employee'} and getattr(order, 'shop_owner_id', None):
+        return f'shop_orders_{order.shop_owner_id}'
+    if user_type == 'customer' and getattr(order, 'customer_id', None):
+        return f'customer_orders_{order.customer_id}'
+    if user_type == 'driver' and getattr(order, 'driver_id', None):
+        return f'driver_{order.driver_id}'
+    return ''
+
+
+def _ring_socket_group_names(ring):
+    order = ring.order
+    groups = []
+    for user_type, user_id in (
+        (ring.sender_type, ring.sender_id),
+        (ring.receiver_type, ring.receiver_id),
+    ):
+        group_name = _ring_socket_group_name(user_type, user_id, order)
+        if group_name and group_name not in groups:
+            groups.append(group_name)
+    return groups
+
+
+def _broadcast_ring_status_update(ring):
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    payload = _ring_payload(ring, event_type=f'chat_ring_{ring.status}')
+    payload['status_display'] = _ring_status_display(ring.status, lang='ar')
+    payload['updated_at'] = ring.updated_at.isoformat() if ring.updated_at else None
+    if ring.answered_at is not None:
+        payload['answered_at'] = ring.answered_at.isoformat()
+    if ring.dismissed_at is not None:
+        payload['dismissed_at'] = ring.dismissed_at.isoformat()
+    if ring.timed_out_at is not None:
+        payload['timed_out_at'] = ring.timed_out_at.isoformat()
+    if ring.cancelled_at is not None:
+        payload['cancelled_at'] = ring.cancelled_at.isoformat()
+
+    for group_name in _ring_socket_group_names(ring):
+        async_to_sync(channel_layer.group_send)(
+            group_name,
+            {
+                'type': 'ring',
+                'data': payload,
+            },
+        )
 
 
 def _ring_push_profile():
@@ -298,24 +380,22 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
     elif status_value == 'cancelled':
         ring.cancelled_at = now
         update_fields.append('cancelled_at')
-    ring.save(update_fields=update_fields)
 
     actor_type = _resolve_user_type(actor) if actor is not None else ''
-    should_notify_sender = status_value in {'answered', 'timeout'}
-    should_notify_receiver = status_value == 'cancelled'
 
-    if should_notify_sender:
-        _send_ring_event_to_user(
-            ring.sender_type,
-            ring.sender_id,
-            _ring_payload(ring, event_type=f'chat_ring_{status_value}'),
-        )
-    if should_notify_receiver:
-        _send_ring_event_to_user(
-            ring.receiver_type,
-            ring.receiver_id,
-            _ring_payload(ring, event_type='chat_ring_cancelled'),
-        )
+    with transaction.atomic():
+        ring.save(update_fields=update_fields)
+
+        def _dispatch_updates():
+            _broadcast_ring_status_update(ring)
+            payload = _ring_payload(ring, event_type=f'chat_ring_{status_value}')
+            for user_type, user_id in {
+                (ring.sender_type, ring.sender_id),
+                (ring.receiver_type, ring.receiver_id),
+            }:
+                _send_ring_event_to_user(user_type, user_id, payload)
+
+        transaction.on_commit(_dispatch_updates)
 
     response = serialize_chat_ring(ring)
     if actor_type:

@@ -1,5 +1,5 @@
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.test import TestCase
 from django.utils import timezone
@@ -108,8 +108,9 @@ class ChatRingsApiTests(TestCase):
         self.assertEqual(ChatRing.objects.count(), 1)
         mock_send_ring.assert_not_called()
 
+    @patch('shop.chat_ring_service.get_channel_layer')
     @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
-    def test_customer_answered_updates_status_and_notifies_sender(self, mock_send_ring):
+    def test_customer_answered_updates_status_and_notifies_both_sides(self, mock_send_ring, mock_get_channel_layer):
         ring = ChatRing.objects.create(
             order=self.order,
             chat_id=f'order_{self.order.id}_shop_customer',
@@ -120,24 +121,32 @@ class ChatRingsApiTests(TestCase):
             expires_at=timezone.now() + timedelta(seconds=30),
             metadata={'sender_name': 'Ring Store', 'sender_avatar': 'https://example.com/shop.png'},
         )
+        mock_channel_layer = MagicMock()
+        mock_channel_layer.group_send = AsyncMock()
+        mock_get_channel_layer.return_value = mock_channel_layer
         self.client.force_authenticate(user=self.customer)
 
-        response = self.client.post(f'/api/chat-rings/{ring.public_id}/answered', {}, format='json')
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f'/api/chat-rings/{ring.public_id}/answered', {}, format='json')
 
         self.assertEqual(response.status_code, 200)
         ring.refresh_from_db()
         self.assertEqual(ring.status, 'answered')
         self.assertIsNotNone(ring.answered_at)
-        mock_send_ring.assert_called_once()
-        args, kwargs = mock_send_ring.call_args
-        self.assertEqual(args[0], 'shop_owner')
-        self.assertEqual(args[1], self.shop.id)
-        self.assertEqual(args[2]['type'], 'chat_ring_answered')
-        self.assertEqual(args[2]['ring_id'], ring.public_id)
-        self.assertEqual(args[2]['chat_id'], ring.chat_id)
+        self.assertEqual(mock_send_ring.call_count, 2)
+        recipients = {(call.args[0], call.args[1]) for call in mock_send_ring.call_args_list}
+        self.assertEqual(recipients, {('shop_owner', self.shop.id), ('customer', self.customer.id)})
+        for call in mock_send_ring.call_args_list:
+            self.assertEqual(call.args[2]['type'], 'chat_ring_answered')
+            self.assertEqual(call.args[2]['ring_id'], ring.public_id)
+            self.assertEqual(call.args[2]['chat_id'], ring.chat_id)
+        self.assertEqual(mock_channel_layer.group_send.await_count, 2)
+        sent_groups = {call.args[0] for call in mock_channel_layer.group_send.await_args_list}
+        self.assertEqual(sent_groups, {f'shop_orders_{self.shop.id}', f'customer_orders_{self.customer.id}'})
 
+    @patch('shop.chat_ring_service.get_channel_layer')
     @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
-    def test_shop_owner_cancel_sends_cancelled_event_to_receiver(self, mock_send_ring):
+    def test_shop_owner_cancel_sends_cancelled_event_to_both_sides(self, mock_send_ring, mock_get_channel_layer):
         ring = ChatRing.objects.create(
             order=self.order,
             chat_id=f'order_{self.order.id}_shop_customer',
@@ -147,21 +156,30 @@ class ChatRingsApiTests(TestCase):
             receiver_id=self.customer.id,
             expires_at=timezone.now() + timedelta(seconds=30),
         )
+        mock_channel_layer = MagicMock()
+        mock_channel_layer.group_send = AsyncMock()
+        mock_get_channel_layer.return_value = mock_channel_layer
         self.client.force_authenticate(user=self.shop)
 
-        response = self.client.post(f'/api/chat-rings/{ring.public_id}/cancel', {}, format='json')
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f'/api/chat-rings/{ring.public_id}/cancel', {}, format='json')
 
         self.assertEqual(response.status_code, 200)
         ring.refresh_from_db()
         self.assertEqual(ring.status, 'cancelled')
-        mock_send_ring.assert_called_once()
-        args, kwargs = mock_send_ring.call_args
-        self.assertEqual(args[0], 'customer')
-        self.assertEqual(args[1], self.customer.id)
-        self.assertEqual(args[2]['type'], 'chat_ring_cancelled')
+        self.assertEqual(mock_send_ring.call_count, 2)
+        recipients = {(call.args[0], call.args[1]) for call in mock_send_ring.call_args_list}
+        self.assertEqual(recipients, {('shop_owner', self.shop.id), ('customer', self.customer.id)})
+        for call in mock_send_ring.call_args_list:
+            self.assertEqual(call.args[2]['type'], 'chat_ring_cancelled')
+            self.assertEqual(call.args[2]['ring_id'], ring.public_id)
+        self.assertEqual(mock_channel_layer.group_send.await_count, 2)
+        sent_groups = {call.args[0] for call in mock_channel_layer.group_send.await_args_list}
+        self.assertEqual(sent_groups, {f'shop_orders_{self.shop.id}', f'customer_orders_{self.customer.id}'})
 
+    @patch('shop.chat_ring_service.get_channel_layer')
     @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
-    def test_timeout_marks_ring_and_notifies_sender(self, mock_send_ring):
+    def test_timeout_marks_ring_and_notifies_both_sides(self, mock_send_ring, mock_get_channel_layer):
         ring = ChatRing.objects.create(
             order=self.order,
             chat_id=f'order_{self.order.id}_shop_customer',
@@ -171,15 +189,24 @@ class ChatRingsApiTests(TestCase):
             receiver_id=self.customer.id,
             expires_at=timezone.now() + timedelta(seconds=30),
         )
+        mock_channel_layer = MagicMock()
+        mock_channel_layer.group_send = AsyncMock()
+        mock_get_channel_layer.return_value = mock_channel_layer
         self.client.force_authenticate(user=self.customer)
 
-        response = self.client.post(f'/api/chat-rings/{ring.public_id}/timeout', {}, format='json')
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f'/api/chat-rings/{ring.public_id}/timeout', {}, format='json')
 
         self.assertEqual(response.status_code, 200)
         ring.refresh_from_db()
         self.assertEqual(ring.status, 'timeout')
         self.assertIsNotNone(ring.timed_out_at)
-        mock_send_ring.assert_called_once()
-        args, kwargs = mock_send_ring.call_args
-        self.assertEqual(args[0], 'shop_owner')
-        self.assertEqual(args[2]['type'], 'chat_ring_timeout')
+        self.assertEqual(mock_send_ring.call_count, 2)
+        recipients = {(call.args[0], call.args[1]) for call in mock_send_ring.call_args_list}
+        self.assertEqual(recipients, {('shop_owner', self.shop.id), ('customer', self.customer.id)})
+        for call in mock_send_ring.call_args_list:
+            self.assertEqual(call.args[2]['type'], 'chat_ring_timeout')
+            self.assertEqual(call.args[2]['ring_id'], ring.public_id)
+        self.assertEqual(mock_channel_layer.group_send.await_count, 2)
+        sent_groups = {call.args[0] for call in mock_channel_layer.group_send.await_args_list}
+        self.assertEqual(sent_groups, {f'shop_orders_{self.shop.id}', f'customer_orders_{self.customer.id}'})

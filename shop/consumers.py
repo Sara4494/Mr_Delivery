@@ -76,6 +76,42 @@ def _with_localized_message(payload, message, lang=None):
     }
 
 
+RING_STATUS_DISPLAY_MAP = {
+    'ar': {
+        'ringing': 'جارٍ الرن',
+        'answered': 'تم الرد',
+        'dismissed': 'تم الرفض',
+        'timeout': 'انتهت المهلة',
+        'cancelled': 'تم الإلغاء',
+    },
+    'en': {
+        'ringing': 'Ringing',
+        'answered': 'Answered',
+        'dismissed': 'Dismissed',
+        'timeout': 'Timed out',
+        'cancelled': 'Cancelled',
+    },
+}
+
+
+def _normalize_ring_lang(lang):
+    normalized = str(lang or '').strip().lower()
+    if not normalized:
+        return 'ar'
+    if normalized.startswith('en'):
+        return 'en'
+    return 'ar'
+
+
+def _localize_ring_payload(payload, lang=None):
+    data = dict(payload or {})
+    status_key = str(data.get('status') or 'ringing').strip() or 'ringing'
+    normalized_lang = _normalize_ring_lang(lang)
+    data['status'] = status_key
+    data['status_display'] = RING_STATUS_DISPLAY_MAP.get(normalized_lang, {}).get(status_key, status_key)
+    return data
+
+
 def _json_dumps(payload):
     return json.dumps(payload, cls=DjangoJSONEncoder)
 
@@ -350,6 +386,7 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
         'sender_name': _get_user_display_name(user, user_type),
         'sender_id': getattr(user, 'id', None),
         'targets': delivered_targets,
+        'status': 'ringing',
         'created_at': timezone.now().isoformat(),
         'chat_type': chat_type if chat_type in ['shop_customer', 'driver_customer'] else None,
         'notification_kind': 'ring',
@@ -939,7 +976,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
-            'data': event['data']
+            'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None))
         }))
 
     async def presence_update(self, event):
@@ -2396,7 +2433,7 @@ class OrderConsumer(AsyncWebsocketConsumer):
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
-            'data': event['data'],
+            'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
     async def presence_update(self, event):
@@ -2750,7 +2787,7 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
-            'data': event['data'],
+            'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
     async def presence_update(self, event):
@@ -3172,7 +3209,7 @@ class DriverConsumer(AsyncWebsocketConsumer):
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
-            'data': event['data'],
+            'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
     async def driver_realtime_event(self, event):

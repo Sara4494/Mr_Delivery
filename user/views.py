@@ -4586,21 +4586,31 @@ def unified_login_view(request):
             
             # إنشاء التوكن
             refresh, access_token = _start_user_session(shop_owner, 'shop_owner')
-            
-            return success_response(
-                data={
-                    'refresh': str(refresh),
-                    'access': str(access_token),
-                    'user': {
-                        'id': shop_owner.id,
-                        'shop_number': shop_owner.shop_number,
-                        'shop_name': shop_owner.shop_name,
-                        'owner_name': shop_owner.owner_name,
-                        'shop_category_id': shop_owner.shop_category_id,
-                        'shop_category_name': shop_owner.shop_category.name if shop_owner.shop_category else None,
-                    },
-                    'role': 'shop_owner'
+            fcm_device_result = _replace_login_fcm_device(user=shop_owner, request=request)
+            token_record = fcm_device_result.get('token_record')
+            payload = {
+                'refresh': str(refresh),
+                'access': str(access_token),
+                'user': {
+                    'id': shop_owner.id,
+                    'shop_number': shop_owner.shop_number,
+                    'shop_name': shop_owner.shop_name,
+                    'owner_name': shop_owner.owner_name,
+                    'shop_category_id': shop_owner.shop_category_id,
+                    'shop_category_name': shop_owner.shop_category.name if shop_owner.shop_category else None,
                 },
+                'role': 'shop_owner',
+            }
+            if token_record:
+                payload['fcm_device'] = {
+                    'device_id': token_record.device_id,
+                    'platform': token_record.platform,
+                }
+            if fcm_device_result.get('deleted_tokens_count'):
+                payload['force_logged_out_devices'] = fcm_device_result['deleted_tokens_count']
+
+            return success_response(
+                data=payload,
                 message=t(request, 'login_successful')
             )
         except ShopOwner.DoesNotExist:
@@ -4696,20 +4706,30 @@ def unified_login_view(request):
             
             # إنشاء التوكن
             refresh, access_token = _start_user_session(employee, 'employee')
-            
-            return success_response(
-                data={
-                    'refresh': str(refresh),
-                    'access': str(access_token),
-                    'user': {
-                        'id': employee.id,
-                        'name': employee.name,
-                        'phone_number': employee.phone_number,
-                        'role': employee.role,
-                        'shop_owner_id': employee.shop_owner_id,
-                    },
-                    'role': 'employee'
+            fcm_device_result = _replace_login_fcm_device(user=employee, request=request)
+            token_record = fcm_device_result.get('token_record')
+            payload = {
+                'refresh': str(refresh),
+                'access': str(access_token),
+                'user': {
+                    'id': employee.id,
+                    'name': employee.name,
+                    'phone_number': employee.phone_number,
+                    'role': employee.role,
+                    'shop_owner_id': employee.shop_owner_id,
                 },
+                'role': 'employee',
+            }
+            if token_record:
+                payload['fcm_device'] = {
+                    'device_id': token_record.device_id,
+                    'platform': token_record.platform,
+                }
+            if fcm_device_result.get('deleted_tokens_count'):
+                payload['force_logged_out_devices'] = fcm_device_result['deleted_tokens_count']
+
+            return success_response(
+                data=payload,
                 message=t(request, 'login_successful')
             )
         except Employee.DoesNotExist:

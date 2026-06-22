@@ -391,6 +391,14 @@ def register_device_token(*, user, device_id, platform, fcm_token, app_version=_
 
     with transaction.atomic():
         FCMDeviceToken.objects.select_for_update().filter(
+            user_type=user_type,
+            user_id=user_id,
+            is_active=True,
+        ).exclude(
+            device_id=device_id,
+        ).delete()
+
+        FCMDeviceToken.objects.select_for_update().filter(
             device_id=device_id,
         ).exclude(
             user_type=user_type,
@@ -543,6 +551,23 @@ def replace_user_device_token_on_login(
     has_current_device_payload = bool(
         normalized_device_id and normalized_fcm_token and normalized_platform in {'android', 'ios'}
     )
+
+    if not has_current_device_payload:
+        logger.info(
+            'fcm.token.login_replace skipped user_type=%s user_id=%s reason=missing_current_device_payload',
+            user_type,
+            user_id,
+        )
+        return {
+            'token_record': None,
+            'deleted_tokens_count': 0,
+            'silent_push': {
+                'tokens_total': 0,
+                'tokens_sent': 0,
+                'tokens_failed': 0,
+                'tokens_invalidated': 0,
+            },
+        }
 
     stale_queryset = FCMDeviceToken.objects.filter(
         user_type=user_type,

@@ -191,7 +191,7 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(token.app_version, '2.0.0')
         self.assertTrue(token.is_active)
 
-    def test_register_endpoint_creates_additional_record_for_new_device(self):
+    def test_register_endpoint_replaces_other_device_for_same_user(self):
         existing_token = FCMDeviceToken.objects.create(
             user_type='customer',
             user_id=self.customer.id,
@@ -217,12 +217,10 @@ class FCMDeviceApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             FCMDeviceToken.objects.filter(user_type='customer', user_id=self.customer.id).count(),
-            2,
+            1,
         )
-        existing_token.refresh_from_db()
+        self.assertFalse(FCMDeviceToken.objects.filter(pk=existing_token.pk).exists())
         created_token = FCMDeviceToken.objects.get(device_id='device-new')
-        self.assertEqual(existing_token.device_id, 'device-old')
-        self.assertTrue(existing_token.is_active)
         self.assertEqual(created_token.platform, 'ios')
         self.assertEqual(created_token.fcm_token, 'new-token')
         self.assertEqual(created_token.app_version, '4.0.0')
