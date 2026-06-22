@@ -1,5 +1,6 @@
 ﻿import asyncio
 import json
+import threading
 import uuid
 import logging
 from asgiref.sync import sync_to_async
@@ -68,6 +69,8 @@ from gallery.models import GalleryImage, WorkSchedule
 
 
 logger = logging.getLogger(__name__)
+_CHAT_RING_REQUEST_MAP = {}
+_CHAT_RING_REQUEST_MAP_LOCK = threading.Lock()
 
 
 def _with_localized_message(payload, message, lang=None):
@@ -115,6 +118,28 @@ def _localize_ring_payload(payload, lang=None):
 
 def _json_dumps(payload):
     return json.dumps(payload, cls=DjangoJSONEncoder)
+
+
+def _remember_chat_ring_request(request_id, ring_id):
+    request_key = str(request_id or '').strip()
+    ring_key = str(ring_id or '').strip()
+    if not request_key or not ring_key:
+        return
+    with _CHAT_RING_REQUEST_MAP_LOCK:
+        _CHAT_RING_REQUEST_MAP[request_key] = ring_key
+
+
+def _resolve_chat_ring_reference(ring_id, request_id=None):
+    ring_key = str(ring_id or '').strip()
+    if ring_key:
+        return ring_key
+
+    request_key = str(request_id or '').strip()
+    if not request_key:
+        return ''
+
+    with _CHAT_RING_REQUEST_MAP_LOCK:
+        return _CHAT_RING_REQUEST_MAP.get(request_key, '')
 
 
 async def _handle_session_revoked(consumer, event):
@@ -537,10 +562,11 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
         },
         message='تم إرسال الرنة بنجاح',
     )
+    _remember_chat_ring_request(request_id, ring_context['payload'].get('ring_id'))
 
 
 async def _handle_ring_status_request(consumer, data, request_id=None):
-    ring_id = str(data.get('ring_id') or '').strip()
+    ring_id = _resolve_chat_ring_reference(data.get('ring_id'), request_id=request_id)
     status_value = str(data.get('status') or '').strip()
     lang = str(data.get('lang') or getattr(consumer, 'lang', None) or 'ar').strip() or 'ar'
 

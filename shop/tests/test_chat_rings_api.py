@@ -11,6 +11,7 @@ from shop.chat_ring_service import (
     _ensure_chat_ring_storage,
     start_chat_ring,
 )
+from shop.consumers import _remember_chat_ring_request, _resolve_chat_ring_reference
 from user.models import ShopCategory, ShopOwner
 
 
@@ -100,6 +101,12 @@ class ChatRingsApiTests(TestCase):
 
         mock_schema_editor.create_model.assert_called_once_with(ChatRing)
         mock_recorder.record_applied.assert_called_once_with('shop', '0064_chatring')
+
+    def test_ring_request_id_can_resolve_missing_ring_id(self):
+        _remember_chat_ring_request('ring-req-123', 'ring-public-456')
+
+        self.assertEqual(_resolve_chat_ring_reference('', request_id='ring-req-123'), 'ring-public-456')
+        self.assertEqual(_resolve_chat_ring_reference('ring-public-456', request_id='ring-req-123'), 'ring-public-456')
 
     @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
     def test_duplicate_active_ring_is_rejected(self, mock_send_ring):
