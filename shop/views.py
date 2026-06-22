@@ -2421,7 +2421,7 @@ def driver_dashboard_view(request):
     if not driver:
         return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
 
-    active_orders_qs = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way'])
+    active_orders_qs = driver.orders.filter(status__in=['new', 'preparing', 'on_way'])
     in_delivery_orders_qs = driver.orders.filter(
         status__in=['preparing', 'on_way'],
         driver_accepted_at__isnull=False,
@@ -2566,7 +2566,7 @@ def driver_status_view(request):
     else:
         target_enabled = bool(requested_online)
 
-    active_orders_count = driver.orders.filter(status__in=['confirmed', 'preparing', 'on_way']).count()
+    active_orders_count = driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
     in_delivery_count = driver.orders.filter(
         status__in=['preparing', 'on_way'],
         driver_accepted_at__isnull=False,
@@ -3042,7 +3042,7 @@ def driver_order_accept_view(request, order_id):
         order.save(update_fields=['driver', 'driver_assigned_at', 'driver_accepted_at', 'status', 'updated_at'])
         clear_driver_rejection(order, driver)
 
-        driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
+        driver.current_orders_count = driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
         driver.save(update_fields=['current_orders_count'])
 
         order_payload = build_driver_order_payload(order, request=request)
@@ -3185,7 +3185,7 @@ def driver_order_deliver_view(request, order_id):
         order.delivered_at = delivered_at
         order.save(update_fields=['status', 'delivered_at', 'updated_at'])
 
-        driver.current_orders_count = driver.orders.filter(status__in=['new', 'confirmed', 'preparing', 'on_way']).count()
+        driver.current_orders_count = driver.orders.filter(status__in=['new', 'preparing', 'on_way']).count()
         driver.save(update_fields=['current_orders_count'])
 
         shop_payload = build_shop_order_realtime_payload(order, request=request)

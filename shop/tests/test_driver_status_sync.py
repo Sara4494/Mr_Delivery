@@ -480,7 +480,7 @@ class DriverDashboardStatusCountsTests(TestCase):
             shop_owner=self.shop,
             customer=self.customer,
             order_number='OD-AVAILABLE-1',
-            status='confirmed',
+            status='preparing',
             items='["meal"]',
             total_amount='60.00',
             delivery_fee='10.00',
@@ -499,6 +499,25 @@ class DriverDashboardStatusCountsTests(TestCase):
         self.assertEqual(response.data['data']['count'], 1)
         self.assertEqual(len(response.data['data']['results']), 1)
         self.assertEqual(response.data['data']['results'][0]['orders'][0]['order_number'], 'OD-AVAILABLE-1')
+
+    def test_confirmed_order_is_not_visible_in_available_orders(self):
+        Order.objects.create(
+            shop_owner=self.shop,
+            customer=self.customer,
+            order_number='OD-CONFIRMED-HIDDEN',
+            status='confirmed',
+            items='["meal"]',
+            total_amount='60.00',
+            delivery_fee='10.00',
+            address='Tahrir Street',
+            notes='',
+            driver_assigned_at=None,
+            driver_accepted_at=None,
+        )
+
+        orders = list(get_available_orders_queryset(self.driver))
+
+        self.assertEqual(orders, [])
 
     def test_assigned_orders_endpoint_returns_accepted_orders(self):
         Order.objects.create(

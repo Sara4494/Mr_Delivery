@@ -1055,7 +1055,7 @@ def driver_accept_order(*, conversation: DriverChatConversation, conversation_or
 
         clear_driver_rejection(order, conversation.driver)
         conversation.driver.current_orders_count = conversation.driver.orders.filter(
-            status__in=['new', 'confirmed', 'preparing', 'on_way']
+            status__in=['new', 'preparing', 'on_way']
         ).count()
         conversation.driver.save(update_fields=['current_orders_count', 'updated_at'])
 

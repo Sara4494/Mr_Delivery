@@ -12,8 +12,8 @@ from ..fcm.service import send_driver_new_order_notification, send_driver_order_
 from .presence import format_utc_iso8601, get_order_customer_presence_snapshot
 
 
-DRIVER_AVAILABLE_ORDER_STATUSES = frozenset({'confirmed', 'preparing'})
-DRIVER_ASSIGNED_ORDER_STATUSES = frozenset({'confirmed', 'preparing', 'on_way'})
+DRIVER_AVAILABLE_ORDER_STATUSES = frozenset({'preparing'})
+DRIVER_ASSIGNED_ORDER_STATUSES = frozenset({'preparing', 'on_way'})
 
 
 def _to_float_or_none(value):
@@ -165,7 +165,7 @@ def normalize_driver_status(order):
             return 'pending_acceptance'
         if order.status == 'on_way':
             return 'in_delivery'
-        if order.status in {'confirmed', 'preparing'}:
+        if order.status in {'preparing'}:
             return 'assigned'
         if order.status in DRIVER_ASSIGNED_ORDER_STATUSES:
             return 'assigned'
