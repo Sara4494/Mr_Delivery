@@ -1,9 +1,12 @@
 from datetime import timedelta
+import logging
 import threading
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
-from django.db import transaction
+from django.db import connection, transaction
+from django.db.migrations.recorder import MigrationRecorder
+from django.db.utils import DatabaseError, OperationalError, ProgrammingError
 from django.utils import timezone
 
 from user.utils import build_absolute_file_url
@@ -18,6 +21,9 @@ CHAT_RING_CHAT_TYPE = 'shop_customer'
 CHAT_RING_TERMINAL_STATUSES = {'answered', 'dismissed', 'timeout', 'cancelled'}
 _CHAT_RING_TIMEOUT_LOCK = threading.Lock()
 _CHAT_RING_TIMEOUT_TIMERS = {}
+_CHAT_RING_SCHEMA_LOCK = threading.Lock()
+_CHAT_RING_SCHEMA_READY = False
+logger = logging.getLogger(__name__)
 CHAT_RING_STATUS_DISPLAY_MAP = {
     'ar': {
         'ringing': 'جارٍ الرن',
@@ -42,6 +48,55 @@ class ChatRingError(Exception):
         self.message = message
         self.status_code = status_code
         self.errors = errors or {}
+
+
+def _ensure_chat_ring_storage():
+    global _CHAT_RING_SCHEMA_READY
+
+    if _CHAT_RING_SCHEMA_READY:
+        return
+
+    table_name = ChatRing._meta.db_table
+    migration_key = ('shop', '0064_chatring')
+    recorder = MigrationRecorder(connection)
+
+    with _CHAT_RING_SCHEMA_LOCK:
+        if _CHAT_RING_SCHEMA_READY:
+            return
+
+        try:
+            existing_tables = set(connection.introspection.table_names())
+        except (DatabaseError, OperationalError, ProgrammingError) as exc:
+            logger.exception('Unable to inspect ChatRing table state.')
+            raise ChatRingError(
+                'Chat ring storage is unavailable.',
+                status_code=503,
+                errors={'database': 'Unable to inspect chat ring storage.'},
+            ) from exc
+
+        migration_applied = migration_key in recorder.applied_migrations()
+
+        if table_name in existing_tables:
+            if not migration_applied:
+                recorder.record_applied(*migration_key)
+            _CHAT_RING_SCHEMA_READY = True
+            return
+
+        logger.warning('ChatRing table %s is missing. Creating it on demand.', table_name)
+        try:
+            with connection.schema_editor() as schema_editor:
+                schema_editor.create_model(ChatRing)
+            if not migration_applied:
+                recorder.record_applied(*migration_key)
+        except Exception as exc:
+            logger.exception('Failed to create ChatRing table %s on demand.', table_name)
+            raise ChatRingError(
+                'Chat ring storage is not initialized. Please run database migrations.',
+                status_code=503,
+                errors={'database': f'Missing table: {table_name}.'},
+            ) from exc
+
+        _CHAT_RING_SCHEMA_READY = True
 
 
 def _resolve_user_type(user):
@@ -203,6 +258,7 @@ def _schedule_chat_ring_timeout_timer(ring_id, expires_at):
 
     def _timeout_ring():
         try:
+            _ensure_chat_ring_storage()
             ring = (
                 ChatRing.objects.select_related('order', 'order__shop_owner', 'order__customer', 'order__driver')
                 .filter(public_id=ring_key)
@@ -318,6 +374,7 @@ def serialize_chat_ring(ring):
 
 
 def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=None):
+    _ensure_chat_ring_storage()
     user_type = _resolve_user_type(user)
     if user_type not in {'customer', 'shop_owner', 'employee'}:
         raise ChatRingError('Authentication is required.', status_code=403)
@@ -395,6 +452,7 @@ def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=
 
 
 def get_chat_ring_for_user(ring_id, user):
+    _ensure_chat_ring_storage()
     user_type = _resolve_user_type(user)
     ring = (
         ChatRing.objects.select_related('order', 'order__shop_owner', 'order__customer')
@@ -409,6 +467,7 @@ def get_chat_ring_for_user(ring_id, user):
 
 
 def update_chat_ring_status(ring, *, status_value, actor=None):
+    _ensure_chat_ring_storage()
     if status_value not in {'answered', 'dismissed', 'timeout', 'cancelled'}:
         raise ChatRingError('Unsupported chat ring status transition.')
 
@@ -477,6 +536,7 @@ def _chat_ring_actor_can_transition(ring, actor, status_value):
 
 
 def apply_chat_ring_status_update(*, ring_id, actor, status_value, lang=None):
+    _ensure_chat_ring_storage()
     ring = (
         ChatRing.objects.select_related('order', 'order__shop_owner', 'order__customer', 'order__driver')
         .filter(public_id=str(ring_id or '').strip())

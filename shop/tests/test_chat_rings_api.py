@@ -8,6 +8,7 @@ from shop.models import ChatRing, Customer, Driver, Employee, Order
 from shop.chat_ring_service import (
     ChatRingError,
     apply_chat_ring_status_update,
+    _ensure_chat_ring_storage,
     start_chat_ring,
 )
 from user.models import ShopCategory, ShopOwner
@@ -80,6 +81,25 @@ class ChatRingsApiTests(TestCase):
         self.assertEqual(args[2]['duration_seconds'], '30')
         self.assertEqual(args[2]['action'], 'open_chat')
         self.assertIn('expires_at', kwargs)
+
+    @patch('shop.chat_ring_service.MigrationRecorder')
+    @patch('shop.chat_ring_service.connection')
+    def test_chat_ring_storage_is_created_on_demand_when_missing(self, mock_connection, mock_recorder_cls):
+        mock_introspection = MagicMock()
+        mock_introspection.table_names.return_value = []
+        mock_connection.introspection = mock_introspection
+
+        mock_schema_editor = MagicMock()
+        mock_connection.schema_editor.return_value.__enter__.return_value = mock_schema_editor
+
+        mock_recorder = MagicMock()
+        mock_recorder.applied_migrations.return_value = set()
+        mock_recorder_cls.return_value = mock_recorder
+
+        _ensure_chat_ring_storage()
+
+        mock_schema_editor.create_model.assert_called_once_with(ChatRing)
+        mock_recorder.record_applied.assert_called_once_with('shop', '0064_chatring')
 
     @patch('shop.chat_ring_service._send_ring_event_to_user', return_value={'tokens_sent': 1})
     def test_duplicate_active_ring_is_rejected(self, mock_send_ring):
