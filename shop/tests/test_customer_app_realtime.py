@@ -260,7 +260,7 @@ class CustomerAppRealtimeTests(TransactionTestCase):
         )
         connected, _ = await communicator.connect()
         self.assertTrue(connected)
-        initial_messages = [await communicator.receive_json_from() for _ in range(5)]
+        initial_messages = [await communicator.receive_json_from() for _ in range(6)]
         return communicator, initial_messages
 
     async def _connect_order_chat_as_shop(self, order, chat_type='shop_customer'):
@@ -382,6 +382,7 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                     [message['type'] for message in initial_messages],
                     [
                         'connection',
+                        'dashboard_snapshot',
                         'orders_snapshot',
                         'shops_snapshot',
                         'on_way_snapshot',
@@ -393,26 +394,33 @@ class CustomerAppRealtimeTests(TransactionTestCase):
                 self.assertEqual(connection['scope'], 'customer_app_realtime')
                 self.assertEqual(connection['customer_id'], self.customer.id)
 
-                orders_snapshot = initial_messages[1]
+                dashboard_snapshot = initial_messages[1]
+                self.assertEqual(dashboard_snapshot['data']['unread_summary'], {'total': 3, 'shops': 2, 'on_way': 1})
+
+                orders_snapshot = initial_messages[2]
                 self.assertEqual(orders_snapshot['data']['count'], 2)
 
-                shops_snapshot = initial_messages[2]
+                shops_snapshot = initial_messages[3]
                 self.assertEqual(shops_snapshot['data']['count'], 1)
+                self.assertEqual(shops_snapshot['data']['results'][0]['unread_count'], 2)
+                self.assertTrue(shops_snapshot['data']['results'][0]['has_unread_messages'])
                 self.assertEqual(
                     shops_snapshot['data']['results'][0]['chat']['support_conversation_id'],
                     conversation.public_id,
                 )
 
-                on_way_snapshot = initial_messages[3]
+                on_way_snapshot = initial_messages[4]
                 self.assertEqual(on_way_snapshot['data']['count'], 1)
                 self.assertEqual(on_way_snapshot['data']['results'][0]['order_id'], on_way_order.id)
+                self.assertEqual(on_way_snapshot['data']['results'][0]['unread_count'], 1)
+                self.assertTrue(on_way_snapshot['data']['results'][0]['has_unread_messages'])
                 self.assertTrue(on_way_snapshot['data']['results'][0]['chat']['can_open'])
                 self.assertEqual(
                     on_way_snapshot['data']['results'][0]['chat']['thread_id'],
                     f'delivery_{on_way_order.id}',
                 )
 
-                history_snapshot = initial_messages[4]
+                history_snapshot = initial_messages[5]
                 self.assertEqual(history_snapshot['data']['count'], 4)
             finally:
                 await communicator.disconnect()
@@ -937,6 +945,40 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
         async_to_sync(run)()
 
+    def test_driver_mark_read_updates_on_way_unread_counts(self):
+        async def run():
+            order = self._create_order(status='on_way', driver=self.driver)
+            order.driver_accepted_at = timezone.now()
+            order.save(update_fields=['driver_accepted_at', 'updated_at'])
+            self._create_order_message(
+                order,
+                sender_type='driver',
+                chat_type='driver_customer',
+                content='رسالة من المندوب',
+                is_read=False,
+            )
+
+            customer_socket, _ = await self._connect_customer_socket()
+            driver_chat = await self._connect_order_chat_as_customer(order, chat_type='driver_customer')
+            try:
+                await driver_chat.send_json_to({'type': 'mark_read'})
+                events = await self._receive_until_types(
+                    customer_socket,
+                    {'dashboard_snapshot', 'on_way_upsert'},
+                )
+                dashboard_event = next(event for event in events if event['type'] == 'dashboard_snapshot')
+                on_way_event = next(event for event in events if event['type'] == 'on_way_upsert')
+                self.assertEqual(dashboard_event['data']['unread_summary']['on_way'], 0)
+                self.assertEqual(dashboard_event['data']['unread_summary']['total'], 0)
+                self.assertEqual(on_way_event['data']['unread_count'], 0)
+                self.assertEqual(on_way_event['data']['unread_messages_count'], 0)
+                self.assertFalse(on_way_event['data']['has_unread_messages'])
+            finally:
+                await driver_chat.disconnect()
+                await customer_socket.disconnect()
+
+        async_to_sync(run)()
+
     def test_driver_message_makes_driver_visible_in_on_way_snapshot(self):
         async def run():
             order = self._create_order(status='on_way', driver=self.driver)
@@ -1004,7 +1046,7 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
             communicator, initial_messages = await self._connect_customer_socket()
             try:
-                on_way_snapshot = initial_messages[3]
+                on_way_snapshot = initial_messages[4]
                 result_ids = [row['order_id'] for row in on_way_snapshot['data']['results']]
                 self.assertEqual(result_ids[:2], [newer_order.id, older_order.id])
             finally:
@@ -1063,8 +1105,10 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
             reconnect_socket, initial_messages = await self._connect_customer_socket()
             try:
-                orders_snapshot = initial_messages[1]
-                history_snapshot = initial_messages[4]
+                dashboard_snapshot = initial_messages[1]
+                orders_snapshot = initial_messages[2]
+                history_snapshot = initial_messages[5]
+                self.assertEqual(dashboard_snapshot['data']['unread_summary'], {'total': 0, 'shops': 0, 'on_way': 0})
                 self.assertEqual(orders_snapshot['data']['count'], 0)
                 self.assertEqual(history_snapshot['data']['count'], 1)
                 self.assertEqual(history_snapshot['data']['results'][0]['order']['history_status'], 'delivered')
@@ -1097,8 +1141,10 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
             communicator, initial_messages = await self._connect_customer_socket()
             try:
-                shops_snapshot = initial_messages[2]
+                shops_snapshot = initial_messages[3]
                 self.assertEqual(shops_snapshot['data']['count'], 1)
+                self.assertEqual(shops_snapshot['data']['results'][0]['unread_count'], 2)
+                self.assertTrue(shops_snapshot['data']['results'][0]['has_unread_messages'])
                 self.assertEqual(
                     shops_snapshot['data']['results'][0]['chat']['support_conversation_id'],
                     newer_support.public_id,
@@ -1133,16 +1179,20 @@ class CustomerAppRealtimeTests(TransactionTestCase):
             customer_socket, initial_messages = await self._connect_customer_socket()
             customer_chat = await self._connect_order_chat_as_customer(order)
             try:
-                orders_snapshot = initial_messages[1]
+                orders_snapshot = initial_messages[2]
                 self.assertEqual(orders_snapshot['data']['results'][0]['unread_messages_count'], 2)
+                self.assertEqual(orders_snapshot['data']['results'][0]['unread_count'], 2)
 
                 await customer_chat.send_json_to({'type': 'mark_read'})
                 events = await self._receive_until_types(
                     customer_socket,
                     {'order_upsert', 'shop_upsert', 'order_history_entry_upsert'},
                 )
+                dashboard_event = next(event for event in events if event['type'] == 'dashboard_snapshot')
                 order_event = next(event for event in events if event['type'] == 'order_upsert')
+                self.assertEqual(dashboard_event['data']['unread_summary'], {'total': 0, 'shops': 0, 'on_way': 0})
                 self.assertEqual(order_event['data']['unread_messages_count'], 0)
+                self.assertEqual(order_event['data']['unread_count'], 0)
                 self.assertFalse(order_event['data']['has_unread_messages'])
             finally:
                 await customer_chat.disconnect()
@@ -1162,7 +1212,7 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
             communicator, initial_messages = await self._connect_customer_socket()
             try:
-                history_snapshot = initial_messages[4]
+                history_snapshot = initial_messages[5]
                 result_ids = [entry['id'] for entry in history_snapshot['data']['results']]
                 self.assertEqual(
                     result_ids[:3],
@@ -1178,10 +1228,11 @@ class CustomerAppRealtimeTests(TransactionTestCase):
             communicator, _ = await self._connect_customer_socket(route_prefix='/ws/orders/customer')
             try:
                 await communicator.send_json_to({'type': 'refresh_all'})
-                refreshed = [await communicator.receive_json_from() for _ in range(4)]
+                refreshed = [await communicator.receive_json_from() for _ in range(5)]
                 self.assertEqual(
                     [payload['type'] for payload in refreshed],
                     [
+                        'dashboard_snapshot',
                         'orders_snapshot',
                         'shops_snapshot',
                         'on_way_snapshot',

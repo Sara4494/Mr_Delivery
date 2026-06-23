@@ -838,7 +838,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             elif event_type == 'ring_status':
                 await _handle_ring_status_request(self, data, request_id=request_id)
             elif event_type == 'mark_read':
-                await self.handle_mark_read(request_id=request_id)
+                await self.handle_mark_read(data, request_id=request_id)
             elif event_type == 'typing':
                 await self.handle_typing(data)
             elif event_type == 'location':
@@ -1063,9 +1063,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             request_id=request_id,
         )
     
-    async def handle_mark_read(self, request_id=None):
+    async def handle_mark_read(self, data=None, request_id=None):
         """Mark messages as read for the other participant."""
-        marked_count = await self.mark_messages_as_read()
+        marked_count, unread_count = await self.mark_messages_as_read(data or {})
         
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -1074,6 +1074,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'order_id': self.order_id,
                 'reader_type': self.user_type,
                 'count': marked_count,
+                'last_read_message_id': (data or {}).get('last_read_message_id'),
+                'unread_count': unread_count,
             }
         )
         await self.broadcast_order_snapshot_update()
@@ -1081,8 +1083,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             action='mark_read',
             request_id=request_id,
             data={
+                'conversation_id': str(self.order_id),
                 'order_id': int(self.order_id),
-                'count': marked_count,
+                'last_read_message_id': (data or {}).get('last_read_message_id'),
+                'marked_count': marked_count,
+                'unread_count': unread_count,
             },
         )
     
@@ -1306,13 +1311,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 }
             )
 
-        if self.user_type == 'customer' and self.chat_type == 'shop_customer':
+        if self.user_type == 'customer':
             await self.dispatch_customer_delta_events(
                 await self.get_customer_app_order_delta_events(
                     include_order=True,
-                    include_shop=True,
-                    include_on_way=False,
-                    include_history=True,
+                    include_shop=self.chat_type == 'shop_customer',
+                    include_on_way=self.chat_type == 'driver_customer',
+                    include_history=self.chat_type == 'shop_customer',
                 )
             )
 
@@ -1563,32 +1568,52 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }
     
     @database_sync_to_async
-    def mark_messages_as_read(self):
+    def mark_messages_as_read(self, data=None):
         """Mark unread room messages as read."""
         try:
             order = Order.objects.get(id=self.order_id)
-            
-            # Mark only messages sent by the other participant.
-            marked_count = ChatMessage.objects.filter(
+            last_read_message_id = str((data or {}).get('last_read_message_id') or '').strip()
+
+            qs = ChatMessage.objects.filter(
                 order=order,
                 chat_type=self.chat_type,
                 is_read=False
-            ).exclude(sender_type=self.user_type).update(is_read=True)
-            
-            # Recalculate the unread counter for the shop side.
-            if self.user_type in ['shop_owner', 'employee']:
-                order.unread_messages_count = order.messages.filter(
-                    chat_type='shop_customer',
-                    is_read=False,
-                    sender_type='customer'
-                ).count()
-                order.save()
+            ).exclude(sender_type=self.user_type)
 
-            return marked_count
+            if last_read_message_id:
+                message_lookup = Q(public_id=last_read_message_id)
+                if last_read_message_id.isdigit():
+                    message_lookup |= Q(pk=int(last_read_message_id))
+                last_message = (
+                    ChatMessage.objects
+                    .filter(order=order, chat_type=self.chat_type)
+                    .exclude(sender_type=self.user_type)
+                    .filter(message_lookup)
+                    .order_by('-created_at', '-pk')
+                    .first()
+                )
+                if not last_message:
+                    return 0, int(qs.count())
+
+                qs = qs.filter(
+                    Q(created_at__lt=last_message.created_at) |
+                    Q(created_at=last_message.created_at, pk__lte=last_message.pk)
+                )
+
+            # Mark only messages sent by the other participant.
+            marked_count = qs.update(is_read=True)
+            
+            unread_count = qs.model.objects.filter(
+                order=order,
+                chat_type=self.chat_type,
+                is_read=False,
+            ).exclude(sender_type=self.user_type).count()
+
+            return marked_count, unread_count
                 
         except Exception as e:
             print(f"[ChatConsumer.mark_messages_as_read] error: {e}")
-            return 0
+            return 0, 0
     
     @database_sync_to_async
     def get_user_name(self):
@@ -3012,12 +3037,14 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
     async def send_initial_snapshots(self, request_id=None):
         snapshots = await self.get_all_snapshots()
         snapshot_messages = {
+            'dashboard_snapshot': 'dashboard synced',
             'orders_snapshot': 'orders synced',
             'shops_snapshot': 'shops synced',
             'on_way_snapshot': 'on way synced',
             'order_history_snapshot': 'order history synced',
         }
         for event_type in [
+            'dashboard_snapshot',
             'orders_snapshot',
             'shops_snapshot',
             'on_way_snapshot',
@@ -3029,6 +3056,15 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
                 request_id=request_id,
                 message=snapshot_messages[event_type],
             )
+
+    async def send_dashboard_snapshot(self, request_id=None):
+        snapshots = await self.get_all_snapshots()
+        await self.send_realtime_event(
+            'dashboard_snapshot',
+            snapshots['dashboard_snapshot'],
+            request_id=request_id,
+            message='dashboard synced',
+        )
 
     async def send_orders_snapshot(self, request_id=None):
         snapshots = await self.get_all_snapshots()

@@ -935,6 +935,7 @@ class ChatMessage(models.Model):
         ordering = ['created_at']
         indexes = [
             models.Index(fields=['order', 'chat_type', 'created_at']),
+            models.Index(fields=['order', 'chat_type', 'is_read', 'sender_type', 'created_at'], name='chatmsg_unread_idx'),
         ]
 
     @property
@@ -1136,6 +1137,7 @@ class CustomerSupportMessage(models.Model):
         ordering = ['created_at']
         indexes = [
             models.Index(fields=['conversation', 'created_at'], name='custsupmsg_conv_created_idx'),
+            models.Index(fields=['conversation', 'is_read', 'sender_type', 'created_at'], name='custsupmsg_unread_idx'),
         ]
 
     @property

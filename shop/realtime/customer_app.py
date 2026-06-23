@@ -15,8 +15,11 @@ from .serializers import (
     CustomerAppRealtimeSupportShopEntrySerializer,
     get_on_way_sort_key,
     get_order_shop_interaction_at,
+    get_order_customer_unread_count,
+    get_order_driver_unread_count,
     get_order_sort_key,
     get_support_interaction_at,
+    get_support_customer_unread_count,
     has_customer_visible_driver_chat,
     is_customer_active_order,
     is_customer_on_way_order,
@@ -110,6 +113,32 @@ def _sorted_on_way_orders(orders):
     )
 
 
+def _build_shop_unread_count_map(orders, conversations):
+    counts = {}
+
+    for order in orders:
+        if not order.shop_owner_id:
+            continue
+        counts[order.shop_owner_id] = counts.get(order.shop_owner_id, 0) + get_order_customer_unread_count(order)
+
+    for conversation in conversations:
+        if not conversation.shop_owner_id:
+            continue
+        counts[conversation.shop_owner_id] = counts.get(conversation.shop_owner_id, 0) + get_support_customer_unread_count(conversation)
+
+    return counts
+
+
+def _build_dashboard_unread_summary(shops_snapshot, on_way_snapshot):
+    shops_unread = sum(int(item.get('unread_count') or 0) for item in shops_snapshot.get('results', []))
+    on_way_unread = sum(int(item.get('unread_count') or 0) for item in on_way_snapshot.get('results', []))
+    return {
+        'total': shops_unread + on_way_unread,
+        'shops': shops_unread,
+        'on_way': on_way_unread,
+    }
+
+
 def build_orders_snapshot(customer_id, *, lang=None, scope=None, base_url=None, orders=None):
     orders = list(orders) if orders is not None else list(_order_queryset(customer_id))
     results = CustomerAppRealtimeOrderSerializer(
@@ -165,6 +194,16 @@ def _build_latest_shop_entry(orders, conversations, *, lang=None, scope=None, ba
     ]
 
 
+def _apply_shop_unread_counts(results, shop_unread_counts):
+    for payload in results:
+        shop_id = payload.get('shop_id')
+        unread_count = int(shop_unread_counts.get(shop_id, 0) or 0)
+        payload['unread_count'] = unread_count
+        payload['unread_messages_count'] = unread_count
+        payload['has_unread_messages'] = unread_count > 0
+    return results
+
+
 def build_shops_snapshot(customer_id, *, lang=None, scope=None, base_url=None, orders=None, conversations=None):
     orders = list(orders) if orders is not None else list(_order_queryset(customer_id))
     conversations = (
@@ -177,6 +216,7 @@ def build_shops_snapshot(customer_id, *, lang=None, scope=None, base_url=None, o
         scope=scope,
         base_url=base_url,
     )
+    results = _apply_shop_unread_counts(results, _build_shop_unread_count_map(orders, conversations))
     return {
         'count': len(results),
         'results': results,
@@ -248,32 +288,76 @@ def build_order_history_snapshot(
     }
 
 
+def build_dashboard_snapshot(customer_id, *, lang=None, scope=None, base_url=None, orders=None, conversations=None):
+    orders = list(orders) if orders is not None else list(_order_queryset(customer_id))
+    conversations = (
+        list(conversations) if conversations is not None else list(_support_queryset(customer_id))
+    )
+    orders_snapshot = build_orders_snapshot(
+        customer_id,
+        lang=lang,
+        scope=scope,
+        base_url=base_url,
+        orders=orders,
+    )
+    shops_snapshot = build_shops_snapshot(
+        customer_id,
+        lang=lang,
+        scope=scope,
+        base_url=base_url,
+        orders=orders,
+        conversations=conversations,
+    )
+    on_way_snapshot = build_on_way_snapshot(
+        customer_id,
+        lang=lang,
+        scope=scope,
+        base_url=base_url,
+        orders=orders,
+    )
+    return {
+        'orders': orders_snapshot['results'],
+        'shops': shops_snapshot,
+        'on_way': on_way_snapshot,
+        'unread_summary': _build_dashboard_unread_summary(shops_snapshot, on_way_snapshot),
+    }
+
+
 def build_all_snapshots(customer_id, *, lang=None, scope=None, base_url=None):
     orders = list(_order_queryset(customer_id))
     conversations = list(_support_queryset(customer_id))
+    orders_snapshot = build_orders_snapshot(
+        customer_id,
+        lang=lang,
+        scope=scope,
+        base_url=base_url,
+        orders=orders,
+    )
+    shops_snapshot = build_shops_snapshot(
+        customer_id,
+        lang=lang,
+        scope=scope,
+        base_url=base_url,
+        orders=orders,
+        conversations=conversations,
+    )
+    on_way_snapshot = build_on_way_snapshot(
+        customer_id,
+        lang=lang,
+        scope=scope,
+        base_url=base_url,
+        orders=orders,
+    )
     return {
-        'orders_snapshot': build_orders_snapshot(
-            customer_id,
-            lang=lang,
-            scope=scope,
-            base_url=base_url,
-            orders=orders,
-        ),
-        'shops_snapshot': build_shops_snapshot(
-            customer_id,
-            lang=lang,
-            scope=scope,
-            base_url=base_url,
-            orders=orders,
-            conversations=conversations,
-        ),
-        'on_way_snapshot': build_on_way_snapshot(
-            customer_id,
-            lang=lang,
-            scope=scope,
-            base_url=base_url,
-            orders=orders,
-        ),
+        'dashboard_snapshot': {
+            'orders': orders_snapshot['results'],
+            'shops': shops_snapshot,
+            'on_way': on_way_snapshot,
+            'unread_summary': _build_dashboard_unread_summary(shops_snapshot, on_way_snapshot),
+        },
+        'orders_snapshot': orders_snapshot,
+        'shops_snapshot': shops_snapshot,
+        'on_way_snapshot': on_way_snapshot,
         'order_history_snapshot': build_order_history_snapshot(
             customer_id,
             lang=lang,
@@ -298,6 +382,7 @@ def _shop_event_for_shop(customer_id, shop_owner_id, *, lang=None, scope=None, b
         scope=scope,
         base_url=base_url,
     )
+    _apply_shop_unread_counts(results, _build_shop_unread_count_map(orders, conversations))
     if results:
         return {
             'type': 'shop_upsert',
@@ -351,7 +436,17 @@ def build_order_delta_events(
         return []
 
     context = _serializer_context(lang=lang, scope=scope, base_url=base_url)
-    events = []
+    events = [
+        {
+            'type': 'dashboard_snapshot',
+            'data': build_dashboard_snapshot(
+                customer_id,
+                lang=lang,
+                scope=scope,
+                base_url=base_url,
+            ),
+        }
+    ]
     if include_order:
         if is_customer_active_order(order):
             events.append(
@@ -423,6 +518,15 @@ def build_order_remove_events(
 ):
     events = [
         {
+            'type': 'dashboard_snapshot',
+            'data': build_dashboard_snapshot(
+                customer_id,
+                lang=lang,
+                scope=scope,
+                base_url=base_url,
+            ),
+        },
+        {
             'type': 'order_remove',
             'data': {'id': order_id},
         }
@@ -481,7 +585,17 @@ def build_support_delta_events(
         return []
 
     context = _serializer_context(lang=lang, scope=scope, base_url=base_url)
-    events = []
+    events = [
+        {
+            'type': 'dashboard_snapshot',
+            'data': build_dashboard_snapshot(
+                customer_id,
+                lang=lang,
+                scope=scope,
+                base_url=base_url,
+            ),
+        }
+    ]
 
     if include_shop:
         events.append(
@@ -519,7 +633,17 @@ def build_support_remove_events(
     scope=None,
     base_url=None,
 ):
-    events = []
+    events = [
+        {
+            'type': 'dashboard_snapshot',
+            'data': build_dashboard_snapshot(
+                customer_id,
+                lang=lang,
+                scope=scope,
+                base_url=base_url,
+            ),
+        }
+    ]
 
     if include_shop and shop_owner_id:
         events.append(

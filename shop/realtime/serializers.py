@@ -128,6 +128,14 @@ def get_order_customer_unread_count(order):
     )
 
 
+def get_order_driver_unread_count(order):
+    return sum(
+        1
+        for message in get_order_driver_messages(order)
+        if not message.is_read and message.sender_type != 'customer'
+    )
+
+
 def get_support_customer_unread_count(conversation):
     return int(conversation.unread_for_customer_count or 0)
 
@@ -379,6 +387,7 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
     total_amount = serializers.SerializerMethodField()
     delivery_fee = serializers.SerializerMethodField()
     notes = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
     unread_messages_count = serializers.SerializerMethodField()
     has_unread_messages = serializers.SerializerMethodField()
     chat = serializers.SerializerMethodField()
@@ -403,6 +412,7 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
             'delivery_fee',
             'address',
             'notes',
+            'unread_count',
             'unread_messages_count',
             'has_unread_messages',
             'chat',
@@ -439,11 +449,14 @@ class CustomerAppRealtimeOrderSerializer(serializers.ModelSerializer):
     def get_notes(self, obj):
         return str(obj.notes or '')
 
-    def get_unread_messages_count(self, obj):
+    def get_unread_count(self, obj):
         return get_order_customer_unread_count(obj)
 
+    def get_unread_messages_count(self, obj):
+        return self.get_unread_count(obj)
+
     def get_has_unread_messages(self, obj):
-        return self.get_unread_messages_count(obj) > 0
+        return self.get_unread_count(obj) > 0
 
     def get_chat(self, obj):
         return {
@@ -798,6 +811,9 @@ class CustomerAppRealtimeOnWaySerializer(serializers.ModelSerializer):
     status_key = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
     last_delivery_update_at = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
+    unread_messages_count = serializers.SerializerMethodField()
+    has_unread_messages = serializers.SerializerMethodField()
     chat = serializers.SerializerMethodField()
 
     class Meta:
@@ -815,6 +831,9 @@ class CustomerAppRealtimeOnWaySerializer(serializers.ModelSerializer):
             'status_key',
             'status_label',
             'last_delivery_update_at',
+            'unread_count',
+            'unread_messages_count',
+            'has_unread_messages',
             'chat',
         ]
         read_only_fields = fields
@@ -846,6 +865,15 @@ class CustomerAppRealtimeOnWaySerializer(serializers.ModelSerializer):
 
     def get_last_delivery_update_at(self, obj):
         return format_utc_iso8601(get_on_way_sort_key(obj))
+
+    def get_unread_count(self, obj):
+        return get_order_driver_unread_count(obj)
+
+    def get_unread_messages_count(self, obj):
+        return self.get_unread_count(obj)
+
+    def get_has_unread_messages(self, obj):
+        return self.get_unread_count(obj) > 0
 
     def get_chat(self, obj):
         if not has_customer_visible_driver_chat(obj):
