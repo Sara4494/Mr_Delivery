@@ -1200,6 +1200,95 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
         async_to_sync(run)()
 
+    def test_order_history_snapshot_and_mark_read_use_per_order_unread_counts(self):
+        async def run():
+            older_order = self._create_order(created_at=timezone.now() - timedelta(hours=2))
+            newer_order = self._create_order(created_at=timezone.now() - timedelta(hours=1))
+
+            self._create_order_message(
+                older_order,
+                sender_type='shop_owner',
+                content='رسالة 1',
+                is_read=False,
+                created_at=timezone.now() - timedelta(hours=2, minutes=50),
+            )
+            self._create_order_message(
+                older_order,
+                sender_type='shop_owner',
+                content='رسالة 2',
+                is_read=False,
+                created_at=timezone.now() - timedelta(hours=2, minutes=40),
+            )
+            self._create_order_message(
+                older_order,
+                sender_type='shop_owner',
+                content='رسالة 3',
+                is_read=False,
+                created_at=timezone.now() - timedelta(hours=2, minutes=30),
+            )
+            self._create_order_message(
+                older_order,
+                sender_type='customer',
+                content='رسالة العميل',
+                is_read=False,
+                created_at=timezone.now() - timedelta(hours=2, minutes=20),
+            )
+
+            self._create_order_message(
+                newer_order,
+                sender_type='shop_owner',
+                content='رسالة جديدة',
+                is_read=False,
+                created_at=timezone.now() - timedelta(hours=1, minutes=45),
+            )
+
+            customer_socket, initial_messages = await self._connect_customer_socket()
+            customer_chat = await self._connect_order_chat_as_customer(older_order)
+            try:
+                history_snapshot = initial_messages[5]
+                results = history_snapshot['data']['results']
+                order_entries = {entry['id']: entry for entry in results if entry['entry_type'] == 'order'}
+
+                self.assertEqual(order_entries[f'order_{newer_order.id}']['unread_count'], 1)
+                self.assertEqual(order_entries[f'order_{newer_order.id}']['unread_messages_count'], 1)
+                self.assertEqual(order_entries[f'order_{newer_order.id}']['new_messages_count'], 1)
+                self.assertTrue(order_entries[f'order_{newer_order.id}']['has_unread_messages'])
+
+                self.assertEqual(order_entries[f'order_{older_order.id}']['unread_count'], 3)
+                self.assertEqual(order_entries[f'order_{older_order.id}']['unread_messages_count'], 3)
+                self.assertEqual(order_entries[f'order_{older_order.id}']['new_messages_count'], 3)
+                self.assertTrue(order_entries[f'order_{older_order.id}']['has_unread_messages'])
+
+                await customer_chat.send_json_to({'type': 'mark_read'})
+                events = await self._receive_until_types(
+                    customer_socket,
+                    {'order_upsert', 'shop_upsert', 'order_history_entry_upsert'},
+                )
+                history_event = next(event for event in events if event['type'] == 'order_history_entry_upsert')
+                shop_event = next(event for event in events if event['type'] == 'shop_upsert')
+                order_event = next(event for event in events if event['type'] == 'order_upsert')
+
+                self.assertEqual(history_event['data']['id'], f'order_{older_order.id}')
+                self.assertEqual(history_event['data']['unread_count'], 0)
+                self.assertEqual(history_event['data']['unread_messages_count'], 0)
+                self.assertEqual(history_event['data']['new_messages_count'], 0)
+                self.assertFalse(history_event['data']['has_unread_messages'])
+
+                self.assertEqual(order_event['data']['id'], older_order.id)
+                self.assertEqual(order_event['data']['unread_count'], 0)
+                self.assertEqual(order_event['data']['unread_messages_count'], 0)
+                self.assertFalse(order_event['data']['has_unread_messages'])
+
+                self.assertEqual(shop_event['data']['shop_id'], self.shop.id)
+                self.assertEqual(shop_event['data']['unread_count'], 1)
+                self.assertEqual(shop_event['data']['unread_messages_count'], 1)
+                self.assertTrue(shop_event['data']['has_unread_messages'])
+            finally:
+                await customer_chat.disconnect()
+                await customer_socket.disconnect()
+
+        async_to_sync(run)()
+
     def test_order_history_ordering_is_correct_descending_by_ordered_at(self):
         async def run():
             now = timezone.now()

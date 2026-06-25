@@ -893,6 +893,9 @@ class CustomerAppRealtimeOrderHistoryOrderEntrySerializer(serializers.ModelSeria
     shop_id = serializers.IntegerField(source='shop_owner_id', read_only=True)
     store_name = serializers.CharField(source='shop_owner.shop_name', read_only=True)
     shop_logo_url = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
+    unread_messages_count = serializers.SerializerMethodField()
+    new_messages_count = serializers.SerializerMethodField()
     has_unread_messages = serializers.SerializerMethodField()
     order = serializers.SerializerMethodField()
 
@@ -905,6 +908,9 @@ class CustomerAppRealtimeOrderHistoryOrderEntrySerializer(serializers.ModelSeria
             'shop_id',
             'store_name',
             'shop_logo_url',
+            'unread_count',
+            'unread_messages_count',
+            'new_messages_count',
             'has_unread_messages',
             'order',
         ]
@@ -922,8 +928,17 @@ class CustomerAppRealtimeOrderHistoryOrderEntrySerializer(serializers.ModelSeria
     def get_shop_logo_url(self, obj):
         return _context_file_url(self, getattr(obj.shop_owner, 'profile_image', None))
 
+    def get_unread_count(self, obj):
+        return get_order_customer_unread_count(obj)
+
+    def get_unread_messages_count(self, obj):
+        return self.get_unread_count(obj)
+
+    def get_new_messages_count(self, obj):
+        return self.get_unread_count(obj)
+
     def get_has_unread_messages(self, obj):
-        return get_order_customer_unread_count(obj) > 0
+        return self.get_unread_count(obj) > 0
 
     def get_order(self, obj):
         items_summary, item_count = build_items_summary_and_count(obj)
