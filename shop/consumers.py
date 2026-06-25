@@ -341,8 +341,9 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
             }
         }
 
+    normalized_chat_type = str(chat_type or 'shop_customer').strip()
     targets = _normalize_ring_targets(raw_targets)
-    if chat_type == 'shop_customer':
+    if normalized_chat_type == 'shop_customer':
         if user_type in {'shop_owner', 'employee'} and 'customer' in targets:
             chat_ring_context = _build_chat_ring_dispatch_context(
                 user,
@@ -366,6 +367,64 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
                 receiver_id=order.shop_owner_id,
                 target_label='shop',
                 chat_type=chat_type,
+                scope=scope,
+                base_url=base_url,
+            )
+            if chat_ring_context is not None:
+                return chat_ring_context
+    elif normalized_chat_type == 'driver_customer':
+        if user_type == 'customer' and 'driver' in targets:
+            chat_ring_context = _build_chat_ring_dispatch_context(
+                user,
+                user_type,
+                order,
+                receiver_type='driver',
+                receiver_id=order.driver_id,
+                target_label='driver',
+                chat_type=normalized_chat_type,
+                scope=scope,
+                base_url=base_url,
+            )
+            if chat_ring_context is not None:
+                return chat_ring_context
+        if user_type == 'driver' and 'customer' in targets:
+            chat_ring_context = _build_chat_ring_dispatch_context(
+                user,
+                user_type,
+                order,
+                receiver_type='customer',
+                receiver_id=order.customer_id,
+                target_label='customer',
+                chat_type=normalized_chat_type,
+                scope=scope,
+                base_url=base_url,
+            )
+            if chat_ring_context is not None:
+                return chat_ring_context
+    elif normalized_chat_type == 'shop_driver':
+        if user_type in {'shop_owner', 'employee'} and 'driver' in targets:
+            chat_ring_context = _build_chat_ring_dispatch_context(
+                user,
+                user_type,
+                order,
+                receiver_type='driver',
+                receiver_id=order.driver_id,
+                target_label='driver',
+                chat_type=normalized_chat_type,
+                scope=scope,
+                base_url=base_url,
+            )
+            if chat_ring_context is not None:
+                return chat_ring_context
+        if user_type == 'driver' and 'shop' in targets:
+            chat_ring_context = _build_chat_ring_dispatch_context(
+                user,
+                user_type,
+                order,
+                receiver_type='shop_owner',
+                receiver_id=order.shop_owner_id,
+                target_label='shop',
+                chat_type=normalized_chat_type,
                 scope=scope,
                 base_url=base_url,
             )
@@ -448,7 +507,7 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
         'targets': delivered_targets,
         'status': 'ringing',
         'created_at': format_utc_iso8601(timezone.now()),
-        'chat_type': chat_type if chat_type in ['shop_customer', 'driver_customer'] else None,
+        'chat_type': normalized_chat_type if normalized_chat_type in {'shop_customer', 'driver_customer', 'shop_driver', 'driver_shop', 'customer_shop', 'customer_driver'} else None,
         'notification_kind': 'ring',
         'play_sound_on_frontend': True,
         **_build_flat_ring_shop_fields(shop_payload),
@@ -626,7 +685,7 @@ async def _handle_ring_status_request(consumer, data, request_id=None):
 
 
 def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, receiver_id, target_label, chat_type='shop_customer', scope=None, base_url=None):
-    if receiver_type not in {'customer', 'shop_owner', 'employee'}:
+    if receiver_type not in {'customer', 'shop_owner', 'employee', 'driver'}:
         return None
     if not receiver_id:
         return None
@@ -678,9 +737,16 @@ def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, 
     }
     payload['target'] = target_label
 
+    if target_label == 'customer':
+        group_names = [f'customer_orders_{order.customer_id}']
+    elif target_label == 'driver':
+        group_names = [f'driver_{order.driver_id}']
+    else:
+        group_names = [f'shop_orders_{order.shop_owner_id}']
+
     return {
         'payload': payload,
-        'group_names': [f'customer_orders_{order.customer_id}'] if target_label == 'customer' else [f'shop_orders_{order.shop_owner_id}'],
+        'group_names': group_names,
         'unavailable_targets': [],
         'push_sent_via_service': True,
     }
