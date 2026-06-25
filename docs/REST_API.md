@@ -406,6 +406,7 @@ Authorization: Bearer {customer_token}
     "title": "Home",
     "address_type": "home",
     "full_address": "123 Street, City",
+    "landmark": "Near the pharmacy",
     "building_number": "15",
     "floor": "2",
     "apartment": "5",

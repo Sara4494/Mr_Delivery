@@ -100,7 +100,7 @@ class CustomerAddressSerializer(serializers.ModelSerializer):
                 return str(getattr(instance, key, '') or '').strip()
             return ''
 
-        explicit_title = pick('title')
+        explicit_title = str(values.get('title') or '').strip() if 'title' in values else ''
         if explicit_title:
             return explicit_title
 
@@ -128,7 +128,7 @@ class CustomerAddressSerializer(serializers.ModelSerializer):
                 return str(getattr(instance, key, '') or '').strip()
             return ''
 
-        explicit_full_address = pick('full_address')
+        explicit_full_address = str(values.get('full_address') or '').strip() if 'full_address' in values else ''
         if explicit_full_address:
             return explicit_full_address
 
@@ -145,6 +145,10 @@ class CustomerAddressSerializer(serializers.ModelSerializer):
         return composed.strip()
 
     def validate(self, attrs):
+        if 'landmark' in attrs:
+            landmark = str(attrs.get('landmark') or '').strip()
+            attrs['landmark'] = landmark or None
+
         full_address = self._compose_full_address(attrs, instance=self.instance)
         if not full_address:
             raise serializers.ValidationError({
@@ -275,6 +279,7 @@ class CustomerAppAddressSerializer(serializers.ModelSerializer):
             'city',
             'area',
             'street_name',
+            'landmark',
             'building_number',
             'floor',
             'is_default',

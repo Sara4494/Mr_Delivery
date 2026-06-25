@@ -1810,12 +1810,15 @@ def _build_driver_order_address_text(order):
         return ''
 
     address_parts = [
-        str(delivery_address.full_address or '').strip(),
         str(delivery_address.city or '').strip(),
         str(delivery_address.area or '').strip(),
         str(delivery_address.street_name or '').strip(),
+        str(delivery_address.landmark or '').strip(),
+        f"مبنى {str(delivery_address.building_number or '').strip()}" if str(delivery_address.building_number or '').strip() else '',
+        f"طابق {str(delivery_address.floor or '').strip()}" if str(delivery_address.floor or '').strip() else '',
+        f"شقة {str(delivery_address.apartment or '').strip()}" if str(delivery_address.apartment or '').strip() else '',
     ]
-    return next((part for part in address_parts if part), '')
+    return '، '.join(part for part in address_parts if part)
 
 
 def _build_driver_order_invoice_payload(order):
