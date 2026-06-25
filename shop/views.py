@@ -3533,6 +3533,143 @@ def _build_driver_customer_chat_bootstrap_response(request, order, *, mark_as_op
     )
 
 
+def _build_driver_customer_chat_preview(message):
+    if not message:
+        return ''
+
+    content = str(getattr(message, 'content', '') or '').strip()
+    message_type = str(getattr(message, 'message_type', '') or '').strip()
+
+    if message_type == 'audio':
+        return 'رسالة صوتية'
+    if message_type == 'image':
+        return 'صورة'
+    if message_type == 'location':
+        return content or 'موقع'
+    if message_type == 'invoice_card':
+        return 'فاتورة'
+    return content[:120] if content else 'رسالة جديدة'
+
+
+def _build_driver_customer_chat_inbox_item(order, last_message, unread_count, request):
+    customer = getattr(order, 'customer', None)
+    serialized_message = ChatMessageSerializer(last_message, context={'request': request}).data if last_message else None
+    preview = _build_driver_customer_chat_preview(last_message)
+    if serialized_message:
+        serialized_content = str(serialized_message.get('content') or '').strip()
+        if serialized_content:
+            preview = serialized_content[:120]
+
+    return {
+        'order_id': order.id,
+        'conversation_id': f'order_{order.id}_driver_customer',
+        'chat_type': 'driver_customer',
+        'can_open': has_driver_accepted(order),
+        'ws_path': f'/ws/chat/order/{order.id}/?chat_type=driver_customer&lang={request.query_params.get("lang", "ar")}',
+        'customer': {
+            'id': customer.id if customer else None,
+            'name': customer.name if customer else None,
+            'profile_image_url': resolve_customer_profile_image_url(
+                customer,
+                request=request,
+            ) if customer else None,
+        },
+        'last_message': serialized_message,
+        'last_message_preview': preview,
+        'last_message_at': serialized_message.get('created_at') if serialized_message else None,
+        'unread_count': unread_count,
+        'order_status': get_order_presentation_status_key(order),
+        'order_status_display': get_order_presentation_status_display(order),
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsDriver])
+def driver_customer_chat_inbox_view(request):
+    driver = _get_driver_from_request(request)
+    if not driver:
+        return error_response(message=t(request, 'driver_not_found'), status_code=status.HTTP_404_NOT_FOUND)
+
+    latest_messages = (
+        ChatMessage.objects
+        .filter(order__driver=driver, chat_type='driver_customer')
+        .select_related('order', 'order__customer', 'order__driver', 'order__shop_owner', 'order__delivery_address')
+        .order_by('-created_at', '-pk')
+    )
+
+    conversations = []
+    seen_order_ids = set()
+    order_objects = {}
+    last_messages = {}
+
+    for message in latest_messages:
+        order_id = message.order_id
+        if order_id in seen_order_ids:
+            continue
+        seen_order_ids.add(order_id)
+        order_objects[order_id] = message.order
+        last_messages[order_id] = message
+
+    if not order_objects:
+        return success_response(
+            data={
+                'conversations': [],
+                'count': 0,
+                'unread_count': 0,
+            },
+            message='تم جلب المحادثات بنجاح',
+            status_code=status.HTTP_200_OK,
+        )
+
+    unread_rows = (
+        ChatMessage.objects
+        .filter(
+            order_id__in=list(order_objects.keys()),
+            chat_type='driver_customer',
+            sender_type='customer',
+            is_read=False,
+        )
+        .values('order_id')
+        .annotate(unread_count=Count('id'))
+    )
+    unread_map = {row['order_id']: row['unread_count'] for row in unread_rows}
+
+    ordered_order_ids = [
+        order_id
+        for order_id in [message.order_id for message in latest_messages]
+        if order_id in order_objects and order_id not in conversations
+    ]
+    # Preserve newest-first order while keeping each order only once.
+    ordered_unique_order_ids = []
+    for order_id in ordered_order_ids:
+        if order_id not in ordered_unique_order_ids:
+            ordered_unique_order_ids.append(order_id)
+
+    for order_id in ordered_unique_order_ids:
+        order = order_objects[order_id]
+        last_message = last_messages.get(order_id)
+        unread_count = int(unread_map.get(order_id, 0) or 0)
+        conversations.append(
+            _build_driver_customer_chat_inbox_item(
+                order,
+                last_message,
+                unread_count,
+                request,
+            )
+        )
+
+    total_unread = sum(int(item['unread_count'] or 0) for item in conversations)
+    return success_response(
+        data={
+            'conversations': conversations,
+            'count': len(conversations),
+            'unread_count': total_unread,
+        },
+        message='تم جلب المحادثات بنجاح',
+        status_code=status.HTTP_200_OK,
+    )
+
+
 AUTH_SUSPENDED_ERROR_CODES = {
     'CUSTOMER_ACCOUNT_SUSPENDED',
     'DRIVER_ACCOUNT_SUSPENDED',

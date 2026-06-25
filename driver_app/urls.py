@@ -9,6 +9,7 @@ urlpatterns = [
     path('driver/app-version/', views.driver_app_version_view, name='driver_app_version'),
     path('driver/dashboard-ui/', views.driver_dashboard_ui_view, name='driver_dashboard_ui'),
     path('driver/store-chats-ui/', views.driver_store_chats_ui_view, name='driver_store_chats_ui'),
+    path('driver/customer-chats/', views.driver_customer_chat_inbox_view, name='driver_customer_chat_inbox'),
     path('driver/register/', views.driver_register_view, name='driver_register'),
     path('driver/register/send-otp/', views.driver_register_send_otp_view, name='driver_register_send_otp'),
     path('driver/register/verify-otp/', views.driver_register_verify_otp_view, name='driver_register_verify_otp'),
