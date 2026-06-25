@@ -1208,31 +1208,56 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def dashboard_snapshot(self, event):
-        return
+        snapshot = event.get('data') or {}
+        await self.send_realtime_event('dashboard_snapshot', snapshot)
+        await self.send_realtime_event(
+            'orders_snapshot',
+            {'orders': snapshot.get('orders') or []},
+        )
+        await self.send_realtime_event(
+            'shops_snapshot',
+            snapshot.get('shops') or {},
+        )
+        await self.send_realtime_event(
+            'on_way_snapshot',
+            snapshot.get('on_way') or {},
+        )
 
     async def order_upsert(self, event):
-        return
+        await self.send_realtime_event('order_upsert', event.get('data') or {})
 
     async def order_remove(self, event):
-        return
+        await self.send_realtime_event('order_remove', event.get('data') or {})
 
     async def shop_upsert(self, event):
-        return
+        await self.send_realtime_event('shop_upsert', event.get('data') or {})
 
     async def shop_remove(self, event):
-        return
+        await self.send_realtime_event('shop_remove', event.get('data') or {})
 
     async def on_way_upsert(self, event):
-        return
+        await self.send_realtime_event('on_way_upsert', event.get('data') or {})
 
     async def on_way_remove(self, event):
-        return
+        await self.send_realtime_event('on_way_remove', event.get('data') or {})
 
     async def order_history_entry_upsert(self, event):
-        return
+        await self.send_realtime_event('order_history_entry_upsert', event.get('data') or {})
 
     async def order_history_entry_remove(self, event):
-        return
+        await self.send_realtime_event('order_history_entry_remove', event.get('data') or {})
+
+    async def orders_snapshot(self, event):
+        await self.send_realtime_event('orders_snapshot', event.get('data') or {})
+
+    async def shops_snapshot(self, event):
+        await self.send_realtime_event('shops_snapshot', event.get('data') or {})
+
+    async def on_way_snapshot(self, event):
+        await self.send_realtime_event('on_way_snapshot', event.get('data') or {})
+
+    async def order_history_snapshot(self, event):
+        await self.send_realtime_event('order_history_snapshot', event.get('data') or {})
 
     async def phone_available(self, event):
         await self.refresh_customer_phone_availability_watch(event.get('data') or {})
@@ -3098,6 +3123,34 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
 
     async def order_history_entry_remove(self, event):
         await self.send_realtime_event('order_history_entry_remove', event['data'])
+
+    async def dashboard_snapshot(self, event):
+        snapshot = event.get('data') or {}
+        await self.send_realtime_event('dashboard_snapshot', snapshot)
+        await self.send_realtime_event(
+            'orders_snapshot',
+            {'orders': snapshot.get('orders') or []},
+        )
+        await self.send_realtime_event(
+            'shops_snapshot',
+            snapshot.get('shops') or {},
+        )
+        await self.send_realtime_event(
+            'on_way_snapshot',
+            snapshot.get('on_way') or {},
+        )
+
+    async def orders_snapshot(self, event):
+        await self.send_realtime_event('orders_snapshot', event.get('data') or {})
+
+    async def shops_snapshot(self, event):
+        await self.send_realtime_event('shops_snapshot', event.get('data') or {})
+
+    async def on_way_snapshot(self, event):
+        await self.send_realtime_event('on_way_snapshot', event.get('data') or {})
+
+    async def order_history_snapshot(self, event):
+        await self.send_realtime_event('order_history_snapshot', event.get('data') or {})
 
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
