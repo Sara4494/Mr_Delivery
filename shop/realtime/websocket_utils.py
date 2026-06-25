@@ -471,7 +471,7 @@ def broadcast_driver_location(driver_id, customer_ids, latitude, longitude):
         'driver_id': driver_id,
         'latitude': str(latitude),
         'longitude': str(longitude),
-        'updated_at': timezone.now().isoformat()
+        'updated_at': format_utc_iso8601(timezone.now())
     }
     
     for customer_id in customer_ids:

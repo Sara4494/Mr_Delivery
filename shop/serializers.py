@@ -263,7 +263,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             if last_message:
                 return {
                     'content': self._build_last_message_preview(last_message),
-                    'created_at': last_message.created_at.isoformat() if last_message.created_at else None
+                    'created_at': format_utc_iso8601(last_message.created_at)
                 }
         return None
 

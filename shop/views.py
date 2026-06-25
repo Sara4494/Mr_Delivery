@@ -222,7 +222,7 @@ def _serialize_app_status_datetime(value):
     normalized = value
     if timezone.is_naive(normalized):
         normalized = timezone.make_aware(normalized, dt_timezone.utc)
-    return normalized.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z')
+    return timezone.localtime(normalized).replace(microsecond=0).isoformat()
 
 
 def _build_app_status_payload(request):
@@ -1674,7 +1674,7 @@ def _build_driver_invitation_item(shop_driver, request):
         'invitation_id': shop_driver.id,
         'status': shop_driver.status,
         'message': 'دعوة للانضمام كمندوب توصيل معتمد للطلبات عبر التطبيق.',
-        'invited_at': shop_driver.joined_at.isoformat() if shop_driver.joined_at else None,
+        'invited_at': format_utc_iso8601(shop_driver.joined_at),
         'invited_since_label': _humanize_elapsed_label(shop_driver.joined_at),
         'shop': {
             'id': shop_owner.id,
@@ -5246,7 +5246,7 @@ def shop_dashboard_statistics_view(request):
             'orders_growth_percent': _growth_percentage(total_orders, previous_orders_qs.count()),
             'invoices_growth_percent': _growth_percentage(invoices_count, previous_invoices_qs.count()),
         },
-        'generated_at': timezone.now().isoformat(),
+        'generated_at': format_utc_iso8601(timezone.now()),
     }
 
     return success_response(
@@ -5332,7 +5332,7 @@ def shop_dashboard_summary_view(request):
         data={
             'employee': employee_summary,
             **summary,
-            'generated_at': timezone.now().isoformat(),
+            'generated_at': format_utc_iso8601(timezone.now()),
         },
         message='تم جلب ملخص لوحة التحكم بنجاح',
         status_code=status.HTTP_200_OK

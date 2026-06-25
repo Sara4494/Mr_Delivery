@@ -1,4 +1,5 @@
 from datetime import timedelta
+from datetime import timezone as dt_timezone
 import logging
 import threading
 
@@ -24,6 +25,16 @@ _CHAT_RING_TIMEOUT_TIMERS = {}
 _CHAT_RING_SCHEMA_LOCK = threading.Lock()
 _CHAT_RING_SCHEMA_READY = False
 logger = logging.getLogger(__name__)
+
+
+def _format_local_iso8601(value):
+    if not value:
+        return None
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value, dt_timezone.utc)
+    return timezone.localtime(value).replace(microsecond=0).isoformat()
+
+
 CHAT_RING_STATUS_DISPLAY_MAP = {
     'ar': {
         'ringing': 'جارٍ الرن',
@@ -294,15 +305,15 @@ def _broadcast_ring_status_update(ring):
 
     payload = _ring_payload(ring, event_type=f'chat_ring_{ring.status}')
     payload['status_display'] = _ring_status_display(ring.status, lang='ar')
-    payload['updated_at'] = ring.updated_at.isoformat() if ring.updated_at else None
+    payload['updated_at'] = _format_local_iso8601(ring.updated_at)
     if ring.answered_at is not None:
-        payload['answered_at'] = ring.answered_at.isoformat()
+        payload['answered_at'] = _format_local_iso8601(ring.answered_at)
     if ring.dismissed_at is not None:
-        payload['dismissed_at'] = ring.dismissed_at.isoformat()
+        payload['dismissed_at'] = _format_local_iso8601(ring.dismissed_at)
     if ring.timed_out_at is not None:
-        payload['timed_out_at'] = ring.timed_out_at.isoformat()
+        payload['timed_out_at'] = _format_local_iso8601(ring.timed_out_at)
     if ring.cancelled_at is not None:
-        payload['cancelled_at'] = ring.cancelled_at.isoformat()
+        payload['cancelled_at'] = _format_local_iso8601(ring.cancelled_at)
 
     for group_name in _ring_socket_group_names(ring):
         async_to_sync(channel_layer.group_send)(
@@ -367,7 +378,7 @@ def serialize_chat_ring(ring):
         'receiver_type': ring.receiver_type,
         'status': ring.status,
         'duration_seconds': CHAT_RING_DURATION_SECONDS,
-        'expires_at': ring.expires_at.isoformat() if ring.expires_at else None,
+        'expires_at': _format_local_iso8601(ring.expires_at),
         'sender_name': metadata.get('sender_name') or '',
         'sender_avatar': metadata.get('sender_avatar') or '',
     }
@@ -559,7 +570,7 @@ def apply_chat_ring_status_update(*, ring_id, actor, status_value, lang=None):
                 },
                 'ring': {
                     **_ring_payload(ring, event_type='ring'),
-                    'updated_at': ring.updated_at.isoformat() if ring.updated_at else None,
+                    'updated_at': _format_local_iso8601(ring.updated_at),
                 },
                 'status_changed': False,
             }
@@ -572,7 +583,7 @@ def apply_chat_ring_status_update(*, ring_id, actor, status_value, lang=None):
                 },
                 'ring': {
                     **_ring_payload(ring, event_type='ring'),
-                    'updated_at': ring.updated_at.isoformat() if ring.updated_at else None,
+                    'updated_at': _format_local_iso8601(ring.updated_at),
                 },
                 'status_changed': False,
             }
@@ -589,7 +600,7 @@ def apply_chat_ring_status_update(*, ring_id, actor, status_value, lang=None):
         },
         'ring': {
             **_ring_payload(ring, event_type='ring'),
-            'updated_at': ring.updated_at.isoformat() if ring.updated_at else None,
+            'updated_at': _format_local_iso8601(ring.updated_at),
         },
         'status_changed': True,
         'payload': payload,

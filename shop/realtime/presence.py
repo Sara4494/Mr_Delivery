@@ -112,8 +112,8 @@ def format_utc_iso8601(value):
     if timezone.is_naive(value):
         value = timezone.make_aware(value, dt_timezone.utc)
 
-    value = value.astimezone(dt_timezone.utc).replace(microsecond=0)
-    return value.isoformat().replace('+00:00', 'Z')
+    value = timezone.localtime(value).replace(microsecond=0)
+    return value.isoformat()
 
 
 def _apply_customer_presence_state(customer, is_online):

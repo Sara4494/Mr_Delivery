@@ -445,7 +445,7 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
         'sender_id': getattr(user, 'id', None),
         'targets': delivered_targets,
         'status': 'ringing',
-        'created_at': timezone.now().isoformat(),
+        'created_at': format_utc_iso8601(timezone.now()),
         'chat_type': chat_type if chat_type in ['shop_customer', 'driver_customer'] else None,
         'notification_kind': 'ring',
         'play_sound_on_frontend': True,
@@ -666,7 +666,7 @@ def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, 
         'sender_id': getattr(user, 'id', None),
         'targets': [target_label],
         'status': ring.status,
-        'created_at': ring.created_at.isoformat() if ring.created_at else timezone.now().isoformat(),
+        'created_at': format_utc_iso8601(ring.created_at or timezone.now()),
         'chat_type': 'shop_customer',
         'notification_kind': 'ring',
         'play_sound_on_frontend': True,
@@ -3583,7 +3583,7 @@ class DriverConsumer(AsyncWebsocketConsumer):
                         'driver_id': self.driver_id,
                         'latitude': str(latitude),
                         'longitude': str(longitude),
-                        'updated_at': timezone.now().isoformat(),
+                        'updated_at': format_utc_iso8601(timezone.now()),
                     }
                 }
             )

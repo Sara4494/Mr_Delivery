@@ -1979,7 +1979,7 @@ def _serialize_maintenance_datetime(value):
     normalized = value
     if timezone.is_naive(normalized):
         normalized = timezone.make_aware(normalized, dt_timezone.utc)
-    return normalized.astimezone(dt_timezone.utc).isoformat().replace("+00:00", "Z")
+    return timezone.localtime(normalized).replace(microsecond=0).isoformat()
 
 
 def _serialize_app_maintenance_settings(instance):
