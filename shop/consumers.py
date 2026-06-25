@@ -1096,8 +1096,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             order_id=target['order_id'],
             chat_type=target['chat_type'],
         )
-        await self.send_ack(
-            action='mark_read',
+        await self.send_mark_read_ack(
             request_id=request_id,
             data={
                 'conversation_id': target['conversation_id'],
@@ -1324,6 +1323,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if request_id is not None:
             payload['request_id'] = request_id
         await self.send(text_data=_json_dumps(_with_localized_message(payload, message, lang=getattr(self, 'lang', None))))
+
+    async def send_mark_read_ack(self, request_id=None, data=None):
+        payload = {
+            'type': 'mark_read_ack',
+            'action': 'mark_read',
+            'success': True,
+            'data': data or {},
+        }
+        if request_id is not None:
+            payload['request_id'] = request_id
+        await self.send(text_data=_json_dumps(payload))
 
     async def send_error_event(self, code, message, request_id=None, details=None):
         payload = {
@@ -1671,6 +1681,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 order_id = int(self.order_id)
             except (TypeError, ValueError):
                 return None
+        else:
+            try:
+                socket_order_id = int(self.order_id)
+            except (TypeError, ValueError):
+                socket_order_id = order_id
+            if socket_order_id != order_id:
+                return None
 
         order = Order.objects.only('id', 'customer_id', 'driver_id', 'shop_owner_id').filter(id=order_id).first()
         if not order:
@@ -1696,7 +1713,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return {
             'order_id': order_id,
             'chat_type': requested_chat_type,
-            'conversation_id': raw_conversation_id or f'order_{order_id}_{requested_chat_type}',
+            'conversation_id': f'order_{order_id}_{requested_chat_type}',
             'last_read_message_id': str(payload.get('last_read_message_id') or '').strip(),
         }
 
@@ -1709,44 +1726,59 @@ class ChatConsumer(AsyncWebsocketConsumer):
             chat_type = str(target.get('chat_type') or self.chat_type).strip()
             last_read_message_id = str(target.get('last_read_message_id') or '').strip()
 
-            order = Order.objects.get(id=order_id)
-
-            qs = ChatMessage.objects.filter(
-                order=order,
-                chat_type=chat_type,
-                is_read=False
-            ).exclude(sender_type=self.user_type)
-
-            if last_read_message_id:
-                message_lookup = Q(public_id=last_read_message_id)
-                if last_read_message_id.isdigit():
-                    message_lookup |= Q(pk=int(last_read_message_id))
-                last_message = (
-                    ChatMessage.objects
-                    .filter(order=order, chat_type=chat_type)
-                    .exclude(sender_type=self.user_type)
-                    .filter(message_lookup)
-                    .order_by('-created_at', '-pk')
-                    .first()
-                )
-                if not last_message:
-                    return 0, int(qs.count())
-
-                qs = qs.filter(
-                    Q(created_at__lt=last_message.created_at) |
-                    Q(created_at=last_message.created_at, pk__lte=last_message.pk)
-                )
-
             with transaction.atomic():
+                order = (
+                    Order.objects
+                    .select_for_update()
+                    .only('id', 'customer_id', 'driver_id', 'shop_owner_id')
+                    .get(id=order_id)
+                )
+
+                if chat_type == 'driver_customer':
+                    sender_types = ['driver'] if self.user_type == 'customer' else ['customer']
+                else:
+                    sender_types = None
+
+                qs = ChatMessage.objects.filter(
+                    order=order,
+                    chat_type=chat_type,
+                    is_read=False,
+                )
+                if sender_types:
+                    qs = qs.filter(sender_type__in=sender_types)
+                else:
+                    qs = qs.exclude(sender_type=self.user_type)
+
+                if last_read_message_id:
+                    message_lookup = Q(public_id=last_read_message_id)
+                    if last_read_message_id.isdigit():
+                        message_lookup |= Q(pk=int(last_read_message_id))
+                    last_message_qs = ChatMessage.objects.filter(order=order, chat_type=chat_type)
+                    if sender_types:
+                        last_message_qs = last_message_qs.filter(sender_type__in=sender_types)
+                    else:
+                        last_message_qs = last_message_qs.exclude(sender_type=self.user_type)
+                    last_message = last_message_qs.filter(message_lookup).order_by('-pk').first()
+                    if not last_message:
+                        unread_count = qs.count()
+                        return 0, unread_count
+
+                    qs = qs.filter(pk__lte=last_message.pk)
+
                 marked_count = qs.update(is_read=True)
 
-            unread_count = qs.model.objects.filter(
-                order=order,
-                chat_type=chat_type,
-                is_read=False,
-            ).exclude(sender_type=self.user_type).count()
+                unread_count_qs = ChatMessage.objects.filter(
+                    order=order,
+                    chat_type=chat_type,
+                    is_read=False,
+                )
+                if sender_types:
+                    unread_count_qs = unread_count_qs.filter(sender_type__in=sender_types)
+                else:
+                    unread_count_qs = unread_count_qs.exclude(sender_type=self.user_type)
+                unread_count = unread_count_qs.count()
 
-            return marked_count, unread_count
+                return marked_count, unread_count
                 
         except Exception as e:
             print(f"[ChatConsumer.mark_messages_as_read] error: {e}")
