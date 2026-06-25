@@ -12,7 +12,7 @@ from django.utils import timezone
 from user.models import ShopOwner
 from user.utils import build_absolute_file_url
 
-from ..models import Customer, Driver, DriverPresenceConnection, Employee, FCMDeviceToken, Notification, Order
+from ..models import Customer, CustomerPresenceConnection, Driver, DriverPresenceConnection, Employee, FCMDeviceToken, Notification, Order
 
 
 logger = logging.getLogger(__name__)
@@ -185,6 +185,12 @@ def _driver_has_active_socket(driver_id):
     if not driver_id:
         return False
     return DriverPresenceConnection.objects.filter(driver_id=driver_id).exists()
+
+
+def _customer_has_active_socket(customer_id):
+    if not customer_id:
+        return False
+    return CustomerPresenceConnection.objects.filter(customer_id=customer_id).exists()
 
 
 def _driver_urgent_ring_profile():
@@ -2399,6 +2405,15 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
         else:
             chat_type = str((ring_payload or {}).get('chat_type') or '').strip()
             if target == 'customer' and chat_type == 'driver_customer':
+                if _customer_has_active_socket(getattr(order, 'customer_id', None)):
+                    logger.info(
+                        'fcm.ring.skip_active_customer_socket order_id=%s target=%s chat_type=%s customer_id=%s',
+                        order.id,
+                        target,
+                        chat_type,
+                        getattr(order, 'customer_id', None),
+                    )
+                    continue
                 payload = build_customer_driver_chat_ring_payload(
                     order=order,
                     ring_payload=ring_payload,
@@ -2415,6 +2430,15 @@ def send_ring_push_fallback(order_id, ring_payload, *, request=None, scope=None,
                 ttl = profile['ttl']
                 notification_priority = profile['notification_priority']
             elif target == 'customer' and chat_type == 'shop_customer':
+                if _customer_has_active_socket(getattr(order, 'customer_id', None)):
+                    logger.info(
+                        'fcm.ring.skip_active_customer_socket order_id=%s target=%s chat_type=%s customer_id=%s',
+                        order.id,
+                        target,
+                        chat_type,
+                        getattr(order, 'customer_id', None),
+                    )
+                    continue
                 payload = build_customer_shop_chat_ring_payload(
                     order=order,
                     ring_payload=ring_payload,

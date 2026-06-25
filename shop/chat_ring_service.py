@@ -13,7 +13,7 @@ from django.utils import timezone
 from user.utils import build_absolute_file_url
 
 from .fcm.service import send_push_to_user
-from .models import ChatRing, Customer, Employee, Order
+from .models import ChatRing, Customer, CustomerPresenceConnection, Employee, Order
 
 
 CHAT_RING_DURATION_SECONDS = 30
@@ -365,6 +365,12 @@ def _send_ring_event_to_user(user_type, user_id, payload, *, expires_at=None, wi
     )
 
 
+def _customer_has_active_socket(customer_id):
+    if not customer_id:
+        return False
+    return CustomerPresenceConnection.objects.filter(customer_id=customer_id).exists()
+
+
 def serialize_chat_ring(ring):
     metadata = ring.metadata or {}
     return {
@@ -449,13 +455,23 @@ def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=
             },
         )
 
-    push_summary = _send_ring_event_to_user(
-        receiver_type,
-        resolved_receiver_id,
-        _ring_payload(ring, event_type='chat_ring'),
-        expires_at=expires_at,
-        with_sound=True,
-    )
+    if receiver_type == 'customer' and _customer_has_active_socket(resolved_receiver_id):
+        push_summary = {
+            'users_targeted': 0,
+            'tokens_total': 0,
+            'tokens_sent': 0,
+            'tokens_failed': 0,
+            'tokens_invalidated': 0,
+            'skipped_due_to_active_socket': True,
+        }
+    else:
+        push_summary = _send_ring_event_to_user(
+            receiver_type,
+            resolved_receiver_id,
+            _ring_payload(ring, event_type='chat_ring'),
+            expires_at=expires_at,
+            with_sound=True,
+        )
     transaction.on_commit(lambda: _schedule_chat_ring_timeout_timer(ring.public_id, expires_at))
     response = serialize_chat_ring(ring)
     response['push'] = push_summary
