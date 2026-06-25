@@ -979,6 +979,76 @@ class CustomerAppRealtimeTests(TransactionTestCase):
 
         async_to_sync(run)()
 
+    def test_driver_mark_read_persists_after_reconnect_and_uses_payload_target(self):
+        async def run():
+            order = self._create_order(status='on_way', driver=self.driver)
+            order.driver_accepted_at = timezone.now()
+            order.save(update_fields=['driver_accepted_at', 'updated_at'])
+            first_message = self._create_order_message(
+                order,
+                sender_type='driver',
+                chat_type='driver_customer',
+                content='رسالة 1 من المندوب',
+                is_read=False,
+            )
+            self._create_order_message(
+                order,
+                sender_type='driver',
+                chat_type='driver_customer',
+                content='رسالة 2 من المندوب',
+                is_read=False,
+            )
+            self._create_order_message(
+                order,
+                sender_type='driver',
+                chat_type='driver_customer',
+                content='رسالة 3 من المندوب',
+                is_read=False,
+            )
+
+            customer_socket, _ = await self._connect_customer_socket()
+            customer_chat = await self._connect_order_chat_as_customer(order)
+            try:
+                await customer_chat.send_json_to(
+                    {
+                        'type': 'mark_read',
+                        'chat_type': 'driver_customer',
+                        'conversation_id': f'order_{order.id}_driver_customer',
+                        'order_id': str(order.id),
+                        'last_read_message_id': str(first_message.id + 2),
+                        'request_id': 'read-unique-id',
+                    }
+                )
+                chat_ack = await customer_chat.receive_json_from(timeout=5)
+                self.assertEqual(chat_ack['type'], 'ack')
+                self.assertEqual(chat_ack['action'], 'mark_read')
+                self.assertEqual(chat_ack['request_id'], 'read-unique-id')
+                self.assertEqual(chat_ack['data']['order_id'], order.id)
+                self.assertEqual(chat_ack['data']['chat_type'], 'driver_customer')
+                self.assertEqual(chat_ack['data']['marked_count'], 3)
+                self.assertEqual(chat_ack['data']['unread_count'], 0)
+
+                await self._receive_until_types(
+                    customer_socket,
+                    {'dashboard_snapshot', 'on_way_upsert'},
+                )
+            finally:
+                await customer_chat.disconnect()
+                await customer_socket.disconnect()
+
+            reconnected_socket, initial_messages = await self._connect_customer_socket()
+            try:
+                on_way_snapshot = initial_messages[4]
+                self.assertEqual(on_way_snapshot['type'], 'on_way_snapshot')
+                row = next(item for item in on_way_snapshot['data']['results'] if item['order_id'] == order.id)
+                self.assertEqual(row['unread_count'], 0)
+                self.assertEqual(row['unread_messages_count'], 0)
+                self.assertFalse(row['has_unread_messages'])
+            finally:
+                await reconnected_socket.disconnect()
+
+        async_to_sync(run)()
+
     def test_driver_message_makes_driver_visible_in_on_way_snapshot(self):
         async def run():
             order = self._create_order(status='on_way', driver=self.driver)

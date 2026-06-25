@@ -3,10 +3,13 @@ import json
 import threading
 import uuid
 import logging
+import re
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from .models import (
     Order,
@@ -71,6 +74,7 @@ from gallery.models import GalleryImage, WorkSchedule
 logger = logging.getLogger(__name__)
 _CHAT_RING_REQUEST_MAP = {}
 _CHAT_RING_REQUEST_MAP_LOCK = threading.Lock()
+_ORDER_ID_PATTERN = re.compile(r'(\d+)')
 
 
 def _with_localized_message(payload, message, lang=None):
@@ -1065,27 +1069,41 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     async def handle_mark_read(self, data=None, request_id=None):
         """Mark messages as read for the other participant."""
-        marked_count, unread_count = await self.mark_messages_as_read(data or {})
-        
+        target = await self.resolve_mark_read_target(data or {})
+        if not target:
+            await self.send_error_event(
+                code='INVALID_MARK_READ_TARGET',
+                message='تعذر تحديد المحادثة المطلوبة لتأكيد القراءة',
+                request_id=request_id,
+            )
+            return
+
+        marked_count, unread_count = await self.mark_messages_as_read(target)
+        room_group_name = f'chat_order_{target["order_id"]}_{target["chat_type"]}'
         await self.channel_layer.group_send(
-            self.room_group_name,
+            room_group_name,
             {
                 'type': 'messages_read',
-                'order_id': self.order_id,
+                'order_id': target['order_id'],
+                'chat_type': target['chat_type'],
                 'reader_type': self.user_type,
                 'count': marked_count,
-                'last_read_message_id': (data or {}).get('last_read_message_id'),
+                'last_read_message_id': target['last_read_message_id'],
                 'unread_count': unread_count,
             }
         )
-        await self.broadcast_order_snapshot_update()
+        await self.broadcast_order_snapshot_update(
+            order_id=target['order_id'],
+            chat_type=target['chat_type'],
+        )
         await self.send_ack(
             action='mark_read',
             request_id=request_id,
             data={
-                'conversation_id': str(self.order_id),
-                'order_id': int(self.order_id),
-                'last_read_message_id': (data or {}).get('last_read_message_id'),
+                'conversation_id': target['conversation_id'],
+                'order_id': target['order_id'],
+                'chat_type': target['chat_type'],
+                'last_read_message_id': target['last_read_message_id'],
                 'marked_count': marked_count,
                 'unread_count': unread_count,
             },
@@ -1139,8 +1157,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=_json_dumps({
             'type': 'messages_read',
             'order_id': event['order_id'],
+            'chat_type': event.get('chat_type'),
             'reader_type': event['reader_type'],
             'count': event.get('count', 0),
+            'last_read_message_id': event.get('last_read_message_id'),
+            'unread_count': event.get('unread_count', 0),
         }))
     
     async def typing_indicator(self, event):
@@ -1185,6 +1206,33 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'type': 'customer_offline',
             'data': event['data'],
         }))
+
+    async def dashboard_snapshot(self, event):
+        return
+
+    async def order_upsert(self, event):
+        return
+
+    async def order_remove(self, event):
+        return
+
+    async def shop_upsert(self, event):
+        return
+
+    async def shop_remove(self, event):
+        return
+
+    async def on_way_upsert(self, event):
+        return
+
+    async def on_way_remove(self, event):
+        return
+
+    async def order_history_entry_upsert(self, event):
+        return
+
+    async def order_history_entry_remove(self, event):
+        return
 
     async def phone_available(self, event):
         await self.refresh_customer_phone_availability_watch(event.get('data') or {})
@@ -1294,12 +1342,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 self.chat_type,
             )
 
-    async def broadcast_order_snapshot_update(self):
-        order_snapshot = await self.get_order_snapshot()
+    async def broadcast_order_snapshot_update(self, order_id=None, chat_type=None):
+        order_id = int(order_id or self.order_id)
+        chat_type = str(chat_type or self.chat_type).strip()
+        order_snapshot = await self.get_order_snapshot(order_id=order_id)
         if not order_snapshot:
             return
 
-        group_names = await self.get_order_channel_targets()
+        group_names = await self.get_order_channel_targets(order_id=order_id, chat_type=chat_type)
         for group_name in group_names:
             if group_name.startswith('customer_orders_'):
                 continue
@@ -1314,10 +1364,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if self.user_type == 'customer':
             await self.dispatch_customer_delta_events(
                 await self.get_customer_app_order_delta_events(
+                    order_id=order_id,
+                    chat_type=chat_type,
                     include_order=True,
-                    include_shop=self.chat_type == 'shop_customer',
-                    include_on_way=self.chat_type == 'driver_customer',
-                    include_history=self.chat_type == 'shop_customer',
+                    include_shop=chat_type == 'shop_customer',
+                    include_on_way=chat_type == 'driver_customer',
+                    include_history=chat_type == 'shop_customer',
                 )
             )
 
@@ -1568,15 +1620,75 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }
     
     @database_sync_to_async
-    def mark_messages_as_read(self, data=None):
+    def resolve_mark_read_target(self, data=None):
+        payload = data or {}
+        requested_chat_type = str(payload.get('chat_type') or self.chat_type or '').strip()
+        if requested_chat_type not in {'shop_customer', 'driver_customer'}:
+            requested_chat_type = self.chat_type
+
+        raw_conversation_id = str(payload.get('conversation_id') or payload.get('thread_id') or '').strip()
+        raw_order_id = payload.get('order_id')
+
+        order_id = None
+        if raw_order_id is not None and str(raw_order_id).strip():
+            try:
+                order_id = int(raw_order_id)
+            except (TypeError, ValueError):
+                order_id = None
+
+        if order_id is None and raw_conversation_id:
+            match = _ORDER_ID_PATTERN.search(raw_conversation_id)
+            if match:
+                order_id = int(match.group(1))
+
+        if order_id is None:
+            try:
+                order_id = int(self.order_id)
+            except (TypeError, ValueError):
+                return None
+
+        order = Order.objects.only('id', 'customer_id', 'driver_id', 'shop_owner_id').filter(id=order_id).first()
+        if not order:
+            return None
+
+        if requested_chat_type == 'driver_customer':
+            if self.user_type == 'customer' and order.customer_id != self.user.id:
+                return None
+            if self.user_type == 'driver' and order.driver_id != self.user.id:
+                return None
+            if self.user_type not in {'customer', 'driver'}:
+                return None
+        else:
+            if self.user_type == 'shop_owner' and order.shop_owner_id != self.user.id:
+                return None
+            elif self.user_type == 'employee' and order.shop_owner_id != getattr(self.user, 'shop_owner_id', None):
+                return None
+            elif self.user_type == 'driver' and order.driver_id != self.user.id:
+                return None
+            elif self.user_type == 'customer' and order.customer_id != self.user.id:
+                return None
+
+        return {
+            'order_id': order_id,
+            'chat_type': requested_chat_type,
+            'conversation_id': raw_conversation_id or f'order_{order_id}_{requested_chat_type}',
+            'last_read_message_id': str(payload.get('last_read_message_id') or '').strip(),
+        }
+
+    @database_sync_to_async
+    def mark_messages_as_read(self, target=None):
         """Mark unread room messages as read."""
         try:
-            order = Order.objects.get(id=self.order_id)
-            last_read_message_id = str((data or {}).get('last_read_message_id') or '').strip()
+            target = target or {}
+            order_id = int(target.get('order_id') or self.order_id)
+            chat_type = str(target.get('chat_type') or self.chat_type).strip()
+            last_read_message_id = str(target.get('last_read_message_id') or '').strip()
+
+            order = Order.objects.get(id=order_id)
 
             qs = ChatMessage.objects.filter(
                 order=order,
-                chat_type=self.chat_type,
+                chat_type=chat_type,
                 is_read=False
             ).exclude(sender_type=self.user_type)
 
@@ -1586,7 +1698,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     message_lookup |= Q(pk=int(last_read_message_id))
                 last_message = (
                     ChatMessage.objects
-                    .filter(order=order, chat_type=self.chat_type)
+                    .filter(order=order, chat_type=chat_type)
                     .exclude(sender_type=self.user_type)
                     .filter(message_lookup)
                     .order_by('-created_at', '-pk')
@@ -1600,12 +1712,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     Q(created_at=last_message.created_at, pk__lte=last_message.pk)
                 )
 
-            # Mark only messages sent by the other participant.
-            marked_count = qs.update(is_read=True)
-            
+            with transaction.atomic():
+                marked_count = qs.update(is_read=True)
+
             unread_count = qs.model.objects.filter(
                 order=order,
-                chat_type=self.chat_type,
+                chat_type=chat_type,
                 is_read=False,
             ).exclude(sender_type=self.user_type).count()
 
@@ -1629,19 +1741,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return 'غير معروف'
 
     @database_sync_to_async
-    def get_order_channel_targets(self):
+    def get_order_channel_targets(self, order_id=None, chat_type=None):
         try:
-            order = Order.objects.get(id=self.order_id)
+            order = Order.objects.get(id=order_id or self.order_id)
         except Order.DoesNotExist:
             return []
 
+        chat_type = str(chat_type or self.chat_type).strip()
         group_names = set()
-        if self.chat_type == 'shop_customer':
+        if chat_type == 'shop_customer':
             if order.shop_owner_id:
                 group_names.add(f'shop_orders_{order.shop_owner_id}')
             if order.customer_id:
                 group_names.add(f'customer_orders_{order.customer_id}')
-        elif self.chat_type == 'driver_customer':
+        elif chat_type == 'driver_customer':
             if order.customer_id:
                 group_names.add(f'customer_orders_{order.customer_id}')
             if order.driver_id:
@@ -1668,9 +1781,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }
 
     @database_sync_to_async
-    def get_order_snapshot(self):
+    def get_order_snapshot(self, order_id=None):
         try:
-            order = Order.objects.select_related('customer', 'employee', 'driver').get(id=self.order_id)
+            order = Order.objects.select_related('customer', 'employee', 'driver').get(id=order_id or self.order_id)
         except Order.DoesNotExist:
             return None
         return OrderSerializer(
@@ -1679,16 +1792,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
         ).data
 
     @database_sync_to_async
-    def get_customer_app_order_delta_events(self, include_order, include_shop, include_on_way, include_history):
+    def get_customer_app_order_delta_events(self, include_order, include_shop, include_on_way, include_history, order_id=None, chat_type=None):
         customer_id = self.user.id if self.user_type == 'customer' else None
         if customer_id is None:
-            order = Order.objects.only('customer_id').filter(id=self.order_id).first()
+            order = Order.objects.only('customer_id').filter(id=order_id or self.order_id).first()
             customer_id = getattr(order, 'customer_id', None)
         if not customer_id:
             return []
+        order_id = int(order_id or self.order_id)
         return build_order_delta_events(
             customer_id,
-            int(self.order_id),
+            order_id,
             include_order=include_order,
             include_shop=include_shop,
             include_on_way=include_on_way,
@@ -1698,9 +1812,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             base_url=getattr(self, 'base_url', None),
         )
 
-    async def dispatch_customer_delta_events(self, events):
+    async def dispatch_customer_delta_events(self, events, order_id=None, chat_type=None):
         customer_group = None
-        for group_name in await self.get_order_channel_targets():
+        for group_name in await self.get_order_channel_targets(order_id=order_id, chat_type=chat_type):
             if group_name.startswith('customer_orders_'):
                 customer_group = group_name
                 break
