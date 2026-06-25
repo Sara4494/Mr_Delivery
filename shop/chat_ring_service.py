@@ -13,13 +13,20 @@ from django.utils import timezone
 from user.utils import build_absolute_file_url
 
 from .fcm.service import send_push_to_user
-from .models import ChatRing, Customer, CustomerPresenceConnection, Employee, Order
+from .models import ChatRing, Customer, CustomerPresenceConnection, DriverPresenceConnection, Employee, Order
 
 
 CHAT_RING_DURATION_SECONDS = 30
 CHAT_RING_APNS_CATEGORY = 'CHAT_RING'
-CHAT_RING_CHAT_TYPE = 'shop_customer'
 CHAT_RING_TERMINAL_STATUSES = {'answered', 'dismissed', 'timeout', 'cancelled'}
+CHAT_RING_CHAT_TYPE_CHOICES = {
+    'shop_customer',
+    'customer_shop',
+    'driver_customer',
+    'customer_driver',
+    'shop_driver',
+    'driver_shop',
+}
 _CHAT_RING_TIMEOUT_LOCK = threading.Lock()
 _CHAT_RING_TIMEOUT_TIMERS = {}
 _CHAT_RING_SCHEMA_LOCK = threading.Lock()
@@ -112,15 +119,26 @@ def _ensure_chat_ring_storage():
 
 def _resolve_user_type(user):
     user_type = str(getattr(user, 'user_type', '') or '').strip()
-    if user_type in {'customer', 'shop_owner', 'employee'}:
+    if user_type in {'customer', 'shop_owner', 'employee', 'driver'}:
         return user_type
     return ''
+
+
+def _normalize_chat_type(chat_type):
+    chat_type = str(chat_type or '').strip()
+    return {
+        'customer_shop': 'shop_customer',
+        'customer_driver': 'driver_customer',
+        'driver_shop': 'shop_driver',
+    }.get(chat_type, chat_type)
 
 
 def _user_avatar_url(user, user_type, *, request=None):
     if user_type == 'shop_owner':
         return build_absolute_file_url(getattr(user, 'profile_image', None), request=request)
     if user_type == 'employee':
+        return build_absolute_file_url(getattr(user, 'profile_image', None), request=request)
+    if user_type == 'driver':
         return build_absolute_file_url(getattr(user, 'profile_image', None), request=request)
     if user_type == 'customer':
         return (
@@ -136,7 +154,22 @@ def _user_display_name(user, user_type):
     return str(getattr(user, 'name', '') or 'مستخدم').strip()
 
 
-def _can_access_shop_customer_chat(order, user, user_type):
+def _can_access_shop_customer_chat(order, user, user_type, chat_type='shop_customer'):
+    chat_type = _normalize_chat_type(chat_type)
+    if chat_type == 'driver_customer':
+        if user_type == 'customer':
+            return order.customer_id == getattr(user, 'id', None)
+        if user_type == 'driver':
+            return order.driver_id == getattr(user, 'id', None)
+        return False
+    if chat_type == 'shop_driver':
+        if user_type == 'shop_owner':
+            return order.shop_owner_id == getattr(user, 'id', None)
+        if user_type == 'employee':
+            return order.shop_owner_id == getattr(user, 'shop_owner_id', None)
+        if user_type == 'driver':
+            return order.driver_id == getattr(user, 'id', None)
+        return False
     if user_type == 'customer':
         return order.customer_id == getattr(user, 'id', None)
     if user_type == 'shop_owner':
@@ -161,7 +194,30 @@ def _actor_matches_ring_side(ring, user, user_type, side):
     return expected_type == user_type and expected_id == getattr(user, 'id', None)
 
 
-def _resolve_receiver(order, sender_user_type, receiver_id):
+def _resolve_receiver(order, sender_user_type, receiver_id, *, chat_type='shop_customer'):
+    chat_type = _normalize_chat_type(chat_type)
+    if chat_type == 'driver_customer':
+        normalized_receiver_id = int(receiver_id)
+        if sender_user_type == 'customer' and normalized_receiver_id == int(order.driver_id or 0):
+            return 'driver', normalized_receiver_id
+        if sender_user_type == 'driver' and normalized_receiver_id == int(order.customer_id or 0):
+            return 'customer', normalized_receiver_id
+        raise ChatRingError(
+            'receiver_id must match the order driver or customer for driver chat rings.',
+            errors={'receiver_id': 'Invalid driver/customer receiver for this order.'},
+        )
+
+    if chat_type == 'shop_driver':
+        normalized_receiver_id = int(receiver_id)
+        if sender_user_type in {'shop_owner', 'employee'} and normalized_receiver_id == int(order.driver_id or 0):
+            return 'driver', normalized_receiver_id
+        if sender_user_type == 'driver' and normalized_receiver_id == int(order.shop_owner_id or 0):
+            return 'shop_owner', normalized_receiver_id
+        raise ChatRingError(
+            'receiver_id must match the order driver or shop owner for shop/driver chat rings.',
+            errors={'receiver_id': 'Invalid shop/driver receiver for this order.'},
+        )
+
     if sender_user_type in {'shop_owner', 'employee'}:
         if int(receiver_id) != int(order.customer_id):
             raise ChatRingError(
@@ -189,6 +245,40 @@ def _resolve_receiver(order, sender_user_type, receiver_id):
     raise ChatRingError('Only shop/customer chat participants can create chat rings.', status_code=403)
 
 
+def _participant_has_active_socket(user_type, user_id):
+    if not user_id:
+        return False
+    if user_type == 'customer':
+        return CustomerPresenceConnection.objects.filter(customer_id=user_id).exists()
+    if user_type == 'driver':
+        return DriverPresenceConnection.objects.filter(driver_id=user_id).exists()
+    return False
+
+
+def _ring_state_payload(ring):
+    closed_at = None
+    if ring.status == 'answered':
+        closed_at = ring.answered_at
+    elif ring.status == 'dismissed':
+        closed_at = ring.dismissed_at
+    elif ring.status == 'timeout':
+        closed_at = ring.timed_out_at
+    elif ring.status == 'cancelled':
+        closed_at = ring.cancelled_at
+
+    is_terminal = ring.status in CHAT_RING_TERMINAL_STATUSES
+    payload = {
+        'is_terminal': is_terminal,
+        'is_active': not is_terminal,
+        'should_close': is_terminal,
+        'closed_at': _format_local_iso8601(closed_at),
+        'closed_reason': ring.status if is_terminal else '',
+    }
+    if is_terminal:
+        payload['ui_action'] = 'close_chat'
+    return payload
+
+
 def _ring_payload(ring, *, event_type='chat_ring'):
     metadata = ring.metadata or {}
     payload = {
@@ -203,6 +293,7 @@ def _ring_payload(ring, *, event_type='chat_ring'):
         'action': 'open_chat' if event_type == 'chat_ring' else 'update_chat',
         'status': str(ring.status or ''),
         'status_display': _ring_status_display(ring.status, lang='ar'),
+        **_ring_state_payload(ring),
     }
     return payload
 
@@ -323,6 +414,13 @@ def _broadcast_ring_status_update(ring):
                 'data': payload,
             },
         )
+        async_to_sync(channel_layer.group_send)(
+            group_name,
+            {
+                'type': 'ring_status',
+                'data': payload,
+            },
+        )
 
 
 def _ring_push_profile():
@@ -365,12 +463,6 @@ def _send_ring_event_to_user(user_type, user_id, payload, *, expires_at=None, wi
     )
 
 
-def _customer_has_active_socket(customer_id):
-    if not customer_id:
-        return False
-    return CustomerPresenceConnection.objects.filter(customer_id=customer_id).exists()
-
-
 def serialize_chat_ring(ring):
     metadata = ring.metadata or {}
     return {
@@ -387,13 +479,18 @@ def serialize_chat_ring(ring):
         'expires_at': _format_local_iso8601(ring.expires_at),
         'sender_name': metadata.get('sender_name') or '',
         'sender_avatar': metadata.get('sender_avatar') or '',
+        **_ring_state_payload(ring),
     }
 
 
-def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=None):
+def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=None, chat_type='shop_customer'):
     _ensure_chat_ring_storage()
     user_type = _resolve_user_type(user)
-    if user_type not in {'customer', 'shop_owner', 'employee'}:
+    chat_type = _normalize_chat_type(chat_type)
+    if chat_type not in CHAT_RING_CHAT_TYPE_CHOICES:
+        raise ChatRingError('Unsupported chat type.', status_code=400)
+
+    if user_type not in {'customer', 'shop_owner', 'employee', 'driver'}:
         raise ChatRingError('Authentication is required.', status_code=403)
 
     try:
@@ -401,7 +498,7 @@ def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=
     except Order.DoesNotExist as exc:
         raise ChatRingError('Order not found.', status_code=404) from exc
 
-    if not _can_access_shop_customer_chat(order, user, user_type):
+    if not _can_access_shop_customer_chat(order, user, user_type, chat_type=chat_type):
         raise ChatRingError('You do not have access to this shop chat.', status_code=403)
 
     if str(chat_id or '').strip() == '':
@@ -414,7 +511,7 @@ def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=
             errors={'sender_id': 'Authenticated user mismatch.'},
         )
 
-    receiver_type, resolved_receiver_id = _resolve_receiver(order, user_type, receiver_id)
+    receiver_type, resolved_receiver_id = _resolve_receiver(order, user_type, receiver_id, chat_type=chat_type)
     now = timezone.now()
     expires_at = now + timedelta(seconds=CHAT_RING_DURATION_SECONDS)
 
@@ -422,7 +519,7 @@ def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=
         existing_ring = (
             ChatRing.objects.select_for_update()
             .filter(
-                chat_type=CHAT_RING_CHAT_TYPE,
+                chat_type=chat_type,
                 chat_id=str(chat_id).strip(),
                 receiver_type=receiver_type,
                 receiver_id=resolved_receiver_id,
@@ -441,7 +538,7 @@ def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=
 
         ring = ChatRing.objects.create(
             order=order,
-            chat_type=CHAT_RING_CHAT_TYPE,
+            chat_type=chat_type,
             chat_id=str(chat_id).strip(),
             sender_type=user_type,
             sender_id=int(sender_id),
@@ -455,7 +552,7 @@ def start_chat_ring(*, order_id, chat_id, sender_id, receiver_id, user, request=
             },
         )
 
-    if receiver_type == 'customer' and _customer_has_active_socket(resolved_receiver_id):
+    if _participant_has_active_socket(receiver_type, resolved_receiver_id):
         push_summary = {
             'users_targeted': 0,
             'tokens_total': 0,
@@ -482,13 +579,13 @@ def get_chat_ring_for_user(ring_id, user):
     _ensure_chat_ring_storage()
     user_type = _resolve_user_type(user)
     ring = (
-        ChatRing.objects.select_related('order', 'order__shop_owner', 'order__customer')
+        ChatRing.objects.select_related('order', 'order__shop_owner', 'order__customer', 'order__driver')
         .filter(public_id=ring_id)
         .first()
     )
     if ring is None:
         raise ChatRingError('Chat ring not found.', status_code=404)
-    if not _can_access_shop_customer_chat(ring.order, user, user_type):
+    if not _can_access_shop_customer_chat(ring.order, user, user_type, chat_type=ring.chat_type):
         raise ChatRingError('You do not have access to this chat ring.', status_code=403)
     return ring, user_type
 
@@ -552,6 +649,16 @@ def _chat_ring_actor_can_transition(ring, actor, status_value):
     user_type = _resolve_user_type(actor)
     if not user_type:
         return False
+    ring_chat_type = _normalize_chat_type(ring.chat_type)
+    if ring_chat_type == 'shop_driver':
+        if status_value in {'answered', 'dismissed'}:
+            return _actor_matches_ring_side(ring, actor, user_type, 'receiver')
+        if status_value == 'cancelled':
+            return _actor_matches_ring_side(ring, actor, user_type, 'sender')
+        return (
+            _actor_matches_ring_side(ring, actor, user_type, 'sender')
+            or _actor_matches_ring_side(ring, actor, user_type, 'receiver')
+        )
     if status_value in {'answered', 'dismissed'}:
         return _actor_matches_ring_side(ring, actor, user_type, 'receiver')
     if status_value == 'cancelled':

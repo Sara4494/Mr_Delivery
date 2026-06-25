@@ -617,11 +617,17 @@ class ChatRing(models.Model):
     ]
     CHAT_TYPE_CHOICES = [
         ('shop_customer', 'شات المحل والعميل'),
+        ('customer_shop', 'شات العميل والمحل'),
+        ('driver_customer', 'شات الدليفري والعميل'),
+        ('customer_driver', 'شات العميل والدليفري'),
+        ('shop_driver', 'شات المحل والدليفري'),
+        ('driver_shop', 'شات الدليفري والمحل'),
     ]
     USER_TYPE_CHOICES = [
         ('customer', 'عميل'),
         ('shop_owner', 'صاحب المحل'),
         ('employee', 'موظف'),
+        ('driver', 'دليفري'),
     ]
 
     order = models.ForeignKey(

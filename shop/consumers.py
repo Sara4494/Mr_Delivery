@@ -351,6 +351,7 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
                 receiver_type='customer',
                 receiver_id=order.customer_id,
                 target_label='customer',
+                chat_type=chat_type,
                 scope=scope,
                 base_url=base_url,
             )
@@ -364,6 +365,7 @@ def _build_ring_dispatch_context(user, user_type, order_id, raw_targets, chat_ty
                 receiver_type='shop_owner',
                 receiver_id=order.shop_owner_id,
                 target_label='shop',
+                chat_type=chat_type,
                 scope=scope,
                 base_url=base_url,
             )
@@ -623,7 +625,7 @@ async def _handle_ring_status_request(consumer, data, request_id=None):
     }))
 
 
-def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, receiver_id, target_label, scope=None, base_url=None):
+def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, receiver_id, target_label, chat_type='shop_customer', scope=None, base_url=None):
     if receiver_type not in {'customer', 'shop_owner', 'employee'}:
         return None
     if not receiver_id:
@@ -632,11 +634,12 @@ def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, 
     try:
         ring, _ = start_chat_ring(
             order_id=order.id,
-            chat_id=f'order_{order.id}_shop_customer',
+            chat_id=f'order_{order.id}_{chat_type or "shop_customer"}',
             sender_id=user.id,
             receiver_id=receiver_id,
             user=user,
             request=None,
+            chat_type=chat_type or 'shop_customer',
         )
     except ChatRingError as exc:
         return {
@@ -667,7 +670,7 @@ def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, 
         'targets': [target_label],
         'status': ring.status,
         'created_at': format_utc_iso8601(ring.created_at or timezone.now()),
-        'chat_type': 'shop_customer',
+        'chat_type': chat_type or 'shop_customer',
         'notification_kind': 'ring',
         'play_sound_on_frontend': True,
         **_build_flat_ring_shop_fields(shop_payload),
@@ -1176,6 +1179,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None))
+        }))
+
+    async def ring_status(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'ring_status',
+            'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
     async def presence_update(self, event):
@@ -2808,6 +2817,12 @@ class OrderConsumer(AsyncWebsocketConsumer):
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
+    async def ring_status(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'ring_status',
+            'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
+        }))
+
     async def presence_update(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'presence_update',
@@ -3187,6 +3202,12 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
+            'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
+        }))
+
+    async def ring_status(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'ring_status',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
@@ -3622,6 +3643,12 @@ class DriverConsumer(AsyncWebsocketConsumer):
     async def ring(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'ring',
+            'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
+        }))
+
+    async def ring_status(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'ring_status',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
