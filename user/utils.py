@@ -42,11 +42,16 @@ def _normalize_lang(raw_lang):
 def get_requested_language(request=None):
     """
     Resolve language from:
+    0) request.api_lang set by API middleware
     1) Query param: ?lang=en|ar
     2) Headers: lang / X-Lang / X-Language / Accept-Language
     """
     if request is None:
         return None
+
+    request_lang = _normalize_lang(getattr(request, "api_lang", None))
+    if request_lang:
+        return request_lang
 
     query_lang = None
     if hasattr(request, "query_params"):
