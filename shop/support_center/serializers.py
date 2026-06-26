@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from user.models import ShopOwner
-from user.utils import build_absolute_file_url
+from user.utils import build_absolute_file_url, resolve_customer_profile_image_url
 
 from ..models import (
     CustomerSupportConversation,
@@ -85,9 +85,12 @@ class CustomerSupportMessageSerializer(serializers.ModelSerializer):
 
     def get_customer_profile_image_url(self, obj):
         customer = getattr(getattr(obj, 'conversation', None), 'customer', None)
-        if not customer or not customer.profile_image:
-            return None
-        return _context_file_url(self, customer.profile_image)
+        return resolve_customer_profile_image_url(
+            customer,
+            request=self.context.get('request'),
+            scope=self.context.get('scope'),
+            base_url=self.context.get('base_url'),
+        )
 
     def get_audio_file_url(self, obj):
         if obj.audio_file:
@@ -208,8 +211,8 @@ class CustomerSupportConversationSerializer(serializers.ModelSerializer):
         )
 
     def get_customer_profile_image_url(self, obj):
-        return build_absolute_file_url(
-            getattr(obj.customer, 'profile_image', None),
+        return resolve_customer_profile_image_url(
+            getattr(obj, 'customer', None),
             request=self.context.get('request'),
             scope=self.context.get('scope'),
             base_url=self.context.get('base_url'),

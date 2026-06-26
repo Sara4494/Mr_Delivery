@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from user.utils import build_absolute_file_url, localize_message
+from user.utils import build_absolute_file_url, localize_message, resolve_customer_profile_image_url
 
 from ..models import ChatMessage, CustomerSupportConversation, Order
 from .presence import format_utc_iso8601
@@ -527,10 +527,17 @@ class ShopOrderRealtimeSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def _customer_payload(self, customer):
+        profile_image_url = resolve_customer_profile_image_url(
+            customer,
+            request=self.context.get('request'),
+            scope=self.context.get('scope'),
+            base_url=self.context.get('base_url'),
+        )
         return {
             'id': getattr(customer, 'id', None),
             'name': getattr(customer, 'name', None),
-            'profile_image_url': _context_file_url(self, getattr(customer, 'profile_image', None)) if customer else None,
+            'profile_image_url': profile_image_url,
+            'profile_image': profile_image_url,
         }
 
     def _driver_payload(self, driver):
