@@ -240,6 +240,9 @@ class AdminDesktopApprovalsEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(
+            response.data["data"]["current_values"]["profile_image"].startswith("http://testserver/")
+        )
+        self.assertTrue(
             response.data["data"]["shop_image_url"].endswith("/media/shop_profiles/new-shop-image.jpg")
         )
         self.assertTrue(

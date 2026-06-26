@@ -3231,7 +3231,9 @@ def driver_order_deliver_view(request, order_id):
     with transaction.atomic():
         locked_order = (
             Order.objects.select_for_update()
-            .select_related('shop_owner', 'customer', 'delivery_address', 'driver')
+            # delivery_address is nullable; PostgreSQL cannot apply FOR UPDATE to the nullable side
+            # of an outer join, so we keep the locked query limited to non-null relations.
+            .select_related('shop_owner', 'customer', 'driver')
             .filter(id=order.id, driver=driver)
             .first()
         )
