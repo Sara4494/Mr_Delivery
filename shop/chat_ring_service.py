@@ -326,6 +326,9 @@ def _ring_socket_group_name(user_type, user_id, order):
 def _ring_socket_group_names(ring):
     order = ring.order
     groups = []
+    chat_group_name = f'chat_order_{order.id}_{ring.chat_type}'
+    if chat_group_name not in groups:
+        groups.append(chat_group_name)
     for user_type, user_id in (
         (ring.sender_type, ring.sender_id),
         (ring.receiver_type, ring.receiver_id),
