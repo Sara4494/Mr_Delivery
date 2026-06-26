@@ -18,7 +18,7 @@ from .support_center.serializers import (
     ShopSupportTicketSerializer,
 )
 from user.models import AppVersion, ShopOwner, ShopCategory, AdminApprovalRequest
-from user.utils import t, build_absolute_file_url, resolve_customer_profile_image_url
+from user.utils import t, localize_message, build_absolute_file_url, resolve_customer_profile_image_url
 from user.otp_service import normalize_phone
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -241,9 +241,12 @@ class CustomerSerializer(serializers.ModelSerializer):
         return sum(order.unread_messages_count for order in obj.orders.all())
 
     @staticmethod
-    def _build_last_message_preview(last_message):
+    def _build_last_message_preview(last_message, *, request=None, lang=None):
         content = (last_message.content or '').strip()
         if content:
+            localized = str(localize_message(request, content, lang=lang) or '').strip()
+            if localized:
+                return localized[:50] + '...' if len(localized) > 50 else localized
             return content[:50] + '...' if len(content) > 50 else content
 
         message_type = getattr(last_message, 'message_type', None)
@@ -261,8 +264,10 @@ class CustomerSerializer(serializers.ModelSerializer):
         if last_order:
             last_message = last_order.messages.order_by('-created_at').first()
             if last_message:
+                request = self.context.get('request')
+                lang = self.context.get('lang')
                 return {
-                    'content': self._build_last_message_preview(last_message),
+                    'content': self._build_last_message_preview(last_message, request=request, lang=lang),
                     'created_at': format_utc_iso8601(last_message.created_at)
                 }
         return None

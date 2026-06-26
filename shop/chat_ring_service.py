@@ -466,6 +466,36 @@ def _send_ring_event_to_user(user_type, user_id, payload, *, expires_at=None, wi
     )
 
 
+def _send_ring_status_push_updates(ring):
+    """
+    Send a silent ring status update to both participants.
+
+    The websocket broadcast is the primary path, but this extra data-only
+    push helps keep the UI in sync when one side is idle, backgrounded, or
+    connected through a less reliable socket session.
+    """
+    payload = _ring_payload(ring, event_type=f'chat_ring_{ring.status}')
+    payload['status_display'] = _ring_status_display(ring.status, lang='ar')
+    recipients = [
+        (ring.sender_type, ring.sender_id),
+        (ring.receiver_type, ring.receiver_id),
+    ]
+    for user_type, user_id in recipients:
+        if not user_id:
+            continue
+        if user_type in {'customer', 'driver'} and _participant_has_active_socket(user_type, user_id):
+            continue
+        try:
+            _send_ring_event_to_user(user_type, user_id, payload, expires_at=ring.expires_at, with_sound=False)
+        except Exception:
+            logger.exception(
+                'Failed to send silent ring status update ring_id=%s user_type=%s user_id=%s',
+                ring.public_id,
+                user_type,
+                user_id,
+            )
+
+
 def serialize_chat_ring(ring):
     metadata = ring.metadata or {}
     return {
@@ -631,6 +661,7 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
 
         def _dispatch_updates():
             _broadcast_ring_status_update(ring)
+            _send_ring_status_push_updates(ring)
             payload = _ring_payload(ring, event_type=f'chat_ring_{status_value}')
             for user_type, user_id in {
                 (ring.sender_type, ring.sender_id),
