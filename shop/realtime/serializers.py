@@ -128,6 +128,14 @@ def get_order_customer_unread_count(order):
     )
 
 
+def get_order_shop_unread_count(order):
+    return sum(
+        1
+        for message in get_order_shop_messages(order)
+        if not message.is_read and message.sender_type == 'customer'
+    )
+
+
 def get_order_driver_unread_count(order):
     return sum(
         1
@@ -563,7 +571,7 @@ class ShopOrderRealtimeSerializer(serializers.ModelSerializer):
         return _order_items_to_representation(obj.items)
 
     def get_unread_messages_count(self, obj):
-        return int(getattr(obj, 'unread_messages_count', 0) or 0)
+        return get_order_shop_unread_count(obj)
 
     def get_last_message(self, obj):
         latest_message = obj.messages.order_by('-created_at').first()
