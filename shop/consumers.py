@@ -1825,15 +1825,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     qs = qs.exclude(sender_type=self.user_type)
 
                 if last_read_message_id:
-                    message_lookup = Q(public_id=last_read_message_id)
+                    last_read_message_pk = None
                     if last_read_message_id.isdigit():
-                        message_lookup |= Q(pk=int(last_read_message_id))
+                        last_read_message_pk = int(last_read_message_id)
+                    else:
+                        message_match = _ORDER_ID_PATTERN.search(last_read_message_id)
+                        if message_match:
+                            try:
+                                last_read_message_pk = int(message_match.group(1))
+                            except (TypeError, ValueError):
+                                last_read_message_pk = None
+
                     last_message_qs = ChatMessage.objects.filter(order=order, chat_type=chat_type)
                     if sender_types:
                         last_message_qs = last_message_qs.filter(sender_type__in=sender_types)
                     else:
                         last_message_qs = last_message_qs.exclude(sender_type=self.user_type)
-                    last_message = last_message_qs.filter(message_lookup).order_by('-pk').first()
+                    if last_read_message_pk is None:
+                        unread_count = qs.count()
+                        return 0, unread_count
+
+                    last_message = last_message_qs.filter(pk=last_read_message_pk).order_by('-pk').first()
                     if not last_message:
                         unread_count = qs.count()
                         return 0, unread_count
