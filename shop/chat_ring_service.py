@@ -409,6 +409,15 @@ def _broadcast_ring_status_update(ring):
     if ring.cancelled_at is not None:
         payload['cancelled_at'] = _format_local_iso8601(ring.cancelled_at)
 
+    logger.info(
+        'ring.status.broadcast ring_id=%s order_id=%s chat_type=%s status=%s groups=%s',
+        ring.public_id,
+        ring.order_id,
+        ring.chat_type,
+        ring.status,
+        _ring_socket_group_names(ring),
+    )
+
     for group_name in _ring_socket_group_names(ring):
         async_to_sync(channel_layer.group_send)(
             group_name,
@@ -628,6 +637,7 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
     if status_value not in {'answered', 'dismissed', 'timeout', 'cancelled'}:
         raise ChatRingError('Unsupported chat ring status transition.')
 
+    original_status = ring.status
     if ring.status == status_value:
         if ring.status in CHAT_RING_TERMINAL_STATUSES:
             _cancel_chat_ring_timeout_timer(ring.public_id)
@@ -668,6 +678,16 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
                 (ring.receiver_type, ring.receiver_id),
             }:
                 _send_ring_event_to_user(user_type, user_id, payload)
+            logger.info(
+                'ring.status.changed ring_id=%s order_id=%s chat_type=%s from=%s to=%s actor_type=%s actor_id=%s',
+                ring.public_id,
+                ring.order_id,
+                ring.chat_type,
+                original_status,
+                ring.status,
+                actor_type or '',
+                getattr(actor, 'id', None) if actor is not None else None,
+            )
 
         transaction.on_commit(_dispatch_updates)
 

@@ -559,6 +559,17 @@ async def _send_error_event(consumer, code, message, request_id=None, details=No
 
 async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
     order_id = data.get('order_id') or getattr(consumer, 'order_id', None)
+    targets = data.get('targets', data.get('target'))
+    logger.info(
+        'ring.request.receive user_type=%s user_id=%s order_id=%s chat_type=%s request_id=%s targets=%s lang=%s',
+        getattr(consumer, 'user_type', None),
+        getattr(getattr(consumer, 'user', None), 'id', None),
+        order_id,
+        chat_type,
+        request_id,
+        targets,
+        getattr(consumer, 'lang', None),
+    )
     if not order_id:
         await _send_error_event(
             consumer,
@@ -572,7 +583,7 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
         consumer.user,
         consumer.user_type,
         int(order_id),
-        data.get('targets', data.get('target')),
+        targets,
         chat_type=chat_type,
         scope=getattr(consumer, 'scope', None),
         base_url=getattr(consumer, 'base_url', None),
@@ -580,6 +591,16 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
 
     error = ring_context.get('error')
     if error:
+        logger.warning(
+            'ring.request.failed user_type=%s user_id=%s order_id=%s chat_type=%s request_id=%s code=%s details=%s',
+            getattr(consumer, 'user_type', None),
+            getattr(getattr(consumer, 'user', None), 'id', None),
+            order_id,
+            chat_type,
+            request_id,
+            error.get('code'),
+            error.get('details'),
+        )
         await _send_error_event(
             consumer,
             code=error.get('code', 'RING_FAILED'),
@@ -597,6 +618,18 @@ async def _handle_ring_request(consumer, data, request_id=None, chat_type=None):
                 'data': ring_context['payload'],
             }
         )
+    logger.info(
+        'ring.request.sent user_type=%s user_id=%s order_id=%s chat_type=%s request_id=%s ring_id=%s status=%s groups=%s unavailable_targets=%s',
+        getattr(consumer, 'user_type', None),
+        getattr(getattr(consumer, 'user', None), 'id', None),
+        order_id,
+        chat_type,
+        request_id,
+        ring_context['payload'].get('ring_id'),
+        ring_context['payload'].get('status'),
+        ring_context.get('group_names', []),
+        ring_context.get('unavailable_targets', []),
+    )
 
     if not ring_context.get('push_sent_via_service'):
         try:
@@ -634,6 +667,15 @@ async def _handle_ring_status_request(consumer, data, request_id=None):
     ring_id = _resolve_chat_ring_reference(data.get('ring_id'), request_id=request_id)
     status_value = str(data.get('status') or '').strip()
     lang = str(data.get('lang') or getattr(consumer, 'lang', None) or 'ar').strip() or 'ar'
+    logger.info(
+        'ring.status.receive user_type=%s user_id=%s ring_id=%s status=%s request_id=%s lang=%s',
+        getattr(consumer, 'user_type', None),
+        getattr(getattr(consumer, 'user', None), 'id', None),
+        ring_id,
+        status_value,
+        request_id,
+        lang,
+    )
 
     if not ring_id:
         await _send_error_event(
@@ -662,6 +704,15 @@ async def _handle_ring_status_request(consumer, data, request_id=None):
             lang=lang,
         )
     except ChatRingError as exc:
+        logger.warning(
+            'ring.status.failed user_type=%s user_id=%s ring_id=%s status=%s request_id=%s code=%s',
+            getattr(consumer, 'user_type', None),
+            getattr(getattr(consumer, 'user', None), 'id', None),
+            ring_id,
+            status_value,
+            request_id,
+            getattr(exc, 'errors', {}).get('code', 'RING_STATUS_FAILED'),
+        )
         await _send_error_event(
             consumer,
             code=getattr(exc, 'errors', {}).get('code', 'RING_STATUS_FAILED'),
@@ -682,6 +733,15 @@ async def _handle_ring_status_request(consumer, data, request_id=None):
             'status_display': result['ack']['status_display'],
         },
     }))
+    logger.info(
+        'ring.status.sent user_type=%s user_id=%s ring_id=%s status=%s status_display=%s request_id=%s',
+        getattr(consumer, 'user_type', None),
+        getattr(getattr(consumer, 'user', None), 'id', None),
+        result['ack']['ring_id'],
+        result['ack']['status'],
+        result['ack']['status_display'],
+        request_id,
+    )
 
 
 def _build_chat_ring_dispatch_context(user, user_type, order, *, receiver_type, receiver_id, target_label, chat_type='shop_customer', scope=None, base_url=None):
