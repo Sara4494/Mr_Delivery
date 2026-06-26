@@ -55,6 +55,21 @@ def get_customer_presence_ping_interval_seconds():
     return max(ping_interval, 5)
 
 
+def _resolve_public_base_url():
+    explicit_base_url = str(getattr(settings, 'PUBLIC_BASE_URL', '') or '').strip().rstrip('/')
+    if explicit_base_url:
+        return explicit_base_url
+
+    for host in getattr(settings, 'ALLOWED_HOSTS', []) or []:
+        host = str(host or '').strip().strip('.')
+        if not host or host in {'localhost', '127.0.0.1'}:
+            continue
+        scheme = 'https' if 'pythonanywhere.com' in host else 'http'
+        return f'{scheme}://{host}'
+
+    return None
+
+
 def _resolve_presence_redis_location():
     redis_url = str(getattr(settings, 'REDIS_URL', '') or '').strip()
     if redis_url:
@@ -303,7 +318,10 @@ def serialize_customer_presence(customer, order_id=None):
         'can_show_customer_phone': can_show_customer_phone,
         'customer_phone': customer.phone_number if can_show_customer_phone else None,
         'remaining_seconds': remaining_seconds,
-        'profile_image_url': resolve_customer_profile_image_url(customer),
+        'profile_image_url': resolve_customer_profile_image_url(
+            customer,
+            base_url=_resolve_public_base_url(),
+        ),
     }
     if order_id is not None:
         payload['order_id'] = order_id
