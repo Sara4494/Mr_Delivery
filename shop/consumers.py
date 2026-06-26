@@ -169,6 +169,15 @@ def _serializer_context(lang=None, scope=None, base_url=None):
     return context
 
 
+def _normalize_chat_reader_type(user_type):
+    user_type = str(user_type or '').strip()
+    if user_type in {'shop_owner', 'employee'}:
+        return 'shop'
+    if user_type in {'customer', 'driver'}:
+        return user_type
+    return user_type or 'shop'
+
+
 def _normalize_ring_targets(raw_targets):
     if isinstance(raw_targets, str):
         candidates = [raw_targets]
@@ -1209,15 +1218,45 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         marked_count, unread_count = await self.mark_messages_as_read(target)
         room_group_name = f'chat_order_{target["order_id"]}_{target["chat_type"]}'
+        reader_type = _normalize_chat_reader_type(self.user_type)
         await self.channel_layer.group_send(
             room_group_name,
             {
                 'type': 'messages_read',
+                'thread_id': target['conversation_id'],
                 'order_id': target['order_id'],
                 'chat_type': target['chat_type'],
-                'reader_type': self.user_type,
+                'reader_type': reader_type,
                 'count': marked_count,
                 'last_read_message_id': target['last_read_message_id'],
+                'unread_count': unread_count,
+                'unread_messages_count': unread_count,
+                'unread_for_shop_count': unread_count if target['chat_type'] == 'shop_customer' else None,
+            }
+        )
+        await self.channel_layer.group_send(
+            room_group_name,
+            {
+                'type': 'chat_unread_updated',
+                'thread_id': target['conversation_id'],
+                'order_id': target['order_id'],
+                'chat_type': target['chat_type'],
+                'reader_type': reader_type,
+                'unread_messages_count': unread_count,
+                'unread_for_shop_count': unread_count if target['chat_type'] == 'shop_customer' else None,
+                'unread_count': unread_count,
+            }
+        )
+        await self.channel_layer.group_send(
+            room_group_name,
+            {
+                'type': 'order_chat_unread_updated',
+                'thread_id': target['conversation_id'],
+                'order_id': target['order_id'],
+                'chat_type': target['chat_type'],
+                'reader_type': reader_type,
+                'unread_messages_count': unread_count,
+                'unread_for_shop_count': unread_count if target['chat_type'] == 'shop_customer' else None,
                 'unread_count': unread_count,
             }
         )
@@ -1234,6 +1273,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'last_read_message_id': target['last_read_message_id'],
                 'marked_count': marked_count,
                 'unread_count': unread_count,
+                'unread_messages_count': unread_count,
+                'unread_for_shop_count': unread_count if target['chat_type'] == 'shop_customer' else None,
             },
         )
     
@@ -1284,12 +1325,39 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """Send a read-receipt event to the client."""
         await self.send(text_data=_json_dumps({
             'type': 'messages_read',
+            'thread_id': event.get('thread_id') or f'order_{event["order_id"]}_{event.get("chat_type")}',
             'order_id': event['order_id'],
             'chat_type': event.get('chat_type'),
             'reader_type': event['reader_type'],
             'count': event.get('count', 0),
             'last_read_message_id': event.get('last_read_message_id'),
             'unread_count': event.get('unread_count', 0),
+            'unread_messages_count': event.get('unread_messages_count', event.get('unread_count', 0)),
+            'unread_for_shop_count': event.get('unread_for_shop_count'),
+        }))
+
+    async def chat_unread_updated(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'chat_unread_updated',
+            'thread_id': event.get('thread_id') or f'order_{event["order_id"]}_{event.get("chat_type")}',
+            'order_id': event.get('order_id'),
+            'chat_type': event.get('chat_type'),
+            'reader_type': event.get('reader_type'),
+            'unread_messages_count': event.get('unread_messages_count', event.get('unread_count', 0)),
+            'unread_for_shop_count': event.get('unread_for_shop_count'),
+            'unread_count': event.get('unread_count', event.get('unread_messages_count', 0)),
+        }))
+
+    async def order_chat_unread_updated(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'order_chat_unread_updated',
+            'thread_id': event.get('thread_id') or f'order_{event["order_id"]}_{event.get("chat_type")}',
+            'order_id': event.get('order_id'),
+            'chat_type': event.get('chat_type'),
+            'reader_type': event.get('reader_type'),
+            'unread_messages_count': event.get('unread_messages_count', event.get('unread_count', 0)),
+            'unread_for_shop_count': event.get('unread_for_shop_count'),
+            'unread_count': event.get('unread_count', event.get('unread_messages_count', 0)),
         }))
     
     async def typing_indicator(self, event):
@@ -1925,6 +1993,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     unread_count_qs = unread_count_qs.exclude(sender_type=self.user_type)
                 unread_count = unread_count_qs.count()
 
+                if chat_type == 'shop_customer':
+                    order.unread_messages_count = unread_count
+                    order.save(update_fields=['unread_messages_count', 'updated_at'])
+
                 return marked_count, unread_count
                 
         except Exception as e:
@@ -2319,13 +2391,39 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
 
     async def handle_mark_read(self, request_id=None):
         marked_count = await self.mark_messages_as_read()
+        unread_for_shop_count = await self.get_support_unread_counts()
         await self.channel_layer.group_send(
             self.room_group_name,
             {
                 'type': 'messages_read',
+                'thread_id': self.conversation_id,
                 'support_conversation_id': self.conversation_id,
-                'reader_type': self.user_type,
+                'reader_type': _normalize_chat_reader_type(self.user_type),
                 'count': marked_count,
+                'unread_for_shop_count': unread_for_shop_count,
+                'unread_count': unread_for_shop_count,
+            }
+        )
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'chat_unread_updated',
+                'thread_id': self.conversation_id,
+                'support_conversation_id': self.conversation_id,
+                'reader_type': _normalize_chat_reader_type(self.user_type),
+                'unread_for_shop_count': unread_for_shop_count,
+                'unread_count': unread_for_shop_count,
+            }
+        )
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'support_chat_unread_updated',
+                'thread_id': self.conversation_id,
+                'support_conversation_id': self.conversation_id,
+                'reader_type': _normalize_chat_reader_type(self.user_type),
+                'unread_for_shop_count': unread_for_shop_count,
+                'unread_count': unread_for_shop_count,
             }
         )
         await self.broadcast_conversation_update()
@@ -2336,6 +2434,7 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
                 'thread_id': self.conversation_id,
                 'support_conversation_id': self.conversation_id,
                 'count': marked_count,
+                'unread_for_shop_count': unread_for_shop_count,
             },
         )
 
@@ -2363,10 +2462,32 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
     async def messages_read(self, event):
         await self.send(text_data=_json_dumps({
             'type': 'messages_read',
-            'thread_id': event['support_conversation_id'],
-            'support_conversation_id': event['support_conversation_id'],
+            'thread_id': event.get('thread_id') or event.get('support_conversation_id'),
+            'support_conversation_id': event.get('support_conversation_id') or event.get('thread_id'),
             'reader_type': event['reader_type'],
             'count': event.get('count', 0),
+            'unread_for_shop_count': event.get('unread_for_shop_count'),
+            'unread_count': event.get('unread_count', event.get('unread_for_shop_count', 0)),
+        }))
+
+    async def chat_unread_updated(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'chat_unread_updated',
+            'thread_id': event.get('thread_id') or event.get('support_conversation_id'),
+            'support_conversation_id': event.get('support_conversation_id'),
+            'reader_type': event.get('reader_type'),
+            'unread_for_shop_count': event.get('unread_for_shop_count'),
+            'unread_count': event.get('unread_count', event.get('unread_for_shop_count', 0)),
+        }))
+
+    async def support_chat_unread_updated(self, event):
+        await self.send(text_data=_json_dumps({
+            'type': 'support_chat_unread_updated',
+            'thread_id': event.get('thread_id') or event.get('support_conversation_id'),
+            'support_conversation_id': event.get('support_conversation_id'),
+            'reader_type': event.get('reader_type'),
+            'unread_for_shop_count': event.get('unread_for_shop_count'),
+            'unread_count': event.get('unread_count', event.get('unread_for_shop_count', 0)),
         }))
 
     async def typing_indicator(self, event):
@@ -2658,6 +2779,13 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             print(f"[SupportChatConsumer.mark_messages_as_read] error: {e}")
             return 0
+
+    @database_sync_to_async
+    def get_support_unread_counts(self):
+        conversation = CustomerSupportConversation.objects.filter(public_id=self.conversation_id).first()
+        if not conversation:
+            return 0
+        return int(conversation.unread_for_shop_count or 0)
 
     @database_sync_to_async
     def get_user_name(self):

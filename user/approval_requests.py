@@ -138,18 +138,21 @@ def _shop_image_url_for_request(approval_request, request=None):
     return build_absolute_file_url(getattr(approval_request.shop_owner, "profile_image", None), request=request)
 
 
-def _get_shop_edit_field_values(shop_owner, changes):
+def _get_shop_edit_field_values(shop_owner, changes, request=None):
     return {
         "owner_name": str(getattr(shop_owner, "owner_name", "") or "").strip(),
         "shop_name": str(getattr(shop_owner, "shop_name", "") or "").strip(),
         "phone_number": str(getattr(shop_owner, "phone_number", "") or "").strip(),
         "description": str(getattr(shop_owner, "description", "") or "").strip(),
-        "profile_image": build_absolute_file_url(getattr(shop_owner, "profile_image", None)),
+        "profile_image": build_absolute_file_url(
+            getattr(shop_owner, "profile_image", None),
+            request=request,
+        ),
     }
 
 
 def _build_shop_edit_requested_changes(shop_owner, changes, request=None, profile_image_url=None):
-    current_values = _get_shop_edit_field_values(shop_owner, changes)
+    current_values = _get_shop_edit_field_values(shop_owner, changes, request=request)
     requested_changes = []
 
     for field in ("owner_name", "shop_name", "phone_number", "description"):
