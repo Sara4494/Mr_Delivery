@@ -349,6 +349,9 @@ class CustomerAppRealtimeOrderMessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(read_only=True)
     created_at = serializers.SerializerMethodField()
     content = serializers.SerializerMethodField()
+    audio_file_url = serializers.SerializerMethodField()
+    image_file_url = serializers.SerializerMethodField()
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = ChatMessage
@@ -359,6 +362,9 @@ class CustomerAppRealtimeOrderMessageSerializer(serializers.ModelSerializer):
             'sender_name',
             'message_type',
             'content',
+            'audio_file_url',
+            'image_file_url',
+            'invoice',
             'is_read',
             'created_at',
         ]
@@ -370,6 +376,22 @@ class CustomerAppRealtimeOrderMessageSerializer(serializers.ModelSerializer):
             message_type=obj.message_type,
             content=obj.content,
         )
+
+    def get_audio_file_url(self, obj):
+        if obj.audio_file:
+            return _context_file_url(self, obj.audio_file)
+        return None
+
+    def get_image_file_url(self, obj):
+        if obj.image_file:
+            return _context_file_url(self, obj.image_file)
+        return None
+
+    def get_invoice(self, obj):
+        if obj.message_type != 'invoice_card':
+            return None
+        serialized = ChatMessageSerializer(obj, context=self.context).data
+        return serialized.get('invoice')
 
     def get_created_at(self, obj):
         return format_utc_iso8601(obj.created_at)
