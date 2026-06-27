@@ -1,9 +1,11 @@
 from decimal import Decimal
 
+from django.utils import timezone
 from django.test import TestCase
 
-from shop.models import ChatMessage, Customer, Order
+from shop.models import ChatMessage, Customer, Driver, Order
 from shop.realtime.serializers import ShopOrderRealtimeSerializer
+from shop.realtime.customer_app import CustomerAppRealtimeOnWaySerializer
 from user.models import ShopCategory, ShopOwner
 
 
@@ -35,6 +37,28 @@ class ShopRealtimeSerializerTests(TestCase):
             delivery_fee=Decimal('10.00'),
             address='Cairo',
         )
+        self.driver = Driver.objects.create(
+            name='Driver One',
+            phone_number='01000000003',
+            status='available',
+        )
+
+    def test_customer_on_way_entry_exposes_driver_chat_after_acceptance(self):
+        self.order.driver = self.driver
+        self.order.status = 'on_way'
+        self.order.driver_accepted_at = timezone.now()
+        self.order.save(update_fields=['driver', 'status', 'driver_accepted_at', 'updated_at'])
+
+        payload = CustomerAppRealtimeOnWaySerializer(
+            self.order,
+            context={'base_url': 'http://testserver'},
+        ).data
+
+        self.assertEqual(payload['driver_id'], self.driver.id)
+        self.assertEqual(payload['driver_name'], self.driver.name)
+        self.assertIsNotNone(payload['chat'])
+        self.assertEqual(payload['chat']['chat_type'], 'driver_customer')
+        self.assertTrue(payload['chat']['can_open'])
 
     def test_shop_order_unread_count_ignores_shop_auto_reply(self):
         ChatMessage.objects.create(
@@ -61,4 +85,3 @@ class ShopRealtimeSerializerTests(TestCase):
 
         self.assertEqual(payload['unread_messages_count'], 1)
         self.assertEqual(payload['last_message']['sender_type'], 'shop_owner')
-

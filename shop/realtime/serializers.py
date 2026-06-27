@@ -109,6 +109,15 @@ def get_latest_order_driver_message(order):
 
 
 def has_customer_visible_driver_chat(order):
+    driver = getattr(order, 'driver', None)
+    if not driver or not getattr(order, 'driver_id', None):
+        return False
+
+    # The customer should be able to open the driver chat as soon as the
+    # order has an accepted driver, even if the driver has not sent a message yet.
+    if getattr(order, 'driver_accepted_at', None) is not None:
+        return True
+
     return any(
         str(getattr(message, 'sender_type', '')).strip() == 'driver'
         for message in get_order_driver_messages(order)

@@ -1,15 +1,29 @@
 import uuid
 from datetime import timedelta
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
-from user.models import ShopOwner
+from user.models import ShopOwner, WORK_SCHEDULE_DAYS, default_work_schedule
 
 
 def _generate_public_token(prefix):
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+SHOP_SCHEDULE_TIMEZONE = ZoneInfo("Africa/Cairo")
+PY_WEEKDAY_TO_WORK_DAY = {
+    0: "monday",
+    1: "tuesday",
+    2: "wednesday",
+    3: "thursday",
+    4: "friday",
+    5: "saturday",
+    6: "sunday",
+}
 
 
 class ShopStatus(models.Model):
@@ -30,6 +44,117 @@ class ShopStatus(models.Model):
     
     def __str__(self):
         return f"{self.shop_owner.shop_name} - {self.get_status_display()}"
+
+
+def _normalize_work_schedule(raw_schedule):
+    normalized_schedule = default_work_schedule()
+    if not isinstance(raw_schedule, dict):
+        return normalized_schedule
+
+    for day_key in WORK_SCHEDULE_DAYS:
+        day_data = raw_schedule.get(day_key)
+        if not isinstance(day_data, dict):
+            continue
+
+        current_day = normalized_schedule[day_key]
+        if "is_working" in day_data:
+            current_day["is_working"] = bool(day_data.get("is_working"))
+
+        start_time = str(day_data.get("start_time") or "").strip()
+        end_time = str(day_data.get("end_time") or "").strip()
+        current_day["start_time"] = start_time or None
+        current_day["end_time"] = end_time or None
+
+        if not current_day["is_working"]:
+            current_day["start_time"] = None
+            current_day["end_time"] = None
+
+    return normalized_schedule
+
+
+def _parse_schedule_time(value):
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value, "%H:%M").time()
+    except ValueError:
+        return None
+
+
+def _get_previous_work_day_key(day_key):
+    if day_key not in WORK_SCHEDULE_DAYS:
+        return WORK_SCHEDULE_DAYS[-1]
+    day_index = WORK_SCHEDULE_DAYS.index(day_key)
+    return WORK_SCHEDULE_DAYS[day_index - 1]
+
+
+def _shop_schedule_localtime():
+    return timezone.localtime(timezone.now(), SHOP_SCHEDULE_TIMEZONE)
+
+
+def _shop_schedule_day_key():
+    return PY_WEEKDAY_TO_WORK_DAY.get(_shop_schedule_localtime().weekday(), "monday")
+
+
+def _is_within_today_schedule(today_schedule, previous_day_schedule=None):
+    if not today_schedule.get("is_working"):
+        today_schedule = {}
+
+    start_time = _parse_schedule_time(today_schedule.get("start_time"))
+    end_time = _parse_schedule_time(today_schedule.get("end_time"))
+    now_time = _shop_schedule_localtime().time().replace(second=0, microsecond=0)
+
+    if start_time and end_time:
+        if start_time < end_time and start_time <= now_time <= end_time:
+            return True
+        if start_time > end_time and now_time >= start_time:
+            return True
+
+    if not previous_day_schedule or not previous_day_schedule.get("is_working"):
+        return False
+
+    previous_start = _parse_schedule_time(previous_day_schedule.get("start_time"))
+    previous_end = _parse_schedule_time(previous_day_schedule.get("end_time"))
+    if not previous_start or not previous_end:
+        return False
+    if previous_start > previous_end and now_time <= previous_end:
+        return True
+    return False
+
+
+def get_shop_work_schedule_state(shop_owner):
+    schedule = _normalize_work_schedule(getattr(shop_owner, "work_schedule", None))
+    today_key = _shop_schedule_day_key()
+    today_schedule = schedule.get(today_key, {"is_working": False, "start_time": None, "end_time": None})
+    previous_day_schedule = schedule.get(
+        _get_previous_work_day_key(today_key),
+        {"is_working": False, "start_time": None, "end_time": None},
+    )
+    is_open_now = _is_within_today_schedule(today_schedule, previous_day_schedule)
+    return {
+        "schedule": schedule,
+        "today_key": today_key,
+        "today_schedule": today_schedule,
+        "previous_day_schedule": previous_day_schedule,
+        "is_open_now": is_open_now,
+    }
+
+
+def sync_shop_status_with_work_schedule(shop_owner, *, save=True):
+    status_obj, created = ShopStatus.objects.get_or_create(shop_owner=shop_owner)
+    state = get_shop_work_schedule_state(shop_owner)
+    desired_status = "closed"
+    if state["is_open_now"]:
+        desired_status = "open" if status_obj.status == "closed" else status_obj.status
+
+    changed = False
+    if status_obj.status != desired_status:
+        status_obj.status = desired_status
+        changed = True
+        if save:
+            status_obj.save(update_fields=["status", "updated_at"])
+
+    return status_obj, created, state, changed
 
 
 class Customer(models.Model):

@@ -7,7 +7,8 @@ from rest_framework import serializers
 from .models import (
     ShopStatus, Customer, CustomerAddress, Driver, Order, ChatMessage,
     Invoice, Employee, Product, Category, Offer, OrderRating, PaymentMethod,
-    Notification, Cart, CartItem, ShopDriver, AbuseReport, AccountModerationStatus
+    Notification, Cart, CartItem, ShopDriver, AbuseReport, AccountModerationStatus,
+    sync_shop_status_with_work_schedule,
 )
 from .presence import format_utc_iso8601
 from .support_center.serializers import (
@@ -1309,6 +1310,12 @@ class CustomerOrderCreateSerializer(serializers.Serializer):
         if not shop_owner:
             raise serializers.ValidationError({
                 'shop': 'العميل غير مرتبط بمحل. يرجى اختيار المحل أولاً أو إرسال shop_owner_id.'
+            })
+
+        _, _, schedule_state, _ = sync_shop_status_with_work_schedule(shop_owner)
+        if not schedule_state.get('is_open_now'):
+            raise serializers.ValidationError({
+                'shop': 'المحل مغلق حالياً. حاول مرة أخرى أثناء مواعيد العمل.'
             })
 
         attrs['resolved_shop_owner'] = shop_owner

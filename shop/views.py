@@ -27,7 +27,8 @@ from .models import (
     AbuseReport, AccountModerationStatus,
     CustomerSupportConversation, CustomerSupportMessage,
     Invoice, Employee, Product, Category, Offer, OfferLike, OrderRating, ShopReview, PaymentMethod,
-    Notification, Cart, CartItem, ShopDriver, DriverPresenceConnection, FCMDeviceToken
+    Notification, Cart, CartItem, ShopDriver, DriverPresenceConnection, FCMDeviceToken,
+    sync_shop_status_with_work_schedule,
 )
 from gallery.models import WorkSchedule, GalleryImage, ImageLike
 from user.approval_requests import create_or_update_offer_request
@@ -4127,7 +4128,7 @@ def shop_status_view(request):
     if not shop_owner:
         return _owner_or_cashier_forbidden(request)
 
-    status_obj, created = ShopStatus.objects.get_or_create(shop_owner=shop_owner)
+    status_obj, _, _, _ = sync_shop_status_with_work_schedule(shop_owner)
 
     if request.method == 'GET':
         serializer = ShopStatusSerializer(status_obj)
@@ -4141,6 +4142,9 @@ def shop_status_view(request):
         serializer = ShopStatusSerializer(status_obj, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            # Reconcile the stored status with the active work schedule.
+            status_obj, _, _, _ = sync_shop_status_with_work_schedule(shop_owner)
+            serializer = ShopStatusSerializer(status_obj)
             try:
                 notify_shop_status_updated(
                     shop_owner.id,
@@ -4216,6 +4220,18 @@ def shop_work_schedule_view(request):
         shop_owner=shop_owner,
         defaults=_build_legacy_work_schedule_fields(merged_schedule)
     )
+
+    status_obj, _, _, _ = sync_shop_status_with_work_schedule(shop_owner)
+    try:
+        notify_shop_status_updated(
+            shop_owner.id,
+            {
+                'shop_owner_id': shop_owner.id,
+                **ShopStatusSerializer(status_obj).data,
+            }
+        )
+    except Exception as e:
+        print(f"store_status_auto_sync WebSocket error: {e}")
 
     return success_response(
         data=_build_work_schedule_response(merged_schedule),
@@ -5946,13 +5962,13 @@ def _get_customer_facing_driver_label(order, driver=None):
 
 
 def _build_customer_shop_summary_payload(shop, request):
-    status_obj = _safe_shop_status(shop)
-    status_value = status_obj.status if status_obj else 'closed'
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
-    
     today_schedule = schedule_payload.get('today', {})
     schedule_map = schedule_payload.get('schedule', {})
     previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
+    is_open_now = _is_open_now(today_schedule, previous_day_schedule)
+    status_obj, _, _, _ = sync_shop_status_with_work_schedule(shop)
+    status_value = status_obj.status if status_obj else 'closed'
     status_display = status_obj.get_status_display() if status_obj else 'مغلق'
     category = shop.shop_category
 
@@ -5970,6 +5986,7 @@ def _build_customer_shop_summary_payload(shop, request):
         'status': {
             'key': status_value,
             'label': status_display,
+            'is_open_now': is_open_now,
         },
     }
 
@@ -7224,9 +7241,8 @@ def _is_within_today_schedule(today_schedule, previous_day_schedule=None):
     return False
 
 
-def _is_open_now(status_value, today_schedule):
-    _ = today_schedule
-    return status_value in {'open', 'busy'}
+def _is_open_now(today_schedule, previous_day_schedule=None):
+    return _is_within_today_schedule(today_schedule, previous_day_schedule)
 
 
 def _build_today_hours_label(today_schedule):
@@ -7389,16 +7405,15 @@ def _build_public_shop_payload(shop, request, published_images=None):
             shop.gallery_images.filter(status='published').order_by('-uploaded_at')
         )
 
-    status_obj = _safe_shop_status(shop)
-    status_value = status_obj.status if status_obj else 'closed'
-    status_display = status_obj.get_status_display() if status_obj else 'مغلق'
-
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
     schedule_map = schedule_payload.get('schedule', {})
     previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
-    is_open_now = _is_open_now(status_value, today_schedule)
-    within_schedule_now = _is_within_today_schedule(today_schedule, previous_day_schedule)
+    is_open_now = _is_open_now(today_schedule, previous_day_schedule)
+    status_obj, _, _, _ = sync_shop_status_with_work_schedule(shop)
+    status_value = status_obj.status if status_obj else 'closed'
+    status_display = status_obj.get_status_display() if status_obj else 'مغلق'
+    within_schedule_now = is_open_now
     live_status_label = _build_live_shop_status_label(status_value, is_open_now)
 
     average_rating, ratings_count = _get_shop_rating_stats(shop)
@@ -7487,15 +7502,15 @@ def _build_relative_time_label(dt):
 
 
 def _build_public_shop_profile_summary_payload(shop, request):
-    status_obj = _safe_shop_status(shop)
-    status_value = status_obj.status if status_obj else 'closed'
-    status_label = status_obj.get_status_display() if status_obj else 'مغلق'
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
     today_schedule = schedule_payload.get('today', {})
     schedule_map = schedule_payload.get('schedule', {})
     previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
-    is_open_now = _is_open_now(status_value, today_schedule)
-    within_schedule_now = _is_within_today_schedule(today_schedule, previous_day_schedule)
+    is_open_now = _is_open_now(today_schedule, previous_day_schedule)
+    status_obj, _, _, _ = sync_shop_status_with_work_schedule(shop)
+    status_value = status_obj.status if status_obj else 'closed'
+    status_label = status_obj.get_status_display() if status_obj else 'مغلق'
+    within_schedule_now = is_open_now
     live_status_label = _build_live_shop_status_label(status_value, is_open_now)
     average_rating, ratings_count = _get_shop_rating_stats(shop)
     category_name = shop.shop_category.name if shop.shop_category else None
@@ -7762,18 +7777,19 @@ def public_shop_schedule_view(request, shop_id):
         )
 
     schedule_payload = _build_work_schedule_response(shop.work_schedule)
-    status_obj = _safe_shop_status(shop)
-    status_value = status_obj.status if status_obj else 'closed'
-
     today_schedule = schedule_payload.get('today', {})
     schedule_map = schedule_payload.get('schedule', {})
     previous_day_schedule = schedule_map.get(_get_previous_work_day_key(today_schedule.get('day_key')), {})
+    is_open_now = _is_open_now(today_schedule, previous_day_schedule)
+    status_obj, _, _, _ = sync_shop_status_with_work_schedule(shop)
+    status_value = status_obj.status if status_obj else 'closed'
+
     schedule_payload['status'] = {
         'key': status_value,
         'label': status_obj.get_status_display() if status_obj else 'مغلق',
     }
-    schedule_payload['is_open_now'] = _is_open_now(status_value, today_schedule)
-    schedule_payload['within_schedule_now'] = _is_within_today_schedule(today_schedule, previous_day_schedule)
+    schedule_payload['is_open_now'] = is_open_now
+    schedule_payload['within_schedule_now'] = is_open_now
 
     return success_response(
         data=schedule_payload,
