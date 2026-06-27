@@ -1,5 +1,6 @@
 from datetime import timedelta
 from datetime import timezone as dt_timezone
+import json
 import logging
 import threading
 
@@ -56,6 +57,44 @@ CHAT_RING_STATUS_DISPLAY_MAP = {
         'dismissed': 'Dismissed',
         'timeout': 'Timed out',
         'cancelled': 'Cancelled',
+    },
+}
+
+
+CHAT_RING_PUBLIC_STATUS_ALIASES = {
+    'accepted': 'accepted',
+    'answered': 'accepted',
+    'rejected': 'rejected',
+    'dismissed': 'rejected',
+    'timeout': 'timeout',
+    'missed': 'missed',
+    'cancelled': 'cancelled',
+    'ended': 'ended',
+}
+
+CHAT_RING_INTERNAL_STATUS_ALIASES = {
+    'accepted': 'answered',
+    'answered': 'answered',
+    'rejected': 'dismissed',
+    'dismissed': 'dismissed',
+    'timeout': 'timeout',
+    'missed': 'timeout',
+    'cancelled': 'cancelled',
+    'ended': 'cancelled',
+}
+
+CHAT_RING_PUBLIC_STATUS_DISPLAY_MAP = {
+    'ar': {
+        'accepted': 'تم القبول',
+        'rejected': 'تم الرفض',
+        'missed': 'فاتت المكالمة',
+        'ended': 'تم الإنهاء',
+    },
+    'en': {
+        'accepted': 'Accepted',
+        'rejected': 'Rejected',
+        'missed': 'Missed',
+        'ended': 'Ended',
     },
 }
 
@@ -279,8 +318,44 @@ def _ring_state_payload(ring):
     return payload
 
 
-def _ring_payload(ring, *, event_type='chat_ring'):
+def _normalize_chat_ring_status(status_value):
+    status_key = str(status_value or '').strip().lower()
+    if not status_key:
+        return '', ''
+    return (
+        CHAT_RING_INTERNAL_STATUS_ALIASES.get(status_key, status_key),
+        CHAT_RING_PUBLIC_STATUS_ALIASES.get(status_key, status_key),
+    )
+
+
+def _public_chat_ring_status(status_value):
+    _, public_status = _normalize_chat_ring_status(status_value)
+    return public_status
+
+
+def _ring_payload_for_log(ring, payload):
+    return {
+        'ring_id': str(getattr(ring, 'public_id', '') or ''),
+        'chat_id': str(getattr(ring, 'chat_id', '') or ''),
+        'order_id': str(getattr(ring, 'order_id', '') or ''),
+        'chat_type': str(getattr(ring, 'chat_type', '') or ''),
+        'status': str((payload or {}).get('status') or ''),
+        'type': str((payload or {}).get('type') or ''),
+        'should_close': bool((payload or {}).get('should_close')),
+        'is_terminal': bool((payload or {}).get('is_terminal')),
+        'is_active': bool((payload or {}).get('is_active')),
+        'ui_action': str((payload or {}).get('ui_action') or ''),
+        'closed_reason': str((payload or {}).get('closed_reason') or ''),
+        'sender_id': str((payload or {}).get('sender_id') or ''),
+        'sender_type': str(getattr(ring, 'sender_type', '') or ''),
+        'receiver_id': str(getattr(ring, 'receiver_id', '') or ''),
+        'receiver_type': str(getattr(ring, 'receiver_type', '') or ''),
+    }
+
+
+def _ring_payload(ring, *, event_type='chat_ring', public_status=None):
     metadata = ring.metadata or {}
+    normalized_public_status = _public_chat_ring_status(public_status or ring.status)
     payload = {
         'type': event_type,
         'ring_id': str(ring.public_id or ''),
@@ -291,10 +366,12 @@ def _ring_payload(ring, *, event_type='chat_ring'):
         'sender_avatar': str(metadata.get('sender_avatar') or ''),
         'duration_seconds': str(CHAT_RING_DURATION_SECONDS),
         'action': 'open_chat' if event_type == 'chat_ring' else 'update_chat',
-        'status': str(ring.status or ''),
-        'status_display': _ring_status_display(ring.status, lang='ar'),
+        'status': normalized_public_status,
+        'status_display': _ring_status_display(normalized_public_status, lang='ar'),
         **_ring_state_payload(ring),
     }
+    if normalized_public_status and payload.get('is_terminal'):
+        payload['closed_reason'] = normalized_public_status
     return payload
 
 
@@ -310,7 +387,27 @@ def _normalize_ring_lang(lang):
 def _ring_status_display(status, *, lang=None):
     status_key = str(status or '').strip()
     normalized_lang = _normalize_ring_lang(lang)
+    public_display = CHAT_RING_PUBLIC_STATUS_DISPLAY_MAP.get(normalized_lang, {}).get(status_key)
+    if public_display:
+        return public_display
     return CHAT_RING_STATUS_DISPLAY_MAP.get(normalized_lang, {}).get(status_key, status_key)
+
+
+def _ring_payload_for_status(ring, status_value, *, lang='ar'):
+    _, public_status = _normalize_chat_ring_status(status_value)
+    public_status = public_status or _public_chat_ring_status(ring.status)
+    payload = _ring_payload(ring, event_type=f'chat_ring_{public_status}', public_status=public_status)
+    payload['status_display'] = _ring_status_display(public_status, lang=lang)
+    payload['updated_at'] = _format_local_iso8601(ring.updated_at)
+    if ring.answered_at is not None:
+        payload['answered_at'] = _format_local_iso8601(ring.answered_at)
+    if ring.dismissed_at is not None:
+        payload['dismissed_at'] = _format_local_iso8601(ring.dismissed_at)
+    if ring.timed_out_at is not None:
+        payload['timed_out_at'] = _format_local_iso8601(ring.timed_out_at)
+    if ring.cancelled_at is not None:
+        payload['cancelled_at'] = _format_local_iso8601(ring.cancelled_at)
+    return payload
 
 
 def _ring_socket_group_name(user_type, user_id, order):
@@ -342,6 +439,20 @@ def _ring_socket_group_names(ring):
         if group_name not in groups:
             groups.append(group_name)
     return groups
+
+
+def _log_ring_delivery(stage, ring, payload, *, groups=None, user_type=None, user_id=None):
+    try:
+        logger.info(
+            'ring.%s payload=%s user_type=%s user_id=%s groups=%s',
+            stage,
+            json.dumps(_ring_payload_for_log(ring, payload), ensure_ascii=False, default=str),
+            user_type or '',
+            user_id or '',
+            groups or [],
+        )
+    except Exception:
+        logger.exception('Failed to log ring delivery stage=%s ring_id=%s', stage, getattr(ring, 'public_id', None))
 
 
 def _cancel_chat_ring_timeout_timer(ring_id):
@@ -392,33 +503,27 @@ def _schedule_chat_ring_timeout_timer(ring_id, expires_at):
     timer.start()
 
 
-def _broadcast_ring_status_update(ring):
+def _broadcast_ring_status_update(ring, *, public_status=None):
     channel_layer = get_channel_layer()
     if channel_layer is None:
         return
 
-    payload = _ring_payload(ring, event_type=f'chat_ring_{ring.status}')
-    payload['status_display'] = _ring_status_display(ring.status, lang='ar')
-    payload['updated_at'] = _format_local_iso8601(ring.updated_at)
-    if ring.answered_at is not None:
-        payload['answered_at'] = _format_local_iso8601(ring.answered_at)
-    if ring.dismissed_at is not None:
-        payload['dismissed_at'] = _format_local_iso8601(ring.dismissed_at)
-    if ring.timed_out_at is not None:
-        payload['timed_out_at'] = _format_local_iso8601(ring.timed_out_at)
-    if ring.cancelled_at is not None:
-        payload['cancelled_at'] = _format_local_iso8601(ring.cancelled_at)
+    normalized_public_status = _public_chat_ring_status(public_status or ring.status)
+    payload = _ring_payload_for_status(ring, normalized_public_status, lang='ar')
+    groups = _ring_socket_group_names(ring)
 
     logger.info(
-        'ring.status.broadcast ring_id=%s order_id=%s chat_type=%s status=%s groups=%s',
+        'ring.status.broadcast ring_id=%s order_id=%s chat_type=%s internal_status=%s public_status=%s groups=%s payload=%s',
         ring.public_id,
         ring.order_id,
         ring.chat_type,
         ring.status,
-        _ring_socket_group_names(ring),
+        normalized_public_status,
+        groups,
+        json.dumps(_ring_payload_for_log(ring, payload), ensure_ascii=False, default=str),
     )
 
-    for group_name in _ring_socket_group_names(ring):
+    for group_name in groups:
         async_to_sync(channel_layer.group_send)(
             group_name,
             {
@@ -475,7 +580,7 @@ def _send_ring_event_to_user(user_type, user_id, payload, *, expires_at=None, wi
     )
 
 
-def _send_ring_status_push_updates(ring):
+def _send_ring_status_push_updates(ring, *, public_status=None):
     """
     Send a silent ring status update to both participants.
 
@@ -483,8 +588,8 @@ def _send_ring_status_push_updates(ring):
     push helps keep the UI in sync when one side is idle, backgrounded, or
     connected through a less reliable socket session.
     """
-    payload = _ring_payload(ring, event_type=f'chat_ring_{ring.status}')
-    payload['status_display'] = _ring_status_display(ring.status, lang='ar')
+    normalized_public_status = _public_chat_ring_status(public_status or ring.status)
+    payload = _ring_payload_for_status(ring, normalized_public_status, lang='ar')
     recipients = [
         (ring.sender_type, ring.sender_id),
         (ring.receiver_type, ring.receiver_id),
@@ -492,9 +597,15 @@ def _send_ring_status_push_updates(ring):
     for user_type, user_id in recipients:
         if not user_id:
             continue
-        if user_type in {'customer', 'driver'} and _participant_has_active_socket(user_type, user_id):
-            continue
         try:
+            logger.info(
+                'ring.status.push ring_id=%s user_type=%s user_id=%s status=%s payload=%s',
+                ring.public_id,
+                user_type,
+                user_id,
+                normalized_public_status,
+                json.dumps(_ring_payload_for_log(ring, payload), ensure_ascii=False, default=str),
+            )
             _send_ring_event_to_user(user_type, user_id, payload, expires_at=ring.expires_at, with_sound=False)
         except Exception:
             logger.exception(
@@ -634,11 +745,12 @@ def get_chat_ring_for_user(ring_id, user):
 
 def update_chat_ring_status(ring, *, status_value, actor=None):
     _ensure_chat_ring_storage()
-    if status_value not in {'answered', 'dismissed', 'timeout', 'cancelled'}:
+    internal_status, public_status = _normalize_chat_ring_status(status_value)
+    if internal_status not in {'answered', 'dismissed', 'timeout', 'cancelled'}:
         raise ChatRingError('Unsupported chat ring status transition.')
 
     original_status = ring.status
-    if ring.status == status_value:
+    if ring.status == internal_status:
         if ring.status in CHAT_RING_TERMINAL_STATUSES:
             _cancel_chat_ring_timeout_timer(ring.public_id)
         return ring, serialize_chat_ring(ring)
@@ -648,17 +760,17 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
 
     now = timezone.now()
     update_fields = ['status', 'updated_at']
-    ring.status = status_value
-    if status_value == 'answered':
+    ring.status = internal_status
+    if internal_status == 'answered':
         ring.answered_at = now
         update_fields.append('answered_at')
-    elif status_value == 'dismissed':
+    elif internal_status == 'dismissed':
         ring.dismissed_at = now
         update_fields.append('dismissed_at')
-    elif status_value == 'timeout':
+    elif internal_status == 'timeout':
         ring.timed_out_at = now
         update_fields.append('timed_out_at')
-    elif status_value == 'cancelled':
+    elif internal_status == 'cancelled':
         ring.cancelled_at = now
         update_fields.append('cancelled_at')
 
@@ -666,25 +778,26 @@ def update_chat_ring_status(ring, *, status_value, actor=None):
 
     with transaction.atomic():
         ring.save(update_fields=update_fields)
-        if status_value in CHAT_RING_TERMINAL_STATUSES:
+        if internal_status in CHAT_RING_TERMINAL_STATUSES:
             _cancel_chat_ring_timeout_timer(ring.public_id)
 
         def _dispatch_updates():
-            _broadcast_ring_status_update(ring)
-            _send_ring_status_push_updates(ring)
-            payload = _ring_payload(ring, event_type=f'chat_ring_{status_value}')
+            _broadcast_ring_status_update(ring, public_status=public_status)
+            _send_ring_status_push_updates(ring, public_status=public_status)
+            payload = _ring_payload_for_status(ring, public_status, lang='ar')
             for user_type, user_id in {
                 (ring.sender_type, ring.sender_id),
                 (ring.receiver_type, ring.receiver_id),
             }:
                 _send_ring_event_to_user(user_type, user_id, payload)
             logger.info(
-                'ring.status.changed ring_id=%s order_id=%s chat_type=%s from=%s to=%s actor_type=%s actor_id=%s',
+                'ring.status.changed ring_id=%s order_id=%s chat_type=%s from=%s to=%s public_status=%s actor_type=%s actor_id=%s',
                 ring.public_id,
                 ring.order_id,
                 ring.chat_type,
                 original_status,
                 ring.status,
+                public_status,
                 actor_type or '',
                 getattr(actor, 'id', None) if actor is not None else None,
             )
@@ -725,6 +838,7 @@ def _chat_ring_actor_can_transition(ring, actor, status_value):
 
 def apply_chat_ring_status_update(*, ring_id, actor, status_value, lang=None):
     _ensure_chat_ring_storage()
+    internal_status, public_status = _normalize_chat_ring_status(status_value)
     ring = (
         ChatRing.objects.select_related('order', 'order__shop_owner', 'order__customer', 'order__driver')
         .filter(public_id=str(ring_id or '').strip())
@@ -738,45 +852,47 @@ def apply_chat_ring_status_update(*, ring_id, actor, status_value, lang=None):
         ring, _ = update_chat_ring_status(ring, status_value='timeout', actor=None)
 
     if ring.status in CHAT_RING_TERMINAL_STATUSES:
-        if ring.status == status_value:
+        ring_public_status = _public_chat_ring_status(ring.status)
+        if ring.status == internal_status or ring_public_status == public_status:
             return ring, {
                 'ack': {
                     'ring_id': ring.public_id,
-                    'status': ring.status,
-                    'status_display': _ring_status_display(ring.status, lang=lang),
+                    'status': ring_public_status,
+                    'status_display': _ring_status_display(ring_public_status, lang=lang),
                 },
                 'ring': {
-                    **_ring_payload(ring, event_type='ring'),
+                    **_ring_payload(ring, event_type='ring', public_status=ring_public_status),
                     'updated_at': _format_local_iso8601(ring.updated_at),
                 },
                 'status_changed': False,
             }
-        if ring.status != status_value:
+        if ring.status != internal_status:
             return ring, {
                 'ack': {
                     'ring_id': ring.public_id,
-                    'status': ring.status,
-                    'status_display': _ring_status_display(ring.status, lang=lang),
+                    'status': ring_public_status,
+                    'status_display': _ring_status_display(ring_public_status, lang=lang),
                 },
                 'ring': {
-                    **_ring_payload(ring, event_type='ring'),
+                    **_ring_payload(ring, event_type='ring', public_status=ring_public_status),
                     'updated_at': _format_local_iso8601(ring.updated_at),
                 },
                 'status_changed': False,
             }
 
-    if not _chat_ring_actor_can_transition(ring, actor, status_value):
+    if not _chat_ring_actor_can_transition(ring, actor, internal_status):
         raise ChatRingError('You do not have permission to update this ring.', status_code=403)
 
-    ring, payload = update_chat_ring_status(ring, status_value=status_value, actor=actor)
+    ring, payload = update_chat_ring_status(ring, status_value=internal_status, actor=actor)
+    ring_public_status = public_status or _public_chat_ring_status(ring.status)
     return ring, {
         'ack': {
             'ring_id': ring.public_id,
-            'status': ring.status,
-            'status_display': _ring_status_display(ring.status, lang=lang),
+            'status': ring_public_status,
+            'status_display': _ring_status_display(ring_public_status, lang=lang),
         },
         'ring': {
-            **_ring_payload(ring, event_type='ring'),
+            **_ring_payload(ring, event_type='ring', public_status=ring_public_status),
             'updated_at': _format_local_iso8601(ring.updated_at),
         },
         'status_changed': True,

@@ -124,6 +124,36 @@ def _json_dumps(payload):
     return json.dumps(payload, cls=DjangoJSONEncoder)
 
 
+def _ring_log_payload(event_type, payload):
+    data = dict(payload or {})
+    return {
+        'event': event_type,
+        'ring_id': str(data.get('ring_id') or ''),
+        'chat_id': str(data.get('chat_id') or ''),
+        'order_id': str(data.get('order_id') or ''),
+        'chat_type': str(data.get('chat_type') or ''),
+        'status': str(data.get('status') or ''),
+        'should_close': bool(data.get('should_close')),
+        'is_terminal': bool(data.get('is_terminal')),
+        'is_active': bool(data.get('is_active')),
+        'ui_action': str(data.get('ui_action') or ''),
+        'closed_reason': str(data.get('closed_reason') or ''),
+        'type': str(data.get('type') or ''),
+    }
+
+
+def _log_ring_event(consumer, event, event_name):
+    payload = dict(event.get('data') or {})
+    logger.info(
+        'ring.consumer.%s consumer=%s user_type=%s user_id=%s payload=%s',
+        event_name,
+        consumer.__class__.__name__,
+        getattr(consumer, 'user_type', None),
+        getattr(getattr(consumer, 'user', None), 'id', None),
+        json.dumps(_ring_log_payload(event_name, payload), ensure_ascii=False, default=str),
+    )
+
+
 def _remember_chat_ring_request(request_id, ring_id):
     request_key = str(request_id or '').strip()
     ring_key = str(ring_id or '').strip()
@@ -1370,12 +1400,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def ring(self, event):
+        _log_ring_event(self, event, 'ring')
         await self.send(text_data=_json_dumps({
             'type': 'ring',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None))
         }))
 
     async def ring_status(self, event):
+        _log_ring_event(self, event, 'ring_status')
         await self.send(text_data=_json_dumps({
             'type': 'ring_status',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
@@ -3078,12 +3110,14 @@ class OrderConsumer(AsyncWebsocketConsumer):
         }))
 
     async def ring(self, event):
+        _log_ring_event(self, event, 'ring')
         await self.send(text_data=_json_dumps({
             'type': 'ring',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
     async def ring_status(self, event):
+        _log_ring_event(self, event, 'ring_status')
         await self.send(text_data=_json_dumps({
             'type': 'ring_status',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
@@ -3466,12 +3500,14 @@ class CustomerOrderConsumer(AsyncWebsocketConsumer):
         await self.send_realtime_event('order_history_snapshot', event.get('data') or {})
 
     async def ring(self, event):
+        _log_ring_event(self, event, 'ring')
         await self.send(text_data=_json_dumps({
             'type': 'ring',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
     async def ring_status(self, event):
+        _log_ring_event(self, event, 'ring_status')
         await self.send(text_data=_json_dumps({
             'type': 'ring_status',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
@@ -3907,12 +3943,14 @@ class DriverConsumer(AsyncWebsocketConsumer):
         }))
 
     async def ring(self, event):
+        _log_ring_event(self, event, 'ring')
         await self.send(text_data=_json_dumps({
             'type': 'ring',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
         }))
 
     async def ring_status(self, event):
+        _log_ring_event(self, event, 'ring_status')
         await self.send(text_data=_json_dumps({
             'type': 'ring_status',
             'data': _localize_ring_payload(event.get('data') or {}, lang=getattr(self, 'lang', None)),
