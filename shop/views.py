@@ -1451,7 +1451,8 @@ def _build_driver_branch_label(shop_owner):
 
 def _build_driver_status_panel(driver, active_orders_count):
     snapshot = driver.get_availability_snapshot(active_orders_count=active_orders_count)
-    presence_online = bool(snapshot['can_receive_orders'])
+    presence_online = bool(snapshot['presence_online'])
+    is_online = bool(snapshot['is_online'])
     can_receive_orders = bool(snapshot['can_receive_orders'])
     status_value = snapshot['status']
     reason = snapshot.get('reason')
@@ -1474,7 +1475,7 @@ def _build_driver_status_panel(driver, active_orders_count):
     }
     return {
         'presence_online': presence_online,
-        'is_online': can_receive_orders,
+        'is_online': is_online,
         'availability_enabled': bool(snapshot['availability_enabled']),
         'can_receive_orders': can_receive_orders,
         'status': status_value,
@@ -1488,7 +1489,8 @@ def _build_driver_status_panel(driver, active_orders_count):
 
 def _build_driver_availability_panel(driver, active_orders_count):
     snapshot = driver.get_availability_snapshot(active_orders_count=active_orders_count)
-    is_online = bool(snapshot['can_receive_orders'])
+    presence_online = bool(snapshot['presence_online'])
+    is_online = bool(snapshot['is_online'])
     status_value = snapshot['status']
     reason = snapshot.get('reason')
 
@@ -1551,7 +1553,8 @@ def _group_driver_orders_by_shop(orders, request=None):
 
 def _build_driver_status_panel(driver, active_orders_count):
     snapshot = driver.get_availability_snapshot(active_orders_count=active_orders_count)
-    presence_online = bool(snapshot['can_receive_orders'])
+    presence_online = bool(snapshot['presence_online'])
+    is_online = bool(snapshot['is_online'])
     can_receive_orders = bool(snapshot['can_receive_orders'])
     status_value = snapshot['status']
 
@@ -1570,7 +1573,7 @@ def _build_driver_status_panel(driver, active_orders_count):
     }
     return {
         'presence_online': presence_online,
-        'is_online': can_receive_orders,
+        'is_online': is_online,
         'availability_enabled': bool(snapshot['availability_enabled']),
         'can_receive_orders': can_receive_orders,
         'status': status_value,
@@ -1584,7 +1587,8 @@ def _build_driver_status_panel(driver, active_orders_count):
 
 def _build_driver_availability_panel(driver, active_orders_count):
     snapshot = driver.get_availability_snapshot(active_orders_count=active_orders_count)
-    presence_online = bool(snapshot['can_receive_orders'])
+    presence_online = bool(snapshot['presence_online'])
+    is_online = bool(snapshot['is_online'])
     status_value = snapshot['status']
     reason = snapshot.get('reason')
     can_receive_orders = bool(snapshot['can_receive_orders'])
@@ -1607,7 +1611,7 @@ def _build_driver_availability_panel(driver, active_orders_count):
     }
     return {
         'presence_online': presence_online,
-        'is_online': can_receive_orders,
+        'is_online': is_online,
         'availability_enabled': bool(snapshot['availability_enabled']),
         'can_receive_orders': can_receive_orders,
         'status': status_value,
@@ -2651,8 +2655,8 @@ def driver_status_view(request):
     return success_response(
         data={
             'driver_id': driver.id,
-            'presence_online': bool(snapshot['can_receive_orders']),
-            'is_online': bool(snapshot['can_receive_orders']),
+            'presence_online': bool(snapshot['presence_online']),
+            'is_online': bool(snapshot['is_online']),
             'availability_enabled': bool(snapshot['availability_enabled']),
             'can_receive_orders': bool(snapshot['can_receive_orders']),
             'status': snapshot['status'],

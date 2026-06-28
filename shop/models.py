@@ -520,20 +520,22 @@ class Driver(models.Model):
         is_suspended = bool(getattr(moderation, 'is_suspended', False))
         presence_online = self.sync_presence_state()
         availability_enabled = bool(getattr(self, 'availability_enabled', False))
+        is_on_shift = availability_enabled and not is_suspended and self.is_verified
+        at_capacity = active_orders_count >= max_active_orders
 
         reason = None
         if not self.is_verified or is_suspended:
             status = 'unavailable'
             can_receive_orders = False
             reason = 'account_restricted'
-        elif not presence_online:
+        elif not availability_enabled:
             status = 'offline'
             can_receive_orders = False
             reason = 'offline'
-        elif not availability_enabled:
-            status = 'unavailable'
+        elif at_capacity:
+            status = 'busy'
             can_receive_orders = False
-            reason = 'availability_disabled'
+            reason = 'max_active_orders'
         else:
             status = 'available'
             can_receive_orders = True
@@ -541,7 +543,7 @@ class Driver(models.Model):
 
         return {
             'presence_online': presence_online,
-            'is_online': presence_online,
+            'is_online': is_on_shift,
             'availability_enabled': availability_enabled,
             'can_receive_orders': can_receive_orders,
             'status': status,

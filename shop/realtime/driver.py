@@ -326,7 +326,7 @@ def driver_can_accept_reassigned_order(driver):
     snapshot = driver.get_availability_snapshot()
     if snapshot.get('reason') == 'account_restricted':
         return False
-    return bool(snapshot.get('presence_online')) and snapshot.get('status') != 'offline'
+    return bool(snapshot.get('can_receive_orders'))
 
 
 def get_driver_receive_orders_block_reason(driver):

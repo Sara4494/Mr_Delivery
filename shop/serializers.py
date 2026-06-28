@@ -42,7 +42,7 @@ def _driver_app_online(driver):
     if callable(snapshot_getter):
         try:
             snapshot = snapshot_getter()
-            return bool(snapshot.get('can_receive_orders'))
+            return bool(snapshot.get('is_online'))
         except Exception:
             pass
     return _driver_live_presence_online(driver)
