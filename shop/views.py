@@ -4825,7 +4825,7 @@ def order_detail_view(request, order_id):
                         status='active',
                     )
                     new_driver = relation.driver
-                    if not bool(getattr(new_driver, 'is_online', False)):
+                    if not bool(getattr(new_driver, 'get_availability_snapshot', lambda: {})().get('can_receive_orders')):
                         return error_response(
                             message=OFFLINE_DRIVER_ASSIGNMENT_MESSAGE,
                             status_code=status.HTTP_400_BAD_REQUEST

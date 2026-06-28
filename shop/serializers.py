@@ -1234,7 +1234,7 @@ class OrderCreateSerializer(serializers.Serializer):
             driver_id=driver_id,
             status='active',
         ).first()
-        if relation and not bool(getattr(relation.driver, 'is_online', False)):
+        if relation and not _driver_app_online(relation.driver):
             raise serializers.ValidationError({'driver_id': [OFFLINE_DRIVER_ASSIGNMENT_MESSAGE]})
         return attrs
 
